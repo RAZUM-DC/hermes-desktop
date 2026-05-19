@@ -119,15 +119,30 @@ function Office({
       executeJavaScript?: (code: string) => Promise<unknown>;
     };
     if (!wv) return;
-    const onLoad = (): void => {
-      setWebviewReady(true);
-      setWebviewError("");
+
+    const ONBOARDING_JS =
+      `try { localStorage.setItem("claw3d:onboarding:completed", "true") } catch(e) {}`;
+
+    // Inject onboarding flag as early as possible (before Claw3D's scripts run).
+    // did-start-loading fires before any page resources load, so the injection
+    // is queued early enough that Claw3D's useOnboardingState hook sees it.
+    const injectOnboardingFlag = (): void => {
       if (wv.executeJavaScript) {
-        wv.executeJavaScript(
-          `try { localStorage.setItem("claw3d:onboarding:completed", "true") } catch(e) {}`,
-        ).catch(() => {});
+        wv.executeJavaScript(ONBOARDING_JS).catch(() => {});
       }
     };
+
+    const onStartLoad = (): void => {
+      injectOnboardingFlag();
+    };
+
+    const onDomReady = (): void => {
+      // Defense-in-depth: re-inject in case the first attempt didn't stick
+      injectOnboardingFlag();
+      setWebviewReady(true);
+      setWebviewError("");
+    };
+
     const onFail = (evt: unknown): void => {
       setWebviewReady(false);
       const e = evt as { errorDescription?: string; errorCode?: number };
@@ -137,10 +152,14 @@ function Office({
           "Failed to load Claw3D. The dev server may still be starting up.",
       );
     };
-    wv.addEventListener("did-finish-load", onLoad);
+
+    wv.addEventListener("did-start-loading", onStartLoad);
+    wv.addEventListener("dom-ready", onDomReady);
     wv.addEventListener("did-fail-load", onFail);
+
     return () => {
-      wv.removeEventListener("did-finish-load", onLoad);
+      wv.removeEventListener("did-start-loading", onStartLoad);
+      wv.removeEventListener("dom-ready", onDomReady);
       wv.removeEventListener("did-fail-load", onFail);
     };
   }, [running, port]);
