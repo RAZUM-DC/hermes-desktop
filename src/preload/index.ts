@@ -288,6 +288,18 @@ const hermesAPI = {
     return () => ipcRenderer.removeListener("chat-chunk", handler);
   },
 
+  /** Streaming reasoning / thinking tokens — separate from `onChatChunk`
+   *  so the renderer can render a "thinking" bubble that grows
+   *  independently of the assistant's content (#352). */
+  onChatReasoningChunk: (
+    callback: (chunk: string) => void,
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, chunk: string): void =>
+      callback(chunk);
+    ipcRenderer.on("chat-reasoning-chunk", handler);
+    return () => ipcRenderer.removeListener("chat-reasoning-chunk", handler);
+  },
+
   onChatDone: (callback: (sessionId?: string) => void): (() => void) => {
     const handler = (
       _event: Electron.IpcRendererEvent,

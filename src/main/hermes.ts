@@ -196,8 +196,39 @@ platforms:
 //  HTTP API streaming (fast path — no process spawn)
 // ────────────────────────────────────────────────────
 
+/**
+ * Pull the streaming reasoning / thinking text from one SSE `delta`
+ * object, if present. Two shapes seen in the wild:
+ *
+ *   - DeepSeek (reasoning models): `delta.reasoning_content`
+ *   - OpenAI o1/o3-style streams + some OpenRouter routes:
+ *     `delta.reasoning` (older OpenAI thinking-mode docs also use this
+ *     field name).
+ *
+ * Returns `""` (falsy) for any other shape, so the caller can skip
+ * forwarding without a null check.
+ *
+ * Exported so we can unit-test the field-extraction without booting
+ * the whole HTTP path. (#352)
+ */
+export function extractReasoningDelta(delta: unknown): string {
+  if (!delta || typeof delta !== "object") return "";
+  const d = delta as Record<string, unknown>;
+  if (typeof d.reasoning_content === "string" && d.reasoning_content)
+    return d.reasoning_content;
+  if (typeof d.reasoning === "string" && d.reasoning) return d.reasoning;
+  return "";
+}
+
 export interface ChatCallbacks {
   onChunk: (text: string) => void;
+  /** Streaming reasoning / thinking tokens, when the provider emits them
+   *  alongside `content`. DeepSeek surfaces these as `delta.reasoning_content`;
+   *  OpenAI o1/o3-style streams use `delta.reasoning`. Forwarded on a
+   *  dedicated channel so the renderer can render the thinking bubble
+   *  live instead of waiting for a state-DB refresh on focus change
+   *  (issue #352). */
+  onReasoningChunk?: (text: string) => void;
   onDone: (sessionId?: string) => void;
   onError: (error: string) => void;
   onToolProgress?: (tool: string) => void;
@@ -469,6 +500,16 @@ function sendMessageViaApi(
           rateLimitRemaining: parsed.usage.rate_limit_remaining,
           rateLimitReset: parsed.usage.rate_limit_reset,
         });
+      }
+
+      // Reasoning / thinking tokens, when the provider emits them.
+      // Forwarded on a dedicated callback so the renderer can render the
+      // thinking bubble live (#352). We do NOT set `hasContent = true`
+      // here — reasoning alone shouldn't suppress the "empty stream"
+      // diagnostic probe.
+      const reasoningDelta = extractReasoningDelta(delta);
+      if (reasoningDelta && cb.onReasoningChunk) {
+        cb.onReasoningChunk(reasoningDelta);
       }
 
       if (delta?.content) {

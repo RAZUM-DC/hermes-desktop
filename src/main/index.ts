@@ -789,6 +789,15 @@ function setupIPC(): void {
               currentChatAbort();
             }
           },
+          onReasoningChunk: (chunk) => {
+            // Forward reasoning/thinking tokens on a dedicated channel so
+            // the renderer can render the thinking bubble live during the
+            // stream rather than waiting for a focus-change refresh (#352).
+            // Same renderer-gone abort guard as the content channel.
+            if (!safeSend("chat-reasoning-chunk", chunk) && currentChatAbort) {
+              currentChatAbort();
+            }
+          },
           onDone: (sessionId) => {
             currentChatAbort = null;
             safeSend("chat-done", sessionId || "");
