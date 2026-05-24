@@ -1887,11 +1887,25 @@ export async function sshListCachedSessions(
 // Probe the well-known venv install paths first; fall back to bare `hermes`
 // on PATH only if none of those exist, preserving the old behavior for
 // non-installer deployments.
-function buildRemoteHermesCmd(args: string[], extraShell = ""): string {
+//
+// Each install base is probed with both `.venv` and `venv` — the venv
+// directory name is not fixed, and an install that uses the un-dotted
+// `venv` was otherwise invisible even when fully working (issue #284).
+// `~/.local/bin/hermes` is also probed, where `pip install --user` flows
+// place a wrapper. `command -v hermes` alone is not enough: the desktop's
+// non-interactive SSH does not source `~/.profile`/`~/.bashrc`, so any
+// PATH additions made there are not visible.
+//
+// Exported for unit testing the probe list without a live remote host.
+export function buildRemoteHermesCmd(args: string[], extraShell = ""): string {
   const candidates = [
     "$HOME/hermes-agent/.venv/bin/hermes",
+    "$HOME/hermes-agent/venv/bin/hermes",
     "$HOME/.hermes/hermes-agent/.venv/bin/hermes",
+    "$HOME/.hermes/hermes-agent/venv/bin/hermes",
     "/opt/hermes/hermes-agent/.venv/bin/hermes",
+    "/opt/hermes/hermes-agent/venv/bin/hermes",
+    "$HOME/.local/bin/hermes",
   ];
   const quotedArgs = args.map((a) => shellQuote(a)).join(" ");
   const probe = candidates

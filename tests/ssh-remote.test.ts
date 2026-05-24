@@ -4,6 +4,7 @@ import {
   buildGatewayStartCommand,
   buildGatewayStopCommand,
   buildGatewayStatusCommand,
+  buildRemoteHermesCmd,
 } from "../src/main/ssh-remote";
 import type { SshConfig } from "../src/main/ssh-tunnel";
 
@@ -72,5 +73,32 @@ describe("ssh gateway commands (issue #285)", () => {
     expect(cmd).toContain("systemctl is-active hermes.service");
     expect(cmd).toContain("gateway.pid");
     expect(systemdBranch(cmd)).not.toContain("gateway.pid");
+  });
+});
+
+describe("buildRemoteHermesCmd venv probe (issue #284)", () => {
+  const cmd = buildRemoteHermesCmd(["--version"]);
+
+  it("probes both .venv and venv for every install base", () => {
+    for (const base of [
+      "$HOME/hermes-agent",
+      "$HOME/.hermes/hermes-agent",
+      "/opt/hermes/hermes-agent",
+    ]) {
+      expect(cmd).toContain(`${base}/.venv/bin/hermes`);
+      expect(cmd).toContain(`${base}/venv/bin/hermes`);
+    }
+  });
+
+  it("probes ~/.local/bin where pip --user installs a wrapper", () => {
+    expect(cmd).toContain("$HOME/.local/bin/hermes");
+  });
+
+  it("does not probe the /usr/local/bin sudo-wrapper it deliberately bypasses", () => {
+    expect(cmd).not.toContain("/usr/local/bin/hermes");
+  });
+
+  it("still falls back to bare hermes on PATH", () => {
+    expect(cmd).toContain("command -v hermes");
   });
 });
