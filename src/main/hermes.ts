@@ -890,6 +890,7 @@ function sendMessageViaCli(
     "CEREBRAS_API_KEY",
     "MISTRAL_API_KEY",
     "PERPLEXITY_API_KEY",
+    "XIAOMI_API_KEY",
     "GLM_API_KEY",
     "KIMI_API_KEY",
     "MINIMAX_API_KEY",
