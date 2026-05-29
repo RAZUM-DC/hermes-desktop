@@ -20,6 +20,7 @@
 
 - English: `README.md`
 - 简体中文: `README.zh-CN.md`
+- 日本語: `README.ja-JP.md`
 
 Hermes Desktop 是一款原生的桌面应用程序，用于安装、配置并与 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 进行聊天——这是一款具备工具调用、多平台消息传递和闭环学习能力的自我进化的 AI 助手。
 
