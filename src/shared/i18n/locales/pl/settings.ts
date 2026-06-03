@@ -24,7 +24,7 @@ export default {
   },
   analytics: {
     label: "Wysyłaj anonimową analitykę użycia",
-    hint: "Pomaga ulepszać Hermes Desktop przez wysyłanie anonimowych, zagregowanych danych użycia do instancji PostHog projektu. Możesz to wyłączyć w dowolnym momencie.",
+    hint: "Pomaga ulepszać Hermes One przez wysyłanie anonimowych, zagregowanych danych użycia do instancji PostHog projektu. Możesz to wyłączyć w dowolnym momencie.",
     disclosure: {
       uuid: "Losowy identyfikator instalacji przechowywany tylko na tym urządzeniu (bez imienia, e-maila ani danych konta).",
       platform: "Twój system operacyjny, wersja Electron i wersja Node.js.",
