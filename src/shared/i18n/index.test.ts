@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { t } from "./index";
+import { t, getLocaleDirection } from "./index";
 
 describe("shared i18n", () => {
   it("returns English text by default", () => {
@@ -28,6 +28,15 @@ describe("shared i18n", () => {
 
   it("returns pl text when available", () => {
     expect(t("welcome.title", "pl")).toBe("Witamy w Hermes");
+  });
+
+  it("returns he text when available", () => {
+    expect(t("welcome.title", "he")).toBe("ברוכים הבאים ל-Hermes");
+  });
+
+  it("reports he as a right-to-left locale", () => {
+    expect(getLocaleDirection("he")).toBe("rtl");
+    expect(getLocaleDirection("en")).toBe("ltr");
   });
 
   it("falls back to en when zh-CN key is missing", () => {

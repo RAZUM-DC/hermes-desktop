@@ -23,6 +23,7 @@ const DISCORD_COMMUNITY_URL = "https://discord.gg/vMwcnNPHc";
 const LANGUAGE_NATIVE_NAMES: Record<AppLocale, string> = {
   en: "English",
   es: "Español",
+  he: "עברית",
   id: "Bahasa Indonesia",
   ja: "日本語",
   pl: "Polski",

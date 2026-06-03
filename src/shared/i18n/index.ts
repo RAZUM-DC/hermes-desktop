@@ -4,6 +4,9 @@ import {
   DEFAULT_ACTIVE_LOCALE,
   FALLBACK_LOCALE,
   SOURCE_LOCALE,
+  RTL_LOCALES,
+  getLocaleDirection,
+  type TextDirection,
 } from "./config";
 import type { AppLocale } from "./types";
 import commonEn from "./locales/en/common";
@@ -29,6 +32,29 @@ import installEn from "./locales/en/install";
 import constantsEn from "./locales/en/constants";
 import kanbanEn from "./locales/en/kanban";
 import diagnoseEn from "./locales/en/diagnose";
+import commonHe from "./locales/he/common";
+import navigationHe from "./locales/he/navigation";
+import discoverHe from "./locales/he/discover";
+import welcomeHe from "./locales/he/welcome";
+import setupHe from "./locales/he/setup";
+import chatHe from "./locales/he/chat";
+import settingsHe from "./locales/he/settings";
+import toolsHe from "./locales/he/tools";
+import sessionsHe from "./locales/he/sessions";
+import modelsHe from "./locales/he/models";
+import providersHe from "./locales/he/providers";
+import officeHe from "./locales/he/office";
+import errorsHe from "./locales/he/errors";
+import schedulesHe from "./locales/he/schedules";
+import skillsHe from "./locales/he/skills";
+import gatewayHe from "./locales/he/gateway";
+import agentsHe from "./locales/he/agents";
+import soulHe from "./locales/he/soul";
+import memoryHe from "./locales/he/memory";
+import installHe from "./locales/he/install";
+import constantsHe from "./locales/he/constants";
+import kanbanHe from "./locales/he/kanban";
+import diagnoseHe from "./locales/he/diagnose";
 import commonPl from "./locales/pl/common";
 import navigationPl from "./locales/pl/navigation";
 import welcomePl from "./locales/pl/welcome";
@@ -246,6 +272,33 @@ export const resources = {
       constants: constantsEn,
       kanban: kanbanEn,
       diagnose: diagnoseEn,
+    },
+  },
+  he: {
+    translation: {
+      common: commonHe,
+      navigation: navigationHe,
+      discover: discoverHe,
+      welcome: welcomeHe,
+      setup: setupHe,
+      chat: chatHe,
+      settings: settingsHe,
+      tools: toolsHe,
+      sessions: sessionsHe,
+      models: modelsHe,
+      providers: providersHe,
+      office: officeHe,
+      errors: errorsHe,
+      schedules: schedulesHe,
+      skills: skillsHe,
+      gateway: gatewayHe,
+      agents: agentsHe,
+      soul: soulHe,
+      memory: memoryHe,
+      install: installHe,
+      constants: constantsHe,
+      kanban: kanbanHe,
+      diagnose: diagnoseHe,
     },
   },
   pl: {
@@ -528,5 +581,12 @@ export function t(
   }, base);
 }
 
-export { APP_LOCALES, DEFAULT_ACTIVE_LOCALE, FALLBACK_LOCALE, SOURCE_LOCALE };
-export type { AppLocale };
+export {
+  APP_LOCALES,
+  DEFAULT_ACTIVE_LOCALE,
+  FALLBACK_LOCALE,
+  SOURCE_LOCALE,
+  RTL_LOCALES,
+  getLocaleDirection,
+};
+export type { AppLocale, TextDirection };
