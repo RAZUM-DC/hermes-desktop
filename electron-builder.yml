@@ -1,5 +1,5 @@
 appId: com.nousresearch.hermes
-productName: Hermes Agent
+productName: Hermes One
 directories:
   buildResources: build
 files:
@@ -51,7 +51,7 @@ linux:
   category: Utility
   synopsis: Self-improving AI assistant desktop app
   description: >-
-    Hermes Desktop is a native desktop app for installing, configuring, and chatting
+    Hermes One is a native desktop app for installing, configuring, and chatting
     with Hermes Agent — a self-improving AI assistant with tool use, multi-platform
     messaging, and a closed learning loop.
 appImage:

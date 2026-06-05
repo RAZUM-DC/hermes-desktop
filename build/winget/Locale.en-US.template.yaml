@@ -5,13 +5,13 @@ PackageLocale: en-US
 Publisher: Nous Research
 PublisherUrl: https://github.com/fathah/hermes-desktop
 PublisherSupportUrl: https://github.com/fathah/hermes-desktop/issues
-PackageName: Hermes Agent
+PackageName: Hermes One
 PackageUrl: https://github.com/fathah/hermes-desktop
 License: MIT
 LicenseUrl: https://github.com/fathah/hermes-desktop/blob/main/LICENSE
 ShortDescription: Self-improving AI assistant desktop app
 Description: |-
-  Hermes Desktop is a native desktop app for installing, configuring, and chatting
+  Hermes One is a native desktop app for installing, configuring, and chatting
   with Hermes Agent — a self-improving AI assistant with tool use, multi-platform
   messaging, and a closed learning loop.
 Tags:

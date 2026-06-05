@@ -272,7 +272,7 @@ function resolveOfficeModel(): string {
 }
 
 /**
- * Build the `.env` Hermes Desktop writes into the hermes-office directory.
+ * Build the `.env` Hermes One writes into the hermes-office directory.
  * Exported so the contents (notably `HERMES_MODEL`, issue #256) can be
  * unit tested without a live Office install.
  */
@@ -285,7 +285,7 @@ export function buildOfficeEnv(opts: {
 }): string {
   const adapterPort = opts.adapterPort ?? adapterPortFromWsUrl(opts.url);
   return [
-    "# Auto-configured by Hermes Desktop",
+    "# Auto-configured by Hermes One",
     `PORT=${opts.port}`,
     `HOST=127.0.0.1`,
     `NEXT_PUBLIC_GATEWAY_URL=${opts.url}`,

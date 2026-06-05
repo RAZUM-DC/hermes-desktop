@@ -481,7 +481,7 @@ function fixNonAsciiCredential(
 // ───────────────────────────────────────────────────────
 //  Sibling-hermes-home drift check (Windows + WSL)
 //
-//  Hermes Desktop reads its config from %LocalAppData%\hermes\. Users
+//  Hermes One reads its config from %LocalAppData%\hermes\. Users
 //  who also run the `hermes` CLI inside a WSL distro have a second,
 //  separate ~/.hermes/ at /home/<user>/.hermes/ on the WSL fs. The
 //  two are independent. When they drift (a key set on one side but
@@ -687,18 +687,18 @@ function checkSiblingHermesHomeDrift(profile?: string): ConfigHealthIssue[] {
 
       // Direction A: one side empty, the other has a value →
       // unambiguous, auto-fixable. Default direction WSL → Windows
-      // (assumption: Hermes Desktop is the broken side, the user's
+      // (assumption: Hermes One is the broken side, the user's
       // CLI on WSL is the working setup). If reverse direction is
       // ever needed, expose a second fixId.
       if (!winValue && wslValue) {
         issues.push({
           code: "SIBLING_HERMES_HOME_DRIFT",
           severity: "warning",
-          message: `${label} is set on WSL (${sibling.distro}) but not on the Windows side that Hermes Desktop reads.`,
+          message: `${label} is set on WSL (${sibling.distro}) but not on the Windows side that Hermes One reads.`,
           detail:
             `WSL value (${where}): ${wslMasked}\n` +
             `Windows value: (not set)\n\n` +
-            `Hermes Desktop reads only ${current.envFile.replace(/\\\.env$/, "")} — your CLI on WSL works, the desktop doesn't, because the value never made it across. Auto-fix copies the WSL value into the Windows-side file.`,
+            `Hermes One reads only ${current.envFile.replace(/\\\.env$/, "")} — your CLI on WSL works, the desktop doesn't, because the value never made it across. Auto-fix copies the WSL value into the Windows-side file.`,
           locations: [current.configFile, current.envFile, sibling.hermesHome],
           autoFixable: true,
           fixDescription: `Copy ${label} from WSL (${sibling.distro}) → Windows side.`,
@@ -723,7 +723,7 @@ function checkSiblingHermesHomeDrift(profile?: string): ConfigHealthIssue[] {
           detail:
             `Windows value: ${winMasked}\n` +
             `WSL value (${where}): (not set)\n\n` +
-            `Hermes Desktop reads the Windows side, so this isn't blocking the desktop. Just a heads-up that your CLI on WSL is missing this value if you also use it there.`,
+            `Hermes One reads the Windows side, so this isn't blocking the desktop. Just a heads-up that your CLI on WSL is missing this value if you also use it there.`,
           locations: [current.envFile, sibling.hermesHome],
           autoFixable: false,
           context: {
@@ -744,7 +744,7 @@ function checkSiblingHermesHomeDrift(profile?: string): ConfigHealthIssue[] {
           detail:
             `Windows value: ${winMasked}\n` +
             `WSL value (${where}): ${wslMasked}\n\n` +
-            `Hermes Desktop reads only the Windows side. If these were supposed to be the same, copy whichever value is current to the other side. If they're intentionally different, this notice is informational.`,
+            `Hermes One reads only the Windows side. If these were supposed to be the same, copy whichever value is current to the other side. If they're intentionally different, this notice is informational.`,
           locations: [current.envFile, sibling.hermesHome],
           autoFixable: false,
           context: {
