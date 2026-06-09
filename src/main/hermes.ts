@@ -2038,6 +2038,9 @@ async function sendMessageViaTuiGateway(
 // ────────────────────────────────────────────────────
 
 const NOISE_PATTERNS = [/^[╭╰│╮╯─┌┐└┘┤├┬┴┼]/, /⚕\s*Hermes/];
+const CLI_COMPAT_PROVIDER_OVERRIDE: Record<string, string> = {
+  aimlapi: "custom",
+};
 
 function sendMessageViaCli(
   message: string,
@@ -2080,6 +2083,11 @@ function sendMessageViaCli(
     args.push("-m", mc.model);
   }
 
+  const cliProvider = CLI_COMPAT_PROVIDER_OVERRIDE[mc.provider];
+  if (cliProvider) {
+    args.push("--provider", cliProvider);
+  }
+
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
     PATH: getEnhancedPath(),
@@ -2099,6 +2107,7 @@ function sendMessageViaCli(
     "OPENROUTER_API_KEY",
     "OPENAI_API_KEY",
     "OLLAMA_API_KEY",
+    "AIMLAPI_API_KEY",
     "ANTHROPIC_API_KEY",
     "GROQ_API_KEY",
     "DEEPSEEK_API_KEY",
@@ -2150,6 +2159,9 @@ function sendMessageViaCli(
     } else {
       env.HERMES_INFERENCE_PROVIDER = "custom";
       env.OPENAI_BASE_URL = mc.baseUrl.replace(/\/+$/, "");
+      if (cliProvider === "custom") {
+        env.CUSTOM_BASE_URL = mc.baseUrl.replace(/\/+$/, "");
+      }
     }
 
     // Find the host-derived env-var name (if any). Used both for resolving
@@ -2589,6 +2601,11 @@ export async function sendMessage(
       attachments,
       contextFolder,
     );
+  }
+
+  const mc = getModelConfig(profile);
+  if (CLI_COMPAT_PROVIDER_OVERRIDE[mc.provider]) {
+    return sendMessageViaCli(message, cb, profile, resumeSessionId, attachments);
   }
 
   // Check API server availability when the cache is cold or known-bad. Once

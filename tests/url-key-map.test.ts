@@ -24,6 +24,7 @@ describe("URL_KEY_MAP", () => {
       "https://openrouter.ai/api/v1": "OPENROUTER_API_KEY",
       "https://api.anthropic.com/v1": "ANTHROPIC_API_KEY",
       "https://api.openai.com/v1": "OPENAI_API_KEY",
+      "https://api.aimlapi.com/v1": "AIMLAPI_API_KEY",
       "https://huggingface.co/api": "HF_TOKEN",
       "https://api.groq.com/openai/v1": "GROQ_API_KEY",
       "https://api.deepseek.com/v1": "DEEPSEEK_API_KEY",

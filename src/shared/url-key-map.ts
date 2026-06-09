@@ -27,6 +27,7 @@ export const URL_KEY_MAP: ReadonlyArray<UrlKeyMapping> = [
   { pattern: /anthropic\.com/i, envKey: "ANTHROPIC_API_KEY" },
   { pattern: /openai\.com/i, envKey: "OPENAI_API_KEY" },
   { pattern: /ollama\.com/i, envKey: "OLLAMA_API_KEY" },
+  { pattern: /api\.aimlapi\.com/i, envKey: "AIMLAPI_API_KEY" },
   { pattern: /huggingface\.co/i, envKey: "HF_TOKEN" },
   { pattern: /api\.groq\.com/i, envKey: "GROQ_API_KEY" },
   { pattern: /api\.deepseek\.com/i, envKey: "DEEPSEEK_API_KEY" },
@@ -100,6 +101,7 @@ export const OPENAI_COMPAT_PROVIDERS: ReadonlySet<string> = new Set([
   "vllm",
   "llamacpp",
   // Built-in remote OpenAI-compatible providers
+  "aimlapi",
   "groq",
   "deepseek",
   "together",

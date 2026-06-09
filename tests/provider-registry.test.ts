@@ -19,6 +19,9 @@ describe("provider-registry", () => {
       expect(canonicalProviderBaseUrl("xiaomi")).toBe(
         "https://api.xiaomimimo.com/v1",
       );
+      expect(canonicalProviderBaseUrl("aimlapi")).toBe(
+        "https://api.aimlapi.com/v1",
+      );
       expect(canonicalProviderBaseUrl("together")).toBe(
         "https://api.together.xyz/v1",
       );
@@ -91,6 +94,7 @@ describe("provider-registry", () => {
       // prevent.
       const requiredBuiltins = [
         "groq",
+        "aimlapi",
         "deepseek",
         "together",
         "fireworks",

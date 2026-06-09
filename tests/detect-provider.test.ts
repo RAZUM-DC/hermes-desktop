@@ -15,6 +15,7 @@ describe("detectProviderFromUrl", () => {
       "anthropic",
     );
     expect(detectProviderFromUrl("https://api.openai.com/v1")).toBe("openai");
+    expect(detectProviderFromUrl("https://api.aimlapi.com/v1")).toBe("aimlapi");
     expect(
       detectProviderFromUrl("https://generativelanguage.googleapis.com/v1beta"),
     ).toBe("google");

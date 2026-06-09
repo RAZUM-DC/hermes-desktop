@@ -24,6 +24,7 @@ export const PROVIDERS = {
     { value: "auto", label: "constants.autoDetect" },
     // Aggregators
     { value: "openrouter", label: "constants.openrouterName" },
+    { value: "aimlapi", label: "constants.aimlapiName" },
     // First-party API providers
     { value: "anthropic", label: "constants.anthropicName" },
     { value: "openai", label: "constants.openaiName" },
@@ -67,6 +68,7 @@ export const PROVIDERS = {
 
   labels: {
     openrouter: "constants.openrouterName",
+    aimlapi: "constants.aimlapiName",
     anthropic: "constants.anthropicName",
     openai: "constants.openaiName",
     "openai-codex": "constants.openaiCodexName",
@@ -123,6 +125,18 @@ export const PROVIDERS = {
       placeholder: "sk-ant-...",
       configProvider: "anthropic",
       baseUrl: "",
+      needsKey: true,
+    },
+    {
+      id: "aimlapi",
+      name: "constants.aimlapiName",
+      desc: "constants.aimlapiDesc",
+      tag: "",
+      envKey: "AIMLAPI_API_KEY",
+      url: "https://aimlapi.com/app/keys",
+      placeholder: "sk-...",
+      configProvider: "aimlapi",
+      baseUrl: "https://api.aimlapi.com/v1",
       needsKey: true,
     },
     {
@@ -319,6 +333,13 @@ export const LOCAL_PRESETS: LocalPreset[] = [
     envKey: "GROQ_API_KEY",
   },
   {
+    id: "aimlapi",
+    name: "constants.aimlapi",
+    baseUrl: "https://api.aimlapi.com/v1",
+    group: "remote",
+    envKey: "AIMLAPI_API_KEY",
+  },
+  {
     id: "deepseek",
     name: "constants.deepseek",
     baseUrl: "https://api.deepseek.com/v1",
@@ -464,6 +485,12 @@ export const SETTINGS_SECTIONS: SectionDef[] = [
         label: "constants.ollamaCloudApiKey",
         type: "password",
         hint: "constants.ollamaCloudHint",
+      },
+      {
+        key: "AIMLAPI_API_KEY",
+        label: "constants.aimlapiApiKey",
+        type: "password",
+        hint: "constants.aimlapiHint",
       },
       {
         key: "ANTHROPIC_API_KEY",
