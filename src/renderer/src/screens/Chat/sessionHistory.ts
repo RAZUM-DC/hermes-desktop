@@ -381,13 +381,20 @@ export function reconcileStreamedWithDb(
   const shouldKeepUnconsumed = (m: ChatMessage): boolean => {
     if (consumedIds.has(m.id)) return false;
     if (consumeCanonicalToolMatch(canonicalToolMatchCounts, m)) return false;
+    // Only bubble messages (user/agent content) need dedup and split checks.
     if (!("kind" in m)) {
       const bubble = m as ChatBubbleMessage;
       const contentKey = `${bubble.role}:${normalizeBubbleContentForMatch(bubble.content || "")}`;
+      // Check for duplicates first.
       if (seenBubbleKeys.has(contentKey)) return false;
-      if (isCoveredByDbBubbleSplit(bubble, dbAssistantSplitSequences)) {
+      // For agent bubbles, also check if covered by a DB split before marking as seen.
+      if (
+        bubble.role === "agent" &&
+        isCoveredByDbBubbleSplit(bubble, dbAssistantSplitSequences)
+      ) {
         return false;
       }
+      // Only mark as seen if we're actually keeping this message.
       seenBubbleKeys.add(contentKey);
     }
     return true;
@@ -429,7 +436,11 @@ export function reconcileStreamedWithDb(
       // always deferred to the trailing suffix — matching the original
       // behavior where they land after all DB result rows.
       const isBubble = !("kind" in sm);
-      if (isBubble && lastConsumedStreamIdx >= 0 && si <= lastConsumedStreamIdx) {
+      if (
+        isBubble &&
+        lastConsumedStreamIdx >= 0 &&
+        si <= lastConsumedStreamIdx
+      ) {
         merged.push(sm);
       } else {
         trailingSuffix.push(sm);

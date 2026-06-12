@@ -380,7 +380,10 @@ describe("reconcileStreamedWithDb", () => {
 
     const merged = reconcileStreamedWithDb(streamed, db);
 
-    expect(merged[merged.length - 1]).toBe(streamedOnly);
+    // The unmatched streamed bubble should appear right after its
+    // preceding user message (u-1), preserving the streamed order
+    // rather than being forced to the bottom.
+    expect(merged[1]).toBe(streamedOnly);
   });
 
   it("does not drop a streamed answer that quotes assistant rows from different turns", () => {
@@ -568,11 +571,11 @@ describe("reconcileStreamedWithDb", () => {
 
     expect(merged.map((m) => m.id)).toEqual([
       "u-1",
+      "tool-call-live-tool:run-1:terminal:2",
       "db-tc-71-call-terminal-1",
       "a-1",
-      "tool-call-live-tool:run-1:terminal:2",
     ]);
-    expect(merged[3]).toMatchObject({
+    expect(merged[1]).toMatchObject({
       kind: "tool_call",
       name: "terminal",
       args: "npm run typecheck",
@@ -611,8 +614,8 @@ describe("reconcileStreamedWithDb", () => {
     expect(merged.map((m) => m.id)).toEqual([
       "u-1",
       "tool-call-call-terminal-1",
-      "a-1",
       "tool-call-live-tool:run-1:terminal:2",
+      "a-1",
     ]);
   });
 
