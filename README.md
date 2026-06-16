@@ -2,7 +2,7 @@
 
 <br/>
 <p align="center">
-  <a href="https://hermes-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Docs-hermes--agent.nousresearch.com-FFD700?style=for-the-badge" alt="Documentation"></a>
+  <a href="https://x.com/HermesOneApp"><img src="https://img.shields.io/badge/Follow Us-000000?style=for-the-badge&logo=x" alt="Twitter"></a>
   <a href="https://discord.gg/Fqu72h8z"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://github.com/fathah/hermes-desktop/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
   <a href="https://hermesagents.cc/"><img src="https://img.shields.io/badge/Download-Releases-FF6600?style=for-the-badge" alt="Releases"></a>
@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/github/downloads/fathah/hermes-desktop/total?style=for-the-badge&color=00B496&label=Total%20Downloads" alt="Downloads">
 </a>
    <a href="https://bankr.bot/launches/0xfda75f77a22b4f4b783bbbb21915ef64d149bba3">
-  <img src="https://img.shields.io/badge/Token-$HD-purple?style=for-the-badge" alt="Downloads">
+  <img src="https://img.shields.io/badge/Token-$HD-purple?style=for-the-badge&logo=ethereum" alt="Downloads">
 </a>
   
 </p>
@@ -24,6 +24,17 @@
   <a href="README.ja-JP.md">日本語</a> ·
   <a href="README.es-LATAM.md">Español (LATAM)</a>
 </p>
+
+<p align="center">
+ <a href="https://www.star-history.com/fathah/hermes-desktop">
+  <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/badge?repo=fathah/hermes-desktop&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/badge?repo=fathah/hermes-desktop" />
+   <img alt="Star History Rank" src="https://api.star-history.com/badge?repo=fathah/hermes-desktop" />
+  </picture>
+ </a>
+</p>
+
 
 > **This project is in active development.** Features may change, and some things might break. If you run into a problem or have an idea, [open an issue](https://github.com/fathah/hermes-desktop/issues). Contributions are welcome!
 
