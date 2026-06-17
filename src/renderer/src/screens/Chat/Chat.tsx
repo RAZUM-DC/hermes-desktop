@@ -117,6 +117,13 @@ function Chat({
   // Whether the worktree panel is visible (only applies when contextFolder is set)
   // Default false so the panel doesn't open automatically and interfere with scrolling
   const [worktreeVisible, setWorktreeVisible] = useState<boolean>(false);
+  // Explicit session-scoped model override — set only when the user picks
+  // from the chat-screen picker (persist:false). Undefined until then so the
+  // TUI gateway bypass in sendMessageViaBestApi is not triggered for normal
+  // chats where the user never changed the model (issue #688).
+  const [sessionModelOverride, setSessionModelOverride] = useState<
+    string | undefined
+  >(undefined);
   const dragCounter = useRef(0);
   const chatInputRef = useRef<ChatInputHandle>(null);
   const queueRef = useRef<QueuedMessage[]>([]);
@@ -418,7 +425,7 @@ function Chat({
     localCommands,
     activeTurnRef,
     contextFolder,
-    sessionModel: modelConfig.currentModel || undefined,
+    sessionModel: sessionModelOverride,
     sendViaDashboard: dashboardTransport.enabled
       ? dashboardTransport.sendMessage
       : undefined,
@@ -596,11 +603,12 @@ function Chat({
                 modelGroups={modelConfig.modelGroups}
                 displayModel={modelConfig.displayModel}
                 onOpen={modelConfig.reload}
-                onSelectModel={(provider, model, baseUrl) =>
+                onSelectModel={(provider, model, baseUrl) => {
                   void modelConfig.selectModel(provider, model, baseUrl, {
                     persist: false,
-                  })
-                }
+                  });
+                  setSessionModelOverride(model || undefined);
+                }}
               />
               <ReasoningEffortPicker
                 value={reasoningEffort}
