@@ -1109,6 +1109,7 @@ function sendMessageViaApi(
   history?: Array<{ role: string; content: string }>,
   attachments?: Attachment[],
   contextFolder?: string,
+  modelOverride?: string,
 ): ChatHandle {
   const mc = getModelConfig(profile);
   const controller = new AbortController();
@@ -1138,7 +1139,7 @@ function sendMessageViaApi(
 
   const reasoningEffort = reasoningEffortForProfile(profile);
   const bodyObj: Record<string, unknown> = {
-    model: mc.model || "hermes-agent",
+    model: modelOverride || mc.model || "hermes-agent",
     messages,
     stream: true,
     ...(_resumeSessionId ? { session_id: _resumeSessionId } : {}),
@@ -1224,7 +1225,7 @@ function sendMessageViaApi(
   function probeRealError(): void {
     // When streaming returns empty, make a non-streaming request to surface the real error
     const probeBodyObj: Record<string, unknown> = {
-      model: mc.model || "hermes-agent",
+      model: modelOverride || mc.model || "hermes-agent",
       messages: [{ role: "user", content: userContent }],
       stream: false,
     };
@@ -1513,6 +1514,7 @@ function sendMessageViaRuns(
   history?: Array<{ role: string; content: string }>,
   attachments?: Attachment[],
   contextFolder?: string,
+  modelOverride?: string,
 ): ChatHandle {
   const mc = getModelConfig(profile);
   const controller = new AbortController();
@@ -1523,7 +1525,7 @@ function sendMessageViaRuns(
     (headersForAuth.Authorization ? `desk-${Date.now()}-${randomUUID()}` : "");
   const ctxSystem = contextFolderSystemMessage(contextFolder);
   const bodyObj: Record<string, unknown> = {
-    model: mc.model || "hermes-agent",
+    model: modelOverride || mc.model || "hermes-agent",
     input: message,
     conversation_history: apiHistory(history),
   };
@@ -1567,6 +1569,7 @@ function sendMessageViaRuns(
       history,
       attachments,
       contextFolder,
+      modelOverride,
     );
   }
 
@@ -2077,6 +2080,7 @@ function sendMessageViaCli(
   profile?: string,
   resumeSessionId?: string,
   attachments?: Attachment[],
+  modelOverride?: string,
 ): ChatHandle {
   // CLI fallback can't pipe multimodal content; inline text-file attachments
   // and ignore images.  The gateway is the supported attachment path; this
@@ -2108,8 +2112,8 @@ function sendMessageViaCli(
     args.push("--resume", resumeSessionId);
   }
 
-  if (mc.model) {
-    args.push("-m", mc.model);
+  if (modelOverride || mc.model) {
+    args.push("-m", modelOverride || mc.model);
   }
 
   const cliProvider = CLI_COMPAT_PROVIDER_OVERRIDE[mc.provider];
@@ -2404,6 +2408,7 @@ async function sendMessageViaNonGatewayApi(
   history?: Array<{ role: string; content: string }>,
   attachments?: Attachment[],
   contextFolder?: string,
+  modelOverride?: string,
 ): Promise<ChatHandle> {
   const approvalCommand = /^\/(?:approve|deny)\b/i.test(message.trim());
   if (!attachments?.length && !approvalCommand) {
@@ -2417,6 +2422,7 @@ async function sendMessageViaNonGatewayApi(
           history,
           attachments,
           contextFolder,
+          modelOverride,
         );
       }
   }
@@ -2429,6 +2435,7 @@ async function sendMessageViaNonGatewayApi(
     history,
     attachments,
     contextFolder,
+    modelOverride,
   );
 }
 
@@ -2440,13 +2447,18 @@ async function sendMessageViaBestApi(
   history?: Array<{ role: string; content: string }>,
   attachments?: Attachment[],
   contextFolder?: string,
+  modelOverride?: string,
 ): Promise<ChatHandle> {
   const approvalCommand = /^\/(?:approve|deny)\b/i.test(message.trim());
+  // Skip the TUI gateway when a session-scoped model override is active — the
+  // TUI gateway reads its model from config.yaml and has no per-request
+  // override mechanism. The API path below already honours modelOverride.
   if (
     shouldUseTuiGatewayClient() &&
     !isRemoteMode() &&
     !attachments?.length &&
-    !approvalCommand
+    !approvalCommand &&
+    !modelOverride
   ) {
     try {
       return await sendMessageViaTuiGateway(
@@ -2473,6 +2485,7 @@ async function sendMessageViaBestApi(
     history,
     attachments,
     contextFolder,
+    modelOverride,
   );
 }
 
@@ -2484,6 +2497,7 @@ async function sendMessageViaBestApiWithLocalRecovery(
   history?: Array<{ role: string; content: string }>,
   attachments?: Attachment[],
   contextFolder?: string,
+  modelOverride?: string,
 ): Promise<ChatHandle> {
   let aborted = false;
   let retrying = false;
@@ -2528,6 +2542,7 @@ async function sendMessageViaBestApiWithLocalRecovery(
         history,
         attachments,
         contextFolder,
+        modelOverride,
       );
       return;
     }
@@ -2538,6 +2553,7 @@ async function sendMessageViaBestApiWithLocalRecovery(
       profile,
       resumeSessionId,
       attachments,
+      modelOverride,
     );
   };
 
@@ -2615,6 +2631,7 @@ async function sendMessageViaBestApiWithLocalRecovery(
     history,
     attachments,
     contextFolder,
+    modelOverride,
   );
 
   return handle;
@@ -2628,6 +2645,7 @@ export async function sendMessage(
   history?: Array<{ role: string; content: string }>,
   attachments?: Attachment[],
   contextFolder?: string,
+  modelOverride?: string,
 ): Promise<ChatHandle> {
   ensureInitialized();
 
@@ -2641,6 +2659,7 @@ export async function sendMessage(
       history,
       attachments,
       contextFolder,
+      modelOverride,
     );
   }
 
@@ -2652,6 +2671,7 @@ export async function sendMessage(
       profile,
       resumeSessionId,
       attachments,
+      modelOverride,
     );
   }
 
@@ -2675,11 +2695,12 @@ export async function sendMessage(
       history,
       attachments,
       contextFolder,
+      modelOverride,
     );
   }
 
   // Fallback to CLI
-  return sendMessageViaCli(message, cb, profile, resumeSessionId, attachments);
+  return sendMessageViaCli(message, cb, profile, resumeSessionId, attachments, modelOverride);
 }
 
 // Lazy init — called on first sendMessage or gateway start

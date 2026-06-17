@@ -49,6 +49,7 @@ interface UseModelConfigResult {
     provider: string,
     model: string,
     baseUrl: string,
+    options?: { persist?: boolean },
   ) => Promise<void>;
 }
 
@@ -134,8 +135,12 @@ export function useModelConfig(profile?: string): UseModelConfigResult {
   }, [reload]);
 
   const selectModel = useCallback(
-    async (provider: string, model: string, baseUrl: string): Promise<void> => {
-      const seq = ++loadSeqRef.current;
+    async (
+      provider: string,
+      model: string,
+      baseUrl: string,
+      { persist = true }: { persist?: boolean } = {},
+    ): Promise<void> => {
       // Named providers (deepseek, groq, anthropic, …) have a hardcoded
       // canonical base_url in `hermes-agent`'s PROVIDER_REGISTRY.  A stored
       // model entry that carries a stale `baseUrl` from an earlier confused
@@ -148,6 +153,16 @@ export function useModelConfig(profile?: string): UseModelConfigResult {
       setCurrentModel(model);
       setCurrentProvider(provider);
       setCurrentBaseUrl(effectiveBaseUrl);
+      // Session-only selection: update local state only, do not write to
+      // config.yaml so the global default model is preserved (issue #688).
+      // Advance the sequence counter so any in-flight reload() triggered by
+      // onConnectionConfigChanged / onModelLibraryChanged cannot clobber the
+      // session-scoped selection with the persisted value.
+      if (!persist) {
+        ++loadSeqRef.current;
+        return;
+      }
+      const seq = ++loadSeqRef.current;
       try {
         await window.hermesAPI.setModelConfig(
           provider,

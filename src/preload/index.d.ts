@@ -368,6 +368,7 @@ interface HermesAPI {
     attachments?: Attachment[],
     contextFolder?: string,
     runId?: string,
+    modelOverride?: string,
   ) => Promise<{ response: string; sessionId?: string }>;
   abortChat: (runId?: string) => Promise<void>;
   transcribeAudio: (

@@ -44,6 +44,9 @@ interface UseChatActionsArgs {
   activeTurnRef: React.MutableRefObject<ActiveTurn | null>;
   /** Working folder bound to this conversation (issue #27), or null. */
   contextFolder: string | null;
+  /** Session-local model override — selected via the chat picker without
+   *  persisting to config.yaml (issue #688). */
+  sessionModel?: string;
   sendViaDashboard?: (
     text: string,
     attachments?: Attachment[],
@@ -106,6 +109,7 @@ export function useChatActions({
   localCommands,
   activeTurnRef,
   contextFolder,
+  sessionModel,
   sendViaDashboard,
   execSlashViaDashboard,
   runBackgroundViaDashboard,
@@ -115,9 +119,11 @@ export function useChatActions({
 }: UseChatActionsArgs): UseChatActionsResult {
   const messagesRef = useRef(messages);
   const isLoadingRef = useRef(isLoading);
+  const sessionModelRef = useRef(sessionModel);
   useEffect(() => {
     messagesRef.current = messages;
     isLoadingRef.current = isLoading;
+    sessionModelRef.current = sessionModel;
   });
 
   const pushUser = useCallback(
@@ -156,6 +162,7 @@ export function useChatActions({
           attachments,
           contextFolder ?? undefined,
           runId,
+          sessionModelRef.current || undefined,
         );
       } catch {
         // onChatError IPC already surfaces this to the user
