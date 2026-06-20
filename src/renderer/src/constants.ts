@@ -128,18 +128,6 @@ export const PROVIDERS = {
       needsKey: true,
     },
     {
-      id: "aimlapi",
-      name: "constants.aimlapiName",
-      desc: "constants.aimlapiDesc",
-      tag: "",
-      envKey: "AIMLAPI_API_KEY",
-      url: "https://aimlapi.com/app/keys",
-      placeholder: "sk-...",
-      configProvider: "aimlapi",
-      baseUrl: "https://api.aimlapi.com/v1",
-      needsKey: true,
-    },
-    {
       id: "openai",
       name: "constants.openaiName",
       desc: "constants.openaiDesc",
@@ -332,13 +320,7 @@ export const LOCAL_PRESETS: LocalPreset[] = [
     group: "remote",
     envKey: "GROQ_API_KEY",
   },
-  {
-    id: "aimlapi",
-    name: "constants.aimlapi",
-    baseUrl: "https://api.aimlapi.com/v1",
-    group: "remote",
-    envKey: "AIMLAPI_API_KEY",
-  },
+
   {
     id: "deepseek",
     name: "constants.deepseek",
@@ -380,6 +362,13 @@ export const LOCAL_PRESETS: LocalPreset[] = [
     baseUrl: "https://api.mistral.ai/v1",
     group: "remote",
     envKey: "MISTRAL_API_KEY",
+  },
+  {
+    id: "aimlapi",
+    name: "constants.aimlapi",
+    baseUrl: "https://api.aimlapi.com/v1",
+    group: "remote",
+    envKey: "AIMLAPI_API_KEY",
   },
 ];
 

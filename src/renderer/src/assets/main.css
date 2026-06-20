@@ -1060,40 +1060,57 @@ body {
    SETUP SCREEN
    ======================================================================== */
 .setup-screen {
-  padding-top: 60px;
+  padding: 48px 24px;
   justify-content: flex-start;
+  overflow-y: auto;
+}
+
+.setup-panel {
+  width: 100%;
+  max-width: min(640px, 92vw);
+  margin: 0 auto;
+  padding: 32px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
 }
 
 .setup-title {
   font-size: 22px;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  text-align: center;
   color: var(--text-primary);
 }
 
 .setup-subtitle {
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--text-secondary);
-  margin-bottom: 32px;
+  text-align: center;
+  margin-bottom: 24px;
 }
 
 .setup-provider-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  max-width: 620px;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .setup-provider-card {
-  padding: 16px 12px;
-  background: var(--bg-secondary);
-  border: 1.5px solid var(--border);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 8px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all var(--transition);
-  text-align: center;
   font-family: var(--font-sans);
   color: var(--text-primary);
 }
@@ -1101,34 +1118,61 @@ body {
 .setup-provider-card:hover {
   border-color: var(--border-bright);
   background: var(--bg-tertiary);
+  transform: translateY(-1px);
 }
 
 .setup-provider-card.selected {
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   background: var(--accent-subtle);
+  box-shadow: inset 0 0 0 1px var(--accent-text);
+}
+
+.setup-provider-card:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+.setup-provider-logo {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--bg-tertiary);
+  transition: background var(--transition);
+}
+
+.setup-provider-card.selected .setup-provider-logo {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .setup-provider-name {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.setup-provider-desc {
   font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 2px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--text-secondary);
 }
 
-.setup-provider-tag {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent-text);
-  margin-top: 6px;
+.setup-provider-card.selected .setup-provider-name {
+  color: var(--text-primary);
+}
+
+.setup-provider-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent-text);
+  color: #fff;
 }
 
 .setup-form {
   width: 100%;
-  max-width: 580px;
 }
 
 .setup-label {
@@ -1190,12 +1234,16 @@ body {
 
 .setup-local-presets {
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 16px;
 }
 
 .setup-local-preset {
-  padding: 6px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
   background: var(--bg-secondary);
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1205,6 +1253,12 @@ body {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.setup-local-preset .brand-logo {
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
 }
 
 .setup-local-preset:hover {
@@ -1241,6 +1295,13 @@ body {
   width: 100%;
   padding: 12px;
   font-size: 15px;
+  margin-top: 4px;
+}
+
+/* Keep the disabled CTA legible: a visibly dimmed (not invisible) label. */
+.setup-continue:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* ========================================================================
