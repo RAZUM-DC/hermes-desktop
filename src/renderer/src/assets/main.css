@@ -1937,6 +1937,29 @@ body {
   background: var(--bg-elevated);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36);
   font-family: var(--font-sans);
+  /* Open animation scales from the anchored top-left corner. */
+  transform-origin: top left;
+  will-change: transform, opacity;
+}
+
+/* Height-animating wrapper (motion `layout`) that clips the cross-sliding
+   pages so neither spills past the rounded menu edge during the swap. */
+.sidebar-session-menu-body {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sidebar-session-menu-page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* While a page is exiting (popLayout pins it absolutely), it must overlay the
+   incoming page at full width rather than collapse. */
+.sidebar-session-menu-body > .sidebar-session-menu-page {
+  width: 100%;
 }
 
 .sidebar-session-menu-item {
