@@ -32,6 +32,10 @@ import installEn from "./locales/en/install";
 import constantsEn from "./locales/en/constants";
 import kanbanEn from "./locales/en/kanban";
 import diagnoseEn from "./locales/en/diagnose";
+import commonRu from "./locales/ru/common";
+import navigationRu from "./locales/ru/navigation";
+import welcomeRu from "./locales/ru/welcome";
+import setupRu from "./locales/ru/setup";
 import commonHe from "./locales/he/common";
 import navigationHe from "./locales/he/navigation";
 import discoverHe from "./locales/he/discover";
@@ -247,6 +251,14 @@ import kanbanTr from "./locales/tr/kanban";
 import diagnoseTr from "./locales/tr/diagnose";
 
 export const resources = {
+  ru: {
+    translation: {
+      common: commonRu,
+      navigation: navigationRu,
+      welcome: welcomeRu,
+      setup: setupRu,
+    },
+  },
   en: {
     translation: {
       common: commonEn,
