@@ -1,3 +1,4 @@
+electronVersion: 39.2.6
 appId: tools.razum.hermes-desktop
 productName: РАЗУМ Ассистент
 directories:
