@@ -36,6 +36,7 @@ import commonRu from "./locales/ru/common";
 import navigationRu from "./locales/ru/navigation";
 import welcomeRu from "./locales/ru/welcome";
 import setupRu from "./locales/ru/setup";
+import settingsRu from "./locales/ru/settings";
 import commonHe from "./locales/he/common";
 import navigationHe from "./locales/he/navigation";
 import discoverHe from "./locales/he/discover";
@@ -257,6 +258,7 @@ export const resources = {
       navigation: navigationRu,
       welcome: welcomeRu,
       setup: setupRu,
+      settings: settingsRu,
     },
   },
   en: {
