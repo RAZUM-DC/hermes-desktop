@@ -800,6 +800,7 @@ function Settings({ profile }: { profile?: string }): React.JSX.Element {
             )}
           </div>
 {connMode !== "remote" && (
+            <>
           {parsedVersion?.updateInfo && (
             <div className="settings-hermes-update-badge">
               {parsedVersion.updateInfo}
@@ -842,6 +843,7 @@ function Settings({ profile }: { profile?: string }): React.JSX.Element {
               {dumpRunning ? t("settings.running") : t("settings.debugDump")}
             </button>
           </div>
+            </>
           )}
           <div className="settings-field" style={{ marginTop: 12 }}>
             <label className="settings-field-label">
