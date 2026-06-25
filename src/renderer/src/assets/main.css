@@ -5276,8 +5276,7 @@ body {
   position: fixed;
   inset: 0;
   z-index: 49;
-  background: rgba(5, 8, 12, 0.42);
-  backdrop-filter: blur(2px);
+  background: rgba(5, 8, 12, 0.58);
 }
 
 .slash-menu {
@@ -5326,16 +5325,26 @@ body {
 }
 
 .slash-menu-list {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  height: min(420px, calc(100vh - 256px));
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px;
 }
 
-.slash-menu-group + .slash-menu-group {
-  margin-top: 10px;
+.slash-menu-virtual-content {
+  position: relative;
+  width: 100%;
+  contain: layout paint style;
 }
 
 .slash-menu-group-label {
-  padding: 5px 10px;
+  position: absolute;
+  inset: 0 0 auto;
+  box-sizing: border-box;
+  padding: 7px 10px 5px;
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
@@ -5344,12 +5353,14 @@ body {
 }
 
 .slash-menu-item {
+  position: absolute;
+  inset: 0 0 auto;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: 28px minmax(130px, 0.75fr) minmax(0, 1.5fr) auto;
   align-items: center;
   gap: 12px;
   width: 100%;
-  min-height: 52px;
   padding: 6px 10px;
   border: none;
   background: none;

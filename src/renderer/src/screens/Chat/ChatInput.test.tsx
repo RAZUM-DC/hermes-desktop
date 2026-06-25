@@ -16,7 +16,9 @@ import { ChatInput } from "./ChatInput";
 
 afterEach(cleanup);
 
-function renderInput(): {
+function renderInput(
+  slashCommands?: React.ComponentProps<typeof ChatInput>["slashCommands"],
+): {
   onSubmit: ReturnType<typeof vi.fn>;
   textarea: HTMLTextAreaElement;
 } {
@@ -28,6 +30,7 @@ function renderInput(): {
       onSubmit={onSubmit}
       onQuickAsk={vi.fn()}
       onAbort={vi.fn()}
+      slashCommands={slashCommands}
     />,
   );
   const textarea = screen.getByPlaceholderText(
@@ -93,5 +96,25 @@ describe("ChatInput — slash command palette", () => {
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(textarea.value).toBe("/lea");
+  });
+
+  it("virtualizes large command catalogs", () => {
+    const commands = Array.from({ length: 1_000 }, (_, index) => ({
+      name: `/command-${index}`,
+      description: `Command ${index}`,
+      category: "agent" as const,
+    }));
+    const { textarea } = renderInput(commands);
+
+    fireEvent.change(textarea, { target: { value: "/" } });
+
+    expect(screen.getByText("1000 commands")).toBeTruthy();
+    expect(screen.getAllByRole("option").length).toBeLessThan(30);
+    expect(screen.getByText("/command-0")).toBeTruthy();
+    expect(screen.queryByText("/command-999")).toBeNull();
+
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    expect(screen.getByText("/command-999")).toBeTruthy();
+    expect(screen.queryByText("/command-0")).toBeNull();
   });
 });
