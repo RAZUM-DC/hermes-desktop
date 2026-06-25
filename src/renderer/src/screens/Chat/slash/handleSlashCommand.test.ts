@@ -4,14 +4,18 @@ import { DESKTOP_SLASH_COMMANDS } from "./desktopCommands";
 import { handleSlashCommand } from "./handleSlashCommand";
 import type { AgentSlashCommand, SlashCommandContext } from "./types";
 
-function createMockContext(overrides?: Partial<SlashCommandContext>): SlashCommandContext {
+function createMockContext(
+  overrides?: Partial<SlashCommandContext>,
+): SlashCommandContext {
   return {
     attachments: [],
     isModelBusy: false,
-    requestAgent: vi.fn().mockResolvedValue({ output: "mock agent output" }),
+    executeAgentSlash: vi.fn().mockResolvedValue({ kind: "done" }),
     submitPrompt: vi.fn().mockResolvedValue(undefined),
     enqueuePrompt: vi.fn(),
     addSystemMessage: vi.fn(),
+    executeDesktopSlash: vi.fn().mockResolvedValue(true),
+    renderSlashHelp: vi.fn().mockReturnValue("help"),
     openSettings: vi.fn(),
     openDialog: vi.fn(),
     startNewChat: vi.fn(),
@@ -50,18 +54,44 @@ describe("handleSlashCommand", () => {
     const ctx = createMockContext();
     const res = await handleSlashCommand("/status", catalog, ctx);
     expect(res).toEqual({ type: "handled" });
-    expect(ctx.requestAgent).toHaveBeenCalledWith("slash.exec", {
-      command: "status",
-      session_id: "",
-    });
+    expect(ctx.executeAgentSlash).toHaveBeenCalledWith(
+      "/status",
+      ctx.addSystemMessage,
+    );
   });
 
   it("routes model command correctly to submitPrompt", async () => {
     const ctx = createMockContext();
-    const res = await handleSlashCommand("/explain-selection make it simple", catalog, ctx);
+    const res = await handleSlashCommand(
+      "/explain-selection make it simple",
+      catalog,
+      ctx,
+    );
     expect(res.type).toBe("submitted");
     expect(ctx.submitPrompt).toHaveBeenCalledTimes(1);
     expect(ctx.enqueuePrompt).not.toHaveBeenCalled();
+  });
+
+  it("formats an Agent send directive before submitting it", async () => {
+    const ctx = createMockContext({
+      executeAgentSlash: vi.fn().mockResolvedValue({
+        kind: "send",
+        message: "  expanded model prompt  ",
+        source: "skill",
+      }),
+    });
+    const res = await handleSlashCommand("/status", catalog, ctx);
+
+    expect(res.type).toBe("submitted");
+    expect(ctx.submitPrompt).toHaveBeenCalledWith({
+      content: "expanded model prompt",
+      attachments: [],
+      metadata: {
+        source: "slash-command",
+        route: "agent-skill",
+        command: "status",
+      },
+    });
   });
 
   it("queues model command when model is busy", async () => {
@@ -87,13 +117,11 @@ describe("handleSlashCommand", () => {
     expect(ctx.submitPrompt).not.toHaveBeenCalled();
   });
 
-  it("rejects command when busy and allowWhileBusy is false", async () => {
+  it("queues model command when busy even when it cannot execute concurrently", async () => {
     const ctx = createMockContext({ isModelBusy: true });
     const res = await handleSlashCommand("/explain-selection", catalog, ctx);
-    expect(res).toEqual({
-      type: "error",
-      message: "/explain-selection cannot run while the current turn is active",
-    });
+    expect(res.type).toBe("queued");
+    expect(ctx.enqueuePrompt).toHaveBeenCalledTimes(1);
   });
 
   it("returns error for unknown command without hitting LLM", async () => {
@@ -110,9 +138,9 @@ describe("handleSlashCommand", () => {
     const ctx = createMockContext();
     const res = await handleSlashCommand("/c", catalog, ctx);
     expect(res.type).toBe("handled");
-    expect(ctx.requestAgent).toHaveBeenCalledWith("slash.exec", {
-      command: "c",
-      session_id: "",
-    });
+    expect(ctx.executeAgentSlash).toHaveBeenCalledWith(
+      "/c",
+      ctx.addSystemMessage,
+    );
   });
 });

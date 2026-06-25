@@ -44,7 +44,7 @@ type CommandDispatchResponse =
  */
 export type SlashExecOutcome =
   | { kind: "done" }
-  | { kind: "send"; message: string }
+  | { kind: "send"; message: string; source: "send" | "skill" }
   | { kind: "error"; message: string };
 
 export interface ExecuteSlashOptions {
@@ -140,7 +140,7 @@ export async function executeSlash(
       }
       if (dispatched.type === "skill")
         sys(`⚡ loading skill: ${dispatched.name}`);
-      return { kind: "send", message: msg };
+      return { kind: "send", message: msg, source: dispatched.type };
     }
   }
 }

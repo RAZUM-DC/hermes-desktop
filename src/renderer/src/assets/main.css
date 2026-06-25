@@ -5326,6 +5326,20 @@ body {
   background: var(--bg-hover);
 }
 
+.slash-menu-item-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.1s;
+}
+
+.slash-menu-item:hover .slash-menu-item-icon,
+.slash-menu-item-active .slash-menu-item-icon {
+  color: var(--accent-text, var(--text-primary));
+}
+
 .slash-menu-item-name {
   font-size: 13px;
   font-weight: 600;

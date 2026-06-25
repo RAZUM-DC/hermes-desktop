@@ -1,5 +1,5 @@
 import type { Attachment } from "../../../../../shared/attachments";
-import type { GatewayRequest } from "../slashExec";
+import type { SlashExecOutcome } from "../slashExec";
 
 export type SlashCommandTarget = "desktop" | "agent" | "model";
 
@@ -48,10 +48,15 @@ export interface SlashCommandContext {
   attachments: Attachment[];
   isModelBusy: boolean;
 
-  requestAgent: GatewayRequest;
+  executeAgentSlash: (
+    command: string,
+    sys: (text: string) => void,
+  ) => Promise<SlashExecOutcome>;
   submitPrompt: (submission: PreparedModelSubmission) => Promise<void>;
   enqueuePrompt: (submission: PreparedModelSubmission) => void;
   addSystemMessage: (content: string) => void;
+  executeDesktopSlash: (command: string) => Promise<boolean>;
+  renderSlashHelp: () => string;
 
   openSettings: (section?: string) => void;
   openDialog: (dialog: DesktopDialog) => void;
@@ -117,4 +122,14 @@ export interface SlashCommandCatalog {
   byName: Map<string, SlashCommandDefinition>;
   aliases: Map<string, string>;
   resolve: (name: string) => SlashCommandDefinition | undefined;
+}
+
+export interface AgentCommandsCatalogResponse {
+  canon?: Record<string, string>;
+  categories?: Array<{
+    name: string;
+    pairs: [string, string][];
+  }>;
+  pairs?: [string, string][];
+  warning?: string;
 }

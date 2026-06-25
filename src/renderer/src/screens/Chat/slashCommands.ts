@@ -4,6 +4,7 @@ export interface SlashCommand {
   category: "chat" | "agent" | "tools" | "info";
   /** If true, the command is handled locally instead of sent to the backend */
   local?: boolean;
+  takesArgs?: boolean;
 }
 
 export const SLASH_COMMANDS: SlashCommand[] = [

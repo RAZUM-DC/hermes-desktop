@@ -12,15 +12,15 @@ It mirrors hermes-agent's reference client (`web/src/lib/slashExec.ts`) so every
 
 ## Local vs gateway commands
 
-Commands flagged `local: true` or in the `info` category are handled entirely in the renderer and never reach the gateway; everything else is routed through the pipeline.
+Every typed slash command is resolved through the merged catalog before execution. Ownership is explicit (`target: "desktop" | "agent" | "model"`); display categories such as `info` do not determine routing.
 
-A handful of commands (`/new`, `/clear`, `/fast`, `/usage`) are resolved client-side by `useLocalCommands`. The submit handler [[src/renderer/src/screens/Chat/hooks/useChatActions.ts#useChatActions]] checks those first, then routes any remaining `/…` text through the dashboard transport's slash pipeline — falling back to plain-text send only on the legacy (non-dashboard) transport.
+Desktop-only commands delegate to local renderer handlers, Agent commands use the gateway command pipeline, and model commands build a prompt through the shared model-submission formatter. The legacy transport reports Agent commands as unavailable instead of sending raw `/…` text to the model.
 
 ## Commands never queue
 
 Slash commands run on the gateway's **persistent slash-worker subprocess**, concurrent with any in-flight turn — so they respond instantly and must NOT sit in the busy queue behind a running turn (only plain prompts queue).
 
-`handleSubmitOrQueue` in [[src/renderer/src/screens/Chat/Chat.tsx]] dispatches any `/…` text immediately (for local commands or whenever the dashboard transport is active) instead of queueing. The `slash.exec` call sets no loading/active-turn state, so it can't collide with a streaming turn. The one exception is a command that resolves to a `send` directive (an agent prompt needing the single-flight main session): if a turn is already running it is deferred onto the queue via `enqueueMessage` rather than colliding. The legacy transport has no worker, so its slash commands still queue.
+`handleSubmitOrQueue` in [[src/renderer/src/screens/Chat/Chat.tsx]] dispatches every `/…` input immediately to the central router. Desktop and slash-worker commands can complete concurrently; model commands and Agent `send`/skill directives are formatted once and queued when the main model turn is busy.
 
 Because no global loading state is set, the slash branch shows its own feedback: it inserts an in-place `⏳ Running …` agent bubble, buffers the pipeline output, and replaces that bubble with the result (or `error: …`) when the command resolves — otherwise a slow or unreachable gateway would leave the user staring at nothing.
 
@@ -44,7 +44,7 @@ Streamed reasoning and tool calls are folded into compact, collapsible transcrip
 
 ## Bubble hover timestamp
 
-Each user/assistant bubble reveals a relative "time ago" label on row hover, so the transcript stays uncluttered at rest but is still scrutable when a user wants to know *when* something was said.
+Each user/assistant bubble reveals a relative "time ago" label on row hover, so the transcript stays uncluttered at rest but is still scrutable when a user wants to know _when_ something was said.
 
 The canonical time comes from state.db: [[src/renderer/src/screens/Chat/sessionHistory.ts#dbItemsToChatMessages]] copies each row's `timestamp` onto the `ChatBubbleMessage`, and [[src/renderer/src/screens/Chat/sessionHistory.ts#reconcileAfterDbRefresh|the end-of-stream reconcile]] adopts it onto the matching streamed bubble (via `mergeDbMetadataIntoStreamed`) so a live turn picks up its real time after refresh without remounting. state.db stores times in **seconds**, so `toEpochMs` in MessageRow scales any sub-`1e12` value up to milliseconds before use (otherwise it renders as ~Jan 1970). [[src/renderer/src/screens/Chat/MessageRow.tsx#formatBubbleTime]] builds the label with date-fns `formatDistanceToNowStrict` (e.g. "5 minutes ago", "just now" under 10s), with `formatBubbleTimeAbsolute` supplying the exact date/time as the `<time>` element's `title`/`dateTime`. The `.chat-message:hover .chat-bubble-time` CSS fades it in below the bubble, anchored to `.chat-message` because `.chat-bubble`'s own `overflow` would clip it.
 
@@ -64,6 +64,8 @@ It maps to the gateway's `prompt.background` RPC, which spawns a separate agent 
 
 The central slash command architecture in [[src/renderer/src/screens/Chat/slash/handleSlashCommand.ts#handleSlashCommand]] classifies every slash command into a discriminated union (`target: "desktop" | "agent" | "model"`). Unrecognized commands return an error instead of reaching the model as prose.
 
+The command palette and executor share a catalog built by [[src/renderer/src/screens/Chat/slash/commandCatalog.ts#createSlashCatalog]]. Hermes Agent metadata comes from `commands.catalog`; Desktop commands are merged after collision validation, and upstream names/aliases are normalized from `/name` to the router's canonical `name`.
+
 ### Desktop commands
 
 Desktop commands in [[src/renderer/src/screens/Chat/slash/desktopCommands.ts#DESKTOP_SLASH_COMMANDS]] handle local Electron/renderer UI operations such as opening settings.
@@ -74,5 +76,9 @@ Agent commands forward upstream via [[src/renderer/src/screens/Chat/slash/execut
 
 ### Model commands
 
-Model commands pass through [[src/renderer/src/screens/Chat/slash/prepareModelSubmission.ts#prepareModelSubmission]] before entering the standard chat transport.
+Model commands and Agent `send`/skill directives pass through [[src/renderer/src/screens/Chat/slash/prepareModelSubmission.ts#prepareModelSubmission]] before entering the standard chat transport. This is the only slash route allowed to submit model content.
+
+### Command icons
+
+Visual presentation in the autocomplete popup is handled by [[src/renderer/src/screens/Chat/slash/SlashCommandIcon.tsx#SlashCommandIcon]], mapping command names to Lucide icons with fallback defaults and a custom SVG registry.
 

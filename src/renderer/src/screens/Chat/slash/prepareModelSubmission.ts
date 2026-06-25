@@ -20,7 +20,10 @@ export async function prepareModelSubmission(
 ): Promise<PrepareSubmissionResult> {
   const content = draft.content.trim();
   if (!content) {
-    return { ok: false, error: `/${source.command} produced an empty model prompt` };
+    return {
+      ok: false,
+      error: `/${source.command} produced an empty model prompt`,
+    };
   }
 
   const attachments = draft.attachments ?? [];

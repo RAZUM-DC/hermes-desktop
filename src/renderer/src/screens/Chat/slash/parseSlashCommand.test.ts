@@ -39,7 +39,9 @@ describe("parseSlashCommand", () => {
   });
 
   it("preserves argument case and internal whitespace", () => {
-    const res = parseSlashCommand("/explain   Const Foo = 'BAR'  \n next line ");
+    const res = parseSlashCommand(
+      "/explain   Const Foo = 'BAR'  \n next line ",
+    );
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.command.args).toBe("Const Foo = 'BAR'  \n next line");

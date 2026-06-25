@@ -30,7 +30,11 @@ export async function handleSlashCommand(
   }
 
   // Busy check policy
-  if (context.isModelBusy && commandDef.allowWhileBusy === false) {
+  if (
+    context.isModelBusy &&
+    commandDef.target !== "model" &&
+    commandDef.allowWhileBusy === false
+  ) {
     return {
       type: "error",
       message: `/${parsed.command.name} cannot run while the current turn is active`,
@@ -38,7 +42,10 @@ export async function handleSlashCommand(
   }
 
   // Attachment check policy
-  if (context.attachments.length > 0 && commandDef.supportsAttachments !== true && commandDef.target !== "model") {
+  if (
+    context.attachments.length > 0 &&
+    commandDef.supportsAttachments !== true
+  ) {
     return {
       type: "error",
       message: `/${parsed.command.name} does not accept attachments`,

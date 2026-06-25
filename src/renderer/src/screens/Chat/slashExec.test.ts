@@ -84,6 +84,7 @@ describe("executeSlash", () => {
     expect(outcome).toEqual({
       kind: "send",
       message: "search the web for otters",
+      source: "send",
     });
   });
 
@@ -102,7 +103,11 @@ describe("executeSlash", () => {
     });
 
     expect(sys).toHaveBeenCalledWith("⚡ loading skill: pdf");
-    expect(outcome).toEqual({ kind: "send", message: "use the pdf skill" });
+    expect(outcome).toEqual({
+      kind: "send",
+      message: "use the pdf skill",
+      source: "skill",
+    });
   });
 
   it("follows an alias to its target command", async () => {

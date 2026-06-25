@@ -12,6 +12,7 @@ import { Square as Stop, Slash, Paperclip, Mic, ArrowUp } from "lucide-react";
 import { isImeComposing } from "./keyboard";
 import { useI18n } from "../../components/useI18n";
 import { SLASH_COMMANDS, type SlashCommand } from "./slashCommands";
+import { SlashCommandIcon } from "./slash/SlashCommandIcon";
 import { useInputHistory } from "./hooks/useInputHistory";
 import { useVoiceInput } from "./hooks/useVoiceInput";
 import {
@@ -55,6 +56,7 @@ interface ChatInputProps {
   /** Controls rendered inline in the bottom toolbar row (model + folder
    * pickers) so they share the composer's single bordered container. */
   toolbarExtras?: React.ReactNode;
+  slashCommands?: SlashCommand[];
   onSubmit: (text: string, attachments: Attachment[]) => void;
   onQuickAsk: (text: string, attachments: Attachment[]) => void;
   onAbort: () => void;
@@ -71,6 +73,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       contextUsage,
       readiness,
       toolbarExtras,
+      slashCommands = SLASH_COMMANDS,
       onSubmit,
       onQuickAsk,
       onAbort,
@@ -260,11 +263,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const filteredSlashCommands = useMemo(
       () =>
         slashMenuOpen
-          ? SLASH_COMMANDS.filter((cmd) =>
+          ? slashCommands.filter((cmd) =>
               cmd.name.toLowerCase().startsWith(slashFilter.toLowerCase()),
             )
           : [],
-      [slashMenuOpen, slashFilter],
+      [slashCommands, slashMenuOpen, slashFilter],
     );
 
     function clearAfterSend(text: string): void {
@@ -295,15 +298,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     function handleSlashSelect(cmd: SlashCommand): void {
       setSlashMenuOpen(false);
-      // Local / info commands dispatch immediately — let parent route through onSubmit
-      if (cmd.local || cmd.category === "info") {
+      if (!cmd.takesArgs) {
         setInput("");
         if (inputRef.current) inputRef.current.style.height = "auto";
         onSubmit(cmd.name, []);
         return;
       }
-      // Backend commands that take arguments: insert prefix and wait for the user
-      setInput(cmd.name + " ");
+      setInput(`${cmd.name} `);
       inputRef.current?.focus();
     }
 
@@ -443,6 +444,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                   onMouseEnter={() => setSlashSelectedIndex(i)}
                   onClick={() => handleSlashSelect(cmd)}
                 >
+                  <SlashCommandIcon
+                    name={cmd.name}
+                    category={cmd.category}
+                    className="slash-menu-item-icon"
+                    size={15}
+                  />
                   <span className="slash-menu-item-name">{cmd.name}</span>
                   <span className="slash-menu-item-desc">
                     {cmd.description}

@@ -1,4 +1,3 @@
-import { executeSlash } from "../slashExec";
 import { prepareModelSubmission } from "./prepareModelSubmission";
 import type {
   AgentSlashCommand,
@@ -16,12 +15,10 @@ export async function executeAgentCommand(
   parsed: ParsedSlashCommand,
   context: SlashCommandContext,
 ): Promise<SlashCommandResult> {
-  const outcome = await executeSlash({
-    command: parsed.rawInput,
-    sessionId: context.sessionId ?? "",
-    request: context.requestAgent,
-    sys: context.addSystemMessage,
-  });
+  const outcome = await context.executeAgentSlash(
+    parsed.rawInput,
+    context.addSystemMessage,
+  );
 
   if (outcome.kind === "done") {
     return { type: "handled" };
@@ -34,7 +31,10 @@ export async function executeAgentCommand(
   // outcome.kind === "send"
   const prep = await prepareModelSubmission(
     { content: outcome.message, attachments: context.attachments },
-    { type: "agent-send", command: parsed.name },
+    {
+      type: outcome.source === "skill" ? "agent-skill" : "agent-send",
+      command: parsed.name,
+    },
     context,
   );
 
