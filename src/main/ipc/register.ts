@@ -1489,10 +1489,37 @@ export function registerIpcHandlers(context: IpcContext): void {
   );
 
   // Skills
-  ipcMain.handle("list-installed-skills", (_event, profile?: string) => {
+  ipcMain.handle("list-installed-skills", async (_event, profile?: string) => {
     const conn = getConnectionConfig();
     if (conn.mode === "ssh" && conn.ssh)
       return sshListInstalledSkills(conn.ssh, profile);
+    // Гибрид remote: список активных скиллов рантайма через REST дашборда
+    // ({remoteUrl}/api/skills, шим проксирует на :9119). Read-only — установка/
+    // удаление в remote управляется централизованно (governance), не из клиента.
+    if (conn.mode === "remote" && conn.remoteUrl) {
+      try {
+        const base = conn.remoteUrl.replace(/\/+$/, "");
+        const resp = await fetch(base + "/api/skills", {
+          headers: conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {},
+        });
+        if (resp.ok) {
+          const arr = (await resp.json()) as Array<{
+            name: string;
+            description?: string;
+            category?: string;
+          }>;
+          return arr.map((s) => ({
+            name: s.name,
+            category: s.category || "",
+            description: s.description || "",
+            path: "",
+          }));
+        }
+      } catch {
+        // fall through to empty
+      }
+      return [];
+    }
     return listInstalledSkills(profile);
   });
   ipcMain.handle("list-bundled-skills", () => {
