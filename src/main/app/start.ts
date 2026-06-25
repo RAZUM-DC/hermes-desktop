@@ -1,8 +1,12 @@
 import {
   app,
   BrowserWindow,
+  globalShortcut,
+  Menu,
+  nativeImage,
   session,
   shell,
+  Tray,
 } from "electron";
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
@@ -26,12 +30,16 @@ import { buildMenu } from "./menu";
 import { setupUpdater } from "./updater";
 import { startCompanion, stopCompanion } from "../companion";
 
-const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "Hermes One";
+const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "РАЗУМ Ассистент";
 const OPEN_DEVTOOLS_ON_START =
   process.env.HERMES_OPEN_DEVTOOLS === "1" ||
   process.env.HERMES_DESKTOP_OPEN_DEVTOOLS === "1";
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+const QUICK_CALL_SHORTCUT =
+  process.env.HERMES_DESKTOP_HOTKEY?.trim() || "Control+Shift+Space";
 const activeRuns = new Map<string, () => void>();
 
 export function startMainProcess(): void {
@@ -99,6 +107,8 @@ export function startMainProcess(): void {
 
     createWindow();
     buildMenu({ getMainWindow: () => mainWindow, openExternalUrl });
+    createTray();
+    registerQuickCallShortcut();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -110,6 +120,10 @@ export function startMainProcess(): void {
   });
 
   app.on("before-quit", () => {
+    isQuitting = true;
+    globalShortcut.unregisterAll();
+    tray?.destroy();
+    tray = null;
     stopCompanion();
     stopHealthPolling();
     for (const abort of activeRuns.values()) abort();
@@ -141,6 +155,54 @@ function openExternalUrl(rawUrl: unknown): void {
   });
 }
 
+function showMainWindow(): void {
+  if (!mainWindow) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray(): void {
+  if (tray) return;
+  try {
+    const img = nativeImage.createFromPath(icon);
+    tray = new Tray(img.isEmpty() ? icon : img);
+  } catch {
+    tray = new Tray(icon);
+  }
+  tray.setToolTip(APP_NAME);
+  const menu = Menu.buildFromTemplate([
+    { label: "Открыть " + APP_NAME, click: () => showMainWindow() },
+    { type: "separator" },
+    {
+      label: "Выход",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setContextMenu(menu);
+  tray.on("click", () => {
+    if (mainWindow?.isVisible() && !mainWindow.isMinimized()) mainWindow.hide();
+    else showMainWindow();
+  });
+}
+
+function registerQuickCallShortcut(): void {
+  try {
+    const ok = globalShortcut.register(QUICK_CALL_SHORTCUT, () =>
+      showMainWindow(),
+    );
+    if (!ok) console.warn("[HOTKEY] Failed to register", QUICK_CALL_SHORTCUT);
+  } catch (err) {
+    console.warn("[HOTKEY] register error", err);
+  }
+}
+
 function createWindow(): void {
   const rendererHtmlPath = join(__dirname, "../renderer/index.html");
   mainWindow = new BrowserWindow({
@@ -168,6 +230,14 @@ function createWindow(): void {
   });
 
   mainWindow.on("ready-to-show", () => mainWindow?.show());
+  // Свернуть в трей вместо выхода: окно живёт в трее, quick-call хоткей
+  // мгновенно его возвращает. Реальный выход — через меню трея / before-quit.
+  mainWindow.on("close", (event) => {
+    if (!isQuitting && tray) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
   mainWindow.webContents.once("did-finish-load", () => {
     if (OPEN_DEVTOOLS_ON_START) {
       mainWindow?.webContents.openDevTools({ mode: "detach" });
