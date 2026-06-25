@@ -841,11 +841,7 @@ function Layout({
 
         {visitedViews.has("skills") && (
           <div style={paneStyle("skills")}>
-            {remoteMode ? (
-              <RemoteNotice feature="Skills" />
-            ) : (
-              <Skills profile={activeProfile} />
-            )}
+            <Skills profile={activeProfile} />
           </div>
         )}
 
