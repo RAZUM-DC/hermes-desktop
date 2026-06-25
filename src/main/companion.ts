@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
 import { app } from "electron";
+import { HERMES_HOME } from "./installer";
 
 // Hermes Companion — локальный сопроцесс (config_owner): enroll, LLM/mem-шимы и
 // супервизия tool-connector'а (локальные инструменты fs/shell на машине
@@ -36,6 +37,9 @@ export function startCompanion(): void {
       detached: false,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
+      // КРИТИЧНО: companion пишет desktop.json в ТОТ ЖЕ HERMES_HOME, что
+      // читает приложение (иначе remote-конфиг не виден -> остаётся Welcome).
+      env: { ...process.env, HERMES_HOME },
     });
     proc.stdout?.on("data", (d) =>
       console.log("[companion]", String(d).trimEnd()),
