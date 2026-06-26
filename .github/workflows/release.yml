@@ -270,8 +270,7 @@ jobs:
 
   publish:
     name: Publish Release
-    needs:
-      [prepare, release_mac, release_linux, release_windows, generate_winget]
+    needs: [prepare, release_windows]
     if: needs.prepare.outputs.is_dry_run == 'false' && needs.prepare.outputs.tag_exists == 'false'
     runs-on: ubuntu-latest
     steps:
@@ -320,9 +319,10 @@ jobs:
             !zipNames.some((name) => name.includes("-x64-")) ||
             !zipNames.some((name) => name.includes("-arm64-"))
           ) {
-            throw new Error(
-              `Expected x64 and arm64 macOS zips, found: ${zipNames.join(", ")}`,
+            console.log(
+              `Skip macOS update metadata — mac zips absent (found: ${zipNames.join(", ") || "none"}).`,
             );
+            process.exit(0);
           }
 
           const files = zipNames.map((name) => {
@@ -361,6 +361,7 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: Hermes Desktop ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true
+          fail_on_unmatched_files: false
           files: |
             artifacts/*.dmg
             artifacts/*.zip
