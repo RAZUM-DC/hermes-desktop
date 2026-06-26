@@ -89,7 +89,9 @@ export function startMainProcess(): void {
     );
 
     // Hybrid: запускаем локальный companion (enroll, шимы, tool-connector).
-    startCompanion();
+    // Передаём доступ к mainWindow, чтобы in-app OAuth-окно открывалось как
+    // дочернее (parent) при state=enrolling.
+    startCompanion(() => mainWindow);
 
     app.on("browser-window-created", (_, window) => {
       optimizer.watchWindowShortcuts(window);
