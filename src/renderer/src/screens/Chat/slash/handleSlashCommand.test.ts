@@ -50,6 +50,30 @@ describe("handleSlashCommand", () => {
     expect(ctx.submitPrompt).not.toHaveBeenCalled();
   });
 
+  it("runs desktop (uiAction) commands even when attachments are staged", async () => {
+    // Desktop UI actions never consume attachments (they leave them in the
+    // composer), so the attachment guard must not block them — otherwise
+    // typing `/settings` with a file staged would error instead of running.
+    const ctx = createMockContext({
+      attachments: [{ id: "att-1" }] as SlashCommandContext["attachments"],
+    });
+    const res = await handleSlashCommand("/settings", catalog, ctx);
+    expect(res).toEqual({ type: "handled", output: undefined });
+    expect(ctx.openSettings).toHaveBeenCalled();
+  });
+
+  it("still rejects attachments for agent commands lacking support", async () => {
+    const ctx = createMockContext({
+      attachments: [{ id: "att-1" }] as SlashCommandContext["attachments"],
+    });
+    const res = await handleSlashCommand("/status", catalog, ctx);
+    expect(res).toEqual({
+      type: "error",
+      message: "/status does not accept attachments",
+    });
+    expect(ctx.executeAgentSlash).not.toHaveBeenCalled();
+  });
+
   it("routes agent command correctly via RPC", async () => {
     const ctx = createMockContext();
     const res = await handleSlashCommand("/status", catalog, ctx);

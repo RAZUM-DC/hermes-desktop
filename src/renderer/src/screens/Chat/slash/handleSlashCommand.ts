@@ -41,8 +41,17 @@ export async function handleSlashCommand(
     };
   }
 
-  // Attachment check policy
+  // Attachment check policy. Desktop commands are local UI actions / info
+  // displays that never consume attachments — they leave any staged files in
+  // the composer for the next real message — so they're exempt, matching the
+  // pre-central-router behavior where local commands ran unconditionally.
+  // Without this exemption, typing e.g. `/new` with a file staged would error
+  // ("/new does not accept attachments"); and since `uiAction` commands push
+  // no user bubble, that error would render orphaned with no preceding turn.
+  // Only agent/model commands, which actually route content upstream, must
+  // declare `supportsAttachments`.
   if (
+    commandDef.target !== "desktop" &&
     context.attachments.length > 0 &&
     commandDef.supportsAttachments !== true
   ) {
