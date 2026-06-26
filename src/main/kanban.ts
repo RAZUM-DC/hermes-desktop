@@ -365,7 +365,21 @@ export async function getTask(
   if (isRemoteOnlyMode()) {
     const r = await remoteKanbanGet("/tasks/" + encodeURIComponent(taskId));
     if (!r.success) return { success: false, error: r.error };
-    return { success: true, data: r.data as KanbanTaskDetail };
+    const raw = (r.data || {}) as Record<string, unknown>;
+    const rawTask = (raw.task || {}) as Record<string, unknown>;
+    const detail = {
+      task: rawTask,
+      comments: (raw.comments as unknown[]) || [],
+      events: (raw.events as unknown[]) || [],
+      parents: (raw.parents as unknown[]) || [],
+      children: (raw.children as unknown[]) || [],
+      runs: (raw.runs as unknown[]) || [],
+      latest_summary:
+        (raw.latest_summary as string | null | undefined) ??
+        (rawTask.latest_summary as string | null | undefined) ??
+        null,
+    };
+    return { success: true, data: detail as unknown as KanbanTaskDetail };
   }
   const res = await runKanban(["show", taskId, "--json"], {
     profile,
