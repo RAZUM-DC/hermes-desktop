@@ -260,6 +260,7 @@ function Office({ visible }: OfficeProps): React.JSX.Element {
           onSelectAgent={setSelectedId}
           devMode={devMode}
           onDevLog={setDevLog}
+          active={!!visible}
         />
 
         {import.meta.env.DEV && devMode && (
