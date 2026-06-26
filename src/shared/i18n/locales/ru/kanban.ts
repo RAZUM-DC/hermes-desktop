@@ -84,6 +84,7 @@ export default {
   detailFallbackTitle: "Задача",
   detailBody: "Описание",
   detailSummary: "Сводка последнего запуска",
+  downloadResult: "Скачать (.md)",
   detailResult: "Результат",
   detailComments: "Комментарии ({{count}})",
   detailEvents: "События ({{count}})",
