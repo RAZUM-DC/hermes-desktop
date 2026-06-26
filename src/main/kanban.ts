@@ -189,6 +189,62 @@ async function remoteKanbanGet(path: string): Promise<KanbanResult<unknown>> {
   }
 }
 
+// Гибрид remote-режим: ЗАПИСЬ в доску через REST дашборда. Шим проксирует
+// {remoteUrl}/api/plugins/kanban/* на :9119 c инъекцией токена. Эндпоинты:
+//   POST   /tasks                 — создать задачу        → {task:{...}}
+//   PATCH  /tasks/{id}            — статус/assignee/...    → {task:{...}}
+//   DELETE /tasks/{id}            — удалить                → 200
+//   POST   /tasks/{id}/comments   — комментарий           → {ok}
+//   POST   /tasks/{id}/reclaim    — снять claim           → {ok,task_id}
+//   POST   /tasks/{id}/specify    — доуточнить через LLM   → {ok,...}
+//   POST   /boards, DELETE /boards/{slug}, POST /boards/{slug}/switch
+//   POST   /dispatch              — один прогон диспетчера
+async function remoteKanbanReq(
+  method: "POST" | "PATCH" | "DELETE",
+  path: string,
+  body?: unknown,
+): Promise<KanbanResult<unknown>> {
+  const conn = getConnectionConfig();
+  const base = (conn.remoteUrl || "").replace(/\/+$/, "");
+  if (!base) return { success: false, error: "remoteUrl не задан" };
+  try {
+    const init: RequestInit = {
+      method,
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {}),
+      },
+    };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    const resp = await fetch(base + "/api/plugins/kanban" + path, init);
+    if (!resp.ok) {
+      // Попробуем достать detail из FastAPI-ошибки для понятного тоста.
+      let detail = "";
+      try {
+        const j = (await resp.json()) as { detail?: string };
+        detail = j?.detail ? ": " + j.detail : "";
+      } catch {
+        /* no body */
+      }
+      return { success: false, error: "kanban HTTP " + resp.status + detail };
+    }
+    const data = resp.status === 204 ? null : await resp.json().catch(() => null);
+    return { success: true, data };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+}
+
+async function remoteKanbanPost(path: string, body?: unknown) {
+  return remoteKanbanReq("POST", path, body);
+}
+async function remoteKanbanPatch(path: string, body: unknown) {
+  return remoteKanbanReq("PATCH", path, body);
+}
+async function remoteKanbanDelete(path: string) {
+  return remoteKanbanReq("DELETE", path);
+}
+
 function remoteKanbanWriteBlocked<T>(): KanbanResult<T> {
   // НЕ unsupportedMode — чтобы доска оставалась видимой (read-only), а не
   // переключалась на экран "смени режим".
@@ -233,8 +289,11 @@ export async function switchBoard(
   slug: string,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
   if (!slug) return { success: false, error: "Missing board slug" };
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanPost("/boards/" + encodeURIComponent(slug) + "/switch");
+    return { success: r.success, error: r.error };
+  }
   const res = await runKanban(["boards", "switch", slug], { profile });
   return { success: res.success, error: res.error };
 }
@@ -245,8 +304,15 @@ export async function createBoard(
   switchAfter = false,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
   if (!slug) return { success: false, error: "Missing board slug" };
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanPost("/boards", {
+      slug,
+      ...(name ? { name } : {}),
+      switch: switchAfter,
+    });
+    return { success: r.success, error: r.error };
+  }
   const args = ["boards", "create", slug];
   if (name) args.push("--name", name);
   if (switchAfter) args.push("--switch");
@@ -259,8 +325,13 @@ export async function removeBoard(
   hardDelete = false,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
   if (!slug) return { success: false, error: "Missing board slug" };
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanDelete(
+      "/boards/" + encodeURIComponent(slug) + (hardDelete ? "?delete=true" : ""),
+    );
+    return { success: r.success, error: r.error };
+  }
   const args = ["boards", "rm", slug];
   if (hardDelete) args.push("--delete");
   const res = await runKanban(args, { profile });
@@ -329,9 +400,35 @@ export async function createTask(
   input: CreateTaskInput,
   profile?: string,
 ): Promise<KanbanResult<{ id: string }>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
   if (!input.title?.trim()) {
     return { success: false, error: "Title is required" };
+  }
+  if (isRemoteOnlyMode()) {
+    // workspace local-формат "scratch"|"worktree"|"dir:<path>" → дашборд ждёт
+    // workspace_kind (+ workspace_path для dir:). По умолчанию scratch.
+    let workspace_kind = input.workspace || "scratch";
+    let workspace_path: string | undefined;
+    if (workspace_kind.startsWith("dir:")) {
+      workspace_path = workspace_kind.slice(4);
+      workspace_kind = "dir";
+    }
+    const r = await remoteKanbanPost("/tasks", {
+      title: input.title,
+      ...(input.body ? { body: input.body } : {}),
+      ...(input.assignee ? { assignee: input.assignee } : {}),
+      ...(input.priority !== undefined ? { priority: input.priority } : {}),
+      ...(input.tenant ? { tenant: input.tenant } : {}),
+      workspace_kind,
+      ...(workspace_path ? { workspace_path } : {}),
+      ...(input.triage ? { triage: true } : {}),
+      ...(input.skills && input.skills.length ? { skills: input.skills } : {}),
+      ...(input.maxRetries !== undefined
+        ? { max_runtime_seconds: undefined }
+        : {}),
+    });
+    if (!r.success) return { success: false, error: r.error };
+    const task = (r.data as { task?: { id?: string } })?.task;
+    return { success: true, data: { id: task?.id || "" } };
   }
   const args = ["create", input.title];
   if (input.body) args.push("--body", input.body);
@@ -359,7 +456,13 @@ export async function assignTask(
   assignee: string | null,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
+  if (isRemoteOnlyMode()) {
+    // assignee="" снимает исполнителя (дашборд: null), иначе ставит логин.
+    const r = await remoteKanbanPatch("/tasks/" + encodeURIComponent(taskId), {
+      assignee: assignee || "",
+    });
+    return { success: r.success, error: r.error };
+  }
   const res = await runKanban(["assign", taskId, assignee || "none"], {
     profile,
   });
@@ -371,7 +474,13 @@ export async function completeTask(
   result?: string,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanPatch("/tasks/" + encodeURIComponent(taskId), {
+      status: "done",
+      ...(result ? { result } : {}),
+    });
+    return { success: r.success, error: r.error };
+  }
   const args = ["complete", taskId];
   if (result) args.push("--result", result);
   const res = await runKanban(args, { profile });
@@ -383,7 +492,13 @@ export async function blockTask(
   reason?: string,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanPatch("/tasks/" + encodeURIComponent(taskId), {
+      status: "blocked",
+      ...(reason ? { block_reason: reason } : {}),
+    });
+    return { success: r.success, error: r.error };
+  }
   const args = ["block", taskId];
   if (reason) args.push(reason);
   const res = await runKanban(args, { profile });
@@ -394,7 +509,13 @@ export async function unblockTask(
   taskId: string,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
+  if (isRemoteOnlyMode()) {
+    // status:ready на blocked/scheduled задаче = unblock (см. plugin_api).
+    const r = await remoteKanbanPatch("/tasks/" + encodeURIComponent(taskId), {
+      status: "ready",
+    });
+    return { success: r.success, error: r.error };
+  }
   const res = await runKanban(["unblock", taskId], { profile });
   return { success: res.success, error: res.error };
 }
@@ -403,7 +524,12 @@ export async function archiveTask(
   taskId: string,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanPatch("/tasks/" + encodeURIComponent(taskId), {
+      status: "archived",
+    });
+    return { success: r.success, error: r.error };
+  }
   const res = await runKanban(["archive", taskId], { profile });
   return { success: res.success, error: res.error };
 }
@@ -416,7 +542,14 @@ export async function promoteTask(
   taskId: string,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
+  if (isRemoteOnlyMode()) {
+    // PATCH status:ready на todo делает direct-write, на blocked — unblock;
+    // дашборд сам вернёт 409 с именами блокирующих родителей при нарушении.
+    const r = await remoteKanbanPatch("/tasks/" + encodeURIComponent(taskId), {
+      status: "ready",
+    });
+    return { success: r.success, error: r.error };
+  }
   const res = await runKanban(["promote", taskId], { profile });
   return { success: res.success, error: res.error };
 }
@@ -427,7 +560,13 @@ export async function scheduleTask(
   reason?: string,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanPatch("/tasks/" + encodeURIComponent(taskId), {
+      status: "scheduled",
+      ...(reason ? { block_reason: reason } : {}),
+    });
+    return { success: r.success, error: r.error };
+  }
   const args = ["schedule", taskId];
   if (reason) args.push(reason);
   const res = await runKanban(args, { profile });
@@ -438,7 +577,13 @@ export async function specifyTask(
   taskId: string,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanPost(
+      "/tasks/" + encodeURIComponent(taskId) + "/specify",
+      {},
+    );
+    return { success: r.success, error: r.error };
+  }
   const res = await runKanban(["specify", taskId], { profile });
   return { success: res.success, error: res.error };
 }
@@ -448,7 +593,13 @@ export async function reclaimTask(
   reason?: string,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanPost(
+      "/tasks/" + encodeURIComponent(taskId) + "/reclaim",
+      { reason: reason || null },
+    );
+    return { success: r.success, error: r.error };
+  }
   const args = ["reclaim", taskId];
   if (reason) args.push("--reason", reason);
   const res = await runKanban(args, { profile });
@@ -460,8 +611,14 @@ export async function commentTask(
   body: string,
   profile?: string,
 ): Promise<KanbanResult<void>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
   if (!body.trim()) return { success: false, error: "Empty comment" };
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanPost(
+      "/tasks/" + encodeURIComponent(taskId) + "/comments",
+      { body },
+    );
+    return { success: r.success, error: r.error };
+  }
   const res = await runKanban(["comment", taskId, body], { profile });
   return { success: res.success, error: res.error };
 }
@@ -491,7 +648,10 @@ export async function dispatchOnce(
   dryRun = false,
   profile?: string,
 ): Promise<KanbanResult<unknown>> {
-  if (isRemoteOnlyMode()) return remoteKanbanWriteBlocked();
+  if (isRemoteOnlyMode()) {
+    const r = await remoteKanbanPost("/dispatch", { dry_run: dryRun });
+    return { success: r.success, error: r.error, data: r.data };
+  }
   const args = ["dispatch", "--json"];
   if (dryRun) args.push("--dry-run");
   const res = await runKanban(args, { profile, parseJson: true });
