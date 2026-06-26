@@ -28,11 +28,11 @@ export default {
     triage: "Сортировка",
     todo: "К работе",
     scheduled: "Запланировано",
-    ready: "Готово к работе",
+    ready: "К запуску",
     running: "Выполняется",
     blocked: "Заблокировано",
     review: "Проверка",
-    done: "Готово",
+    done: "Завершено",
     archived: "Архив",
   },
 
