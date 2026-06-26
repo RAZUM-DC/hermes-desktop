@@ -649,7 +649,10 @@ export async function dispatchOnce(
   profile?: string,
 ): Promise<KanbanResult<unknown>> {
   if (isRemoteOnlyMode()) {
-    const r = await remoteKanbanPost("/dispatch", { dry_run: dryRun });
+    // dry_run — query-параметр дашборда, тело игнорируется.
+    const r = await remoteKanbanPost(
+      "/dispatch" + (dryRun ? "?dry_run=true" : ""),
+    );
     return { success: r.success, error: r.error, data: r.data };
   }
   const args = ["dispatch", "--json"];
