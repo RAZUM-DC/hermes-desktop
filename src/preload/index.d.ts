@@ -246,6 +246,7 @@ interface HermesAPI {
     profile?: string,
   ) => Promise<{ success: boolean; error?: string }>;
   cancelOAuthLogin: () => Promise<boolean>;
+  companionReenroll: () => Promise<{ ok: boolean; error?: string }>;
   onOAuthLoginProgress: (callback: (chunk: string) => void) => () => void;
 
   getLocale: () => Promise<AppLocale>;
