@@ -84,6 +84,7 @@ export default {
   detailFallbackTitle: "Task",
   detailBody: "Body",
   detailSummary: "Latest run summary",
+  downloadResult: "Download (.md)",
   detailResult: "Result",
   detailComments: "Comments ({{count}})",
   detailEvents: "Events ({{count}})",
