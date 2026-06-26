@@ -249,7 +249,20 @@ function Layout({
       const t = title.trim();
       if (!sessionId || !t || titledSessions.current.has(sessionId)) return;
       titledSessions.current.add(sessionId);
-      void window.hermesAPI.updateSessionTitle(sessionId, t).catch(() => {});
+      // sessions.title имеет UNIQUE-ограничение: если такое название уже есть,
+      // первый PATCH упадёт — повторяем с суффиксом даты/времени для уникальности.
+      const stamp = (): string => {
+        const d = new Date();
+        const p = (n: number): string => String(n).padStart(2, "0");
+        return ` · ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+      };
+      void window.hermesAPI
+        .updateSessionTitle(sessionId, t)
+        .catch(() =>
+          window.hermesAPI
+            .updateSessionTitle(sessionId, t + stamp())
+            .catch(() => {}),
+        );
     },
     [],
   );
