@@ -48,12 +48,18 @@ export default function Office3D({
   onSelectAgent,
   devMode = false,
   onDevLog,
+  active = true,
 }: {
   agents: OfficeAgent[];
   selectedId: string | null;
   onSelectAgent: (id: string | null) => void;
   devMode?: boolean;
   onDevLog?: (msg: string) => void;
+  // When false (tab hidden), the Three.js render loop is paused: the <Canvas>
+  // switches from "always" (continuous 60fps animation) to "demand" (renders
+  // only on demand/invalidation), dropping idle CPU to ~zero. Interaction and
+  // status changes are unaffected — only the off-screen animation loop stops.
+  active?: boolean;
 }): React.JSX.Element {
   // Clicking the selected agent again clears the selection. Memoized so agent
   // status polling (which re-renders Office3D with a new `agents` array but an
@@ -209,6 +215,12 @@ export default function Office3D({
 
   return (
     <Canvas
+      // Pause the render loop when the Office tab is off-screen. r3f reacts to
+      // a changed `frameloop` prop: "always" runs ~60fps continuously (live
+      // city animation), "demand" renders only on invalidation so a hidden
+      // tab costs ~0% CPU instead of ~30%. Clicks/selection still work in
+      // "demand" mode (pointer events trigger a render).
+      frameloop={active ? "always" : "demand"}
       shadows="percentage"
       dpr={[1, 2]}
       // near=1 (instead of the 0.1 default) gives the depth buffer ~10× more
