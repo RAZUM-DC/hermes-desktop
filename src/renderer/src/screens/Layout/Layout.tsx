@@ -18,6 +18,7 @@ import { ActiveSessionsBar } from "./ActiveSessionsBar";
 import Sessions from "../Sessions/Sessions";
 import Agents from "../Agents/Agents";
 import Discover from "../Discover/Discover";
+import Overview from "../Discover/Overview";
 import ProfileSwitcher from "./ProfileSwitcher";
 import SidebarRecentSessions from "./SidebarRecentSessions";
 import Settings from "../Settings/Settings";
@@ -795,7 +796,11 @@ function Layout({
         {visitedViews.has("discover") && (
           <div style={paneStyle("discover")}>
             {remoteMode ? (
-              <RemoteNotice feature="Discover" />
+              <Overview
+                visible={view === "discover"}
+                onNavigate={(v) => goTo(v as View)}
+                onNewChat={handleNewChat}
+              />
             ) : (
               <Discover
                 profile={activeProfile}
