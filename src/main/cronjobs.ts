@@ -6,6 +6,7 @@ import { HERMES_HOME, HERMES_PYTHON, hermesCliArgs } from "./installer";
 import { profileHome } from "./utils";
 import {
   isRemoteMode,
+  isRemoteOnlyMode,
   getApiUrl,
   getRemoteAuthHeader,
   normaliseRemoteUrl,
@@ -65,6 +66,34 @@ function normalizeJob(job: Record<string, unknown>): CronJob | null {
       (job.skills as string[]) || (job.skill ? [job.skill as string] : []),
     script: (job.script as string) || null,
   };
+}
+
+// Гибрид remote (companion-shim): cron на стороне рантайма обслуживает
+// ДАШБОРД (:9119 через шим) под префиксом /api/cron/jobs — НЕ api_server
+// /api/jobs (тот доступен только в SSH-туннеле). list возвращает голый массив,
+// trigger называется /trigger (не /run). Поэтому для remote-only отдельная
+// ветка с этими путями; SSH-режим продолжает ходить в remoteFetch→/api/jobs.
+function dashboardCronBase(): string | null {
+  const conn = getConnectionConfig();
+  const base = (conn.remoteUrl || "").replace(/\/+$/, "");
+  return base || null;
+}
+
+function dashboardCronHeaders(json = false): Record<string, string> {
+  const conn = getConnectionConfig();
+  return {
+    ...(json ? { "Content-Type": "application/json" } : {}),
+    ...(conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {}),
+  };
+}
+
+async function dashboardCronError(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { detail?: string; error?: string };
+    return body.detail || body.error || `HTTP ${res.status}`;
+  } catch {
+    return `HTTP ${res.status}`;
+  }
 }
 
 async function remoteFetch(
@@ -137,6 +166,35 @@ export async function listCronJobs(
   includeDisabled = true,
   profile?: string,
 ): Promise<CronJob[]> {
+  if (isRemoteOnlyMode()) {
+    // Дашборд: GET /api/cron/jobs?profile=all → голый массив job-dict'ов.
+    const base = dashboardCronBase();
+    if (!base) return [];
+    try {
+      const res = await fetch(base + "/api/cron/jobs?profile=all", {
+        headers: dashboardCronHeaders(),
+      });
+      if (!res.ok) {
+        console.error("[CRON] remote(dashboard) list failed:", await dashboardCronError(res));
+        return [];
+      }
+      const parsed = (await res.json()) as unknown;
+      const raw = Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>[])
+        : ((parsed as { jobs?: Record<string, unknown>[] }).jobs || []);
+      const jobs: CronJob[] = [];
+      for (const job of raw) {
+        const normalized = normalizeJob(job);
+        if (!normalized) continue;
+        if (!includeDisabled && !normalized.enabled) continue;
+        jobs.push(normalized);
+      }
+      return jobs;
+    } catch (err) {
+      console.error("[CRON] remote(dashboard) list error:", err);
+      return [];
+    }
+  }
   if (isRemoteMode()) {
     try {
       const qs = includeDisabled ? "?include_disabled=true" : "";
@@ -228,6 +286,29 @@ export async function createCronJob(
   deliver?: string,
   profile?: string,
 ): Promise<{ success: boolean; error?: string }> {
+  if (isRemoteOnlyMode()) {
+    const base = dashboardCronBase();
+    if (!base) return { success: false, error: "remoteUrl не задан" };
+    try {
+      const res = await fetch(
+        base + "/api/cron/jobs?profile=" + encodeURIComponent(profile || "default"),
+        {
+          method: "POST",
+          headers: dashboardCronHeaders(true),
+          body: JSON.stringify({
+            name: name || "",
+            schedule,
+            prompt: prompt || "",
+            deliver: deliver || "local",
+          }),
+        },
+      );
+      if (!res.ok) return { success: false, error: await dashboardCronError(res) };
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  }
   if (isRemoteMode()) {
     try {
       const res = await remoteFetch("/api/jobs", {
@@ -263,6 +344,20 @@ export async function removeCronJob(
   profile?: string,
 ): Promise<{ success: boolean; error?: string }> {
   if (!jobId) return { success: false, error: "Missing job ID" };
+  if (isRemoteOnlyMode()) {
+    const base = dashboardCronBase();
+    if (!base) return { success: false, error: "remoteUrl не задан" };
+    try {
+      const res = await fetch(
+        base + `/api/cron/jobs/${encodeURIComponent(jobId)}`,
+        { method: "DELETE", headers: dashboardCronHeaders() },
+      );
+      if (!res.ok) return { success: false, error: await dashboardCronError(res) };
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  }
   if (isRemoteMode()) {
     try {
       const res = await remoteFetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
@@ -284,6 +379,22 @@ async function remoteJobAction(
   jobId: string,
   action: "pause" | "resume" | "run",
 ): Promise<{ success: boolean; error?: string }> {
+  if (isRemoteOnlyMode()) {
+    const base = dashboardCronBase();
+    if (!base) return { success: false, error: "remoteUrl не задан" };
+    // Дашборд именует немедленный запуск /trigger, api_server — /run.
+    const dashAction = action === "run" ? "trigger" : action;
+    try {
+      const res = await fetch(
+        base + `/api/cron/jobs/${encodeURIComponent(jobId)}/${dashAction}`,
+        { method: "POST", headers: dashboardCronHeaders() },
+      );
+      if (!res.ok) return { success: false, error: await dashboardCronError(res) };
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  }
   try {
     const res = await remoteFetch(
       `/api/jobs/${encodeURIComponent(jobId)}/${action}`,
