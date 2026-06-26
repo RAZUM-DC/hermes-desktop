@@ -271,6 +271,10 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
   // недоступны → принудительно scratch и прячем worktree/«Выбрать папку».
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [newTriage, setNewTriage] = useState(false);
+  // REMOTE-only: папка на ПК пользователя (относительно корней
+  // Documents/Downloads/Desktop). Серверный workspace не меняет —
+  // вставляет инструкцию для local.* инструментов в тело задачи.
+  const [newLocalFolder, setNewLocalFolder] = useState("");
 
   // New board form
   const [newBoardSlug, setNewBoardSlug] = useState("");
@@ -494,6 +498,7 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
     setNewWorkspace("scratch");
     setNewWorkspaceDir("");
     setNewTriage(false);
+    setNewLocalFolder("");
   }
 
   async function handlePickWorkspaceFolder(): Promise<void> {
@@ -517,11 +522,22 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
     } else {
       workspaceArg = newWorkspace || undefined;
     }
+    let bodyArg = newBody.trim() || undefined;
+    if (remoteOnly && newLocalFolder.trim()) {
+      const folder = newLocalFolder.trim();
+      const localHint =
+        `Рабочие файлы находятся в локальной папке на ПК пользователя: «${folder}» ` +
+        `(внутри корня Documents/Downloads/Desktop). Для чтения файлов используй ` +
+        `локальные инструменты local.fs_list и local.fs_read по этой папке, а ` +
+        `результат сохраняй туда же через local.fs_write. Не используй серверную ` +
+        `файловую систему для пользовательских файлов.`;
+      bodyArg = bodyArg ? `${localHint}\n\n${bodyArg}` : localHint;
+    }
     setActionBusy("create");
     const res = await window.hermesAPI.kanbanCreateTask(
       {
         title: newTitle.trim(),
-        body: newBody.trim() || undefined,
+        body: bodyArg,
         assignee: newAssignee.trim() || undefined,
         priority: parseInt(newPriority, 10) || 0,
         workspace: workspaceArg,
@@ -1223,6 +1239,30 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
                   </div>
                 )}
               </div>
+              {remoteOnly && (
+                <div className="schedules-field">
+                  <label className="schedules-field-label">
+                    {t("kanban.localFolderLabel")}
+                  </label>
+                  <input
+                    className="input"
+                    type="text"
+                    value={newLocalFolder}
+                    onChange={(e) => setNewLocalFolder(e.target.value)}
+                    placeholder={t("kanban.localFolderPlaceholder")}
+                  />
+                  <p
+                    style={{
+                      fontSize: "0.8em",
+                      opacity: 0.65,
+                      marginTop: "4px",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {t("kanban.localFolderHint")}
+                  </p>
+                </div>
+              )}
               <div className="schedules-field">
                 <label className="schedules-field-label kanban-checkbox-label">
                   <input
