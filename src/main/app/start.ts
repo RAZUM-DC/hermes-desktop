@@ -43,6 +43,19 @@ const QUICK_CALL_SHORTCUT =
 const activeRuns = new Map<string, () => void>();
 
 export function startMainProcess(): void {
+  const gotSingleInstanceLock = app.requestSingleInstanceLock();
+  if (!gotSingleInstanceLock) {
+    app.quit();
+    return;
+  }
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
   process.on("uncaughtException", (err) => {
     console.error("[MAIN UNCAUGHT]", err);
   });
@@ -63,6 +76,18 @@ export function startMainProcess(): void {
 
   app.whenReady().then(() => {
     electronApp.setAppUserModelId("com.hermes.desktop");
+
+    // Голосовой ввод: разрешаем доступ к микрофону (Electron по умолчанию
+    // отклоняет media-запросы из рендерера → "Microphone access denied").
+    session.defaultSession.setPermissionRequestHandler(
+      (_wc, permission, callback) => {
+        callback(permission === "media" || permission === "audioCapture");
+      },
+    );
+    session.defaultSession.setPermissionCheckHandler(
+      (_wc, permission) =>
+        permission === "media" || permission === "audioCapture",
+    );
 
     // Hybrid: запускаем локальный companion (enroll, шимы, tool-connector).
     startCompanion();
