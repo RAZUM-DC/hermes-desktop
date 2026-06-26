@@ -555,6 +555,35 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
     loadAll(true);
   }
 
+  function handleExportResult(): void {
+    if (!detail) return;
+    const tk = detail.task;
+    const parts: string[] = [`# ${tk.title || tk.id}`];
+    if (tk.body) parts.push(`\n## Задача\n\n${tk.body}`);
+    const full = tk.result || detail.latest_summary;
+    if (full) parts.push(`\n## Результат\n\n${full}`);
+    if (detail.comments.length) {
+      parts.push("\n## Комментарии\n");
+      for (const c of detail.comments)
+        parts.push(`**${c.author || "—"}:** ${c.body}`);
+    }
+    const md = parts.join("\n");
+    const safe =
+      (tk.title || tk.id)
+        .replace(/[^\p{L}\p{N}\-_ ]/gu, "")
+        .trim()
+        .slice(0, 60) || tk.id;
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safe}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function handleBoardSwitch(slug: string): Promise<void> {
     // HQ is a virtual, renderer-only view; don't call the backend switch RPC.
     if (slug === HQ_BOARD_SLUG) {
@@ -1403,6 +1432,15 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
                       {detail.task.id}
                     </span>
                   </div>
+                  {(detail.task.result || detail.latest_summary) && (
+                    <button
+                      className="btn btn-secondary"
+                      style={{ alignSelf: "flex-start", marginBottom: "8px" }}
+                      onClick={handleExportResult}
+                    >
+                      {t("kanban.downloadResult")}
+                    </button>
+                  )}
                   {detail.task.body && (
                     <div className="kanban-detail-section">
                       <label>{t("kanban.detailBody")}</label>
