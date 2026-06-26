@@ -183,6 +183,23 @@ export function startCompanion(
   }
 }
 
+// writeReenrollFlag — пишет пустой флаг-файл `reenroll` в каталог данных
+// companion (%LOCALAPPDATA%\HermesCompanion). Go-companion поллит этот файл и
+// при появлении запускает enroll заново (без рестарта приложения). Затем он
+// перезапишет status.json (state=enrolling + auth_url), а наш поллер откроет
+// окно «Вход через Яндекс ID».
+export function writeReenrollFlag(): { ok: boolean; error?: string } {
+  try {
+    const p = join(companionDataDir(), "reenroll");
+    writeFileSync(p, "");
+    // На случай, если поллер был остановлен — гарантируем, что он работает.
+    startStatusPoller();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export function stopCompanion(): void {
   stopStatusPoller();
   if (!proc) return;
