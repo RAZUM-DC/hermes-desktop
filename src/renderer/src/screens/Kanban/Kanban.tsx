@@ -241,6 +241,9 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  // Compact board: hide empty intermediate columns (see visibleColumns).
+  // Toggle to reveal every lane (e.g. to drag into an empty status).
+  const [showAllColumns, setShowAllColumns] = useState(false);
 
   // When the Claw3D HQ virtual board is active we route reads to the
   // task-store JSON on the remote (via kanbanListClaw3dHqTasks) and hide all
@@ -447,6 +450,23 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
     }
     return grouped;
   }, [tasks, renderedColumns]);
+
+  // Compact the board by dropping empty *intermediate* columns. A column is
+  // shown when it has tasks, OR it is the first/last lane in the canonical
+  // order (the edges always stay so the board keeps its shape). Crossed with
+  // the manual "show all columns" override. Guard: if filtering would leave
+  // fewer than 3 lanes (e.g. an empty board), fall back to showing them all so
+  // the board never looks broken or near-empty. Purely a visual list — the
+  // data in `tasksByStatus` and all drag/move logic are untouched.
+  const visibleColumns = useMemo(() => {
+    if (showAllColumns) return renderedColumns;
+    const lastIdx = renderedColumns.length - 1;
+    const filtered = renderedColumns.filter((col, i) => {
+      if (i === 0 || i === lastIdx) return true;
+      return (tasksByStatus[col.key]?.length ?? 0) > 0;
+    });
+    return filtered.length < 3 ? renderedColumns : filtered;
+  }, [renderedColumns, tasksByStatus, showAllColumns]);
 
   function resetCreateForm(): void {
     setNewTitle("");
@@ -715,6 +735,16 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
                   : t("kanban.showArchived")}
               </button>
               <button
+                className={`btn btn-secondary${
+                  showAllColumns ? " kanban-toggle-active" : ""
+                }`}
+                onClick={() => setShowAllColumns((v) => !v)}
+                disabled={actionBusy !== null}
+                data-tooltip="Показать/скрыть пустые промежуточные колонки"
+              >
+                {showAllColumns ? "Скрыть пустые" : "Все колонки"}
+              </button>
+              <button
                 className="btn btn-secondary"
                 onClick={handleDispatch}
                 disabled={actionBusy !== null}
@@ -807,7 +837,7 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
       )}
 
       <div className="kanban-columns">
-        {renderedColumns.map((col) => {
+        {visibleColumns.map((col) => {
           const colTasks = tasksByStatus[col.key] || [];
           const draggingTask = draggingTaskId
             ? tasks.find((t) => t.id === draggingTaskId)
