@@ -1,5 +1,5 @@
 import { spawn, ChildProcess } from "child_process";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { app, BrowserWindow } from "electron";
 import { HERMES_HOME } from "./installer";
