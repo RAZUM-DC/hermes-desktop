@@ -172,6 +172,7 @@ function Settings({ profile }: { profile?: string }): React.JSX.Element {
     useState<RemoteChatTransport>("auto");
   const [connTesting, setConnTesting] = useState(false);
   const [connStatus, setConnStatus] = useState<string | null>(null);
+  const [reloginStatus, setReloginStatus] = useState<string | null>(null);
   const connLoaded = useRef(false);
   const [apiServerKeyMissing, setApiServerKeyMissing] = useState(false);
   const [generatingKey, setGeneratingKey] = useState(false);
@@ -922,6 +923,33 @@ function Settings({ profile }: { profile?: string }): React.JSX.Element {
               {connStatus}
             </span>
           )}
+        </div>
+
+        {/* Повторный вход в Яндекс без перезапуска приложения. */}
+        <div className="settings-field">
+          <button
+            className="btn btn-secondary"
+            onClick={async () => {
+              setReloginStatus("Открываю окно входа…");
+              try {
+                await window.hermesAPI.companionReenroll();
+              } catch {
+                setReloginStatus("Не удалось запустить вход");
+              }
+              setTimeout(() => setReloginStatus(null), 4000);
+            }}
+          >
+            Войти снова
+          </button>
+          {reloginStatus && (
+            <span className="settings-saved" style={{ marginLeft: 8 }}>
+              {reloginStatus}
+            </span>
+          )}
+          <div className="settings-field-hint">
+            Повторный вход в Яндекс ID без перезапуска приложения — откроется
+            окно входа.
+          </div>
         </div>
 
         <div className="settings-field">
