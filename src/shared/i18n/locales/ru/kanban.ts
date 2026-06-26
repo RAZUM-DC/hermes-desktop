@@ -62,6 +62,10 @@ export default {
   workspaceWorktree: "Worktree (текущий репозиторий)",
   workspaceChoose: "Выбрать папку…",
   workspaceNoFolder: "Папка не выбрана",
+  localFolderLabel: "Локальная папка на ПК (необязательно)",
+  localFolderPlaceholder: "напр. Downloads/Договоры",
+  localFolderHint:
+    "Путь относительно корня Documents / Downloads / Desktop. Задача выполняется на сервере, но ассистент читает и сохраняет файлы в этой папке ПК через локальные инструменты. Приложение должно быть запущено.",
   browse: "Обзор…",
   triageCheckbox:
     "Оставить в сортировке (уточнитель развернёт спецификацию перед продвижением к работе)",
