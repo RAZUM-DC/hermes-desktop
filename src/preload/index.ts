@@ -153,6 +153,8 @@ const hermesAPI = {
     ipcRenderer.invoke("oauth-login", provider, profile),
   cancelOAuthLogin: (): Promise<boolean> =>
     ipcRenderer.invoke("oauth-login-cancel"),
+  companionReenroll: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("companion-reenroll"),
   onOAuthLoginProgress: (callback: (chunk: string) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, chunk: unknown): void =>
       callback(String(chunk));
