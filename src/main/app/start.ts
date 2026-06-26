@@ -81,12 +81,11 @@ export function startMainProcess(): void {
     // отклоняет media-запросы из рендерера → "Microphone access denied").
     session.defaultSession.setPermissionRequestHandler(
       (_wc, permission, callback) => {
-        callback(permission === "media" || permission === "audioCapture");
+        callback(permission === "media");
       },
     );
     session.defaultSession.setPermissionCheckHandler(
-      (_wc, permission) =>
-        permission === "media" || permission === "audioCapture",
+      (_wc, permission) => permission === "media",
     );
 
     // Hybrid: запускаем локальный companion (enroll, шимы, tool-connector).
