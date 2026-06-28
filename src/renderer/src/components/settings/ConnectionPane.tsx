@@ -66,6 +66,7 @@ export default function ConnectionPane(): React.JSX.Element {
           {t("settings.connectionMode")}
         </label>
         <div className="settings-theme-options">
+{connMode !== "remote" && (
           <button
             className={`settings-theme-option ${connMode === "local" ? "active" : ""}`}
             onClick={() => {
@@ -78,6 +79,7 @@ export default function ConnectionPane(): React.JSX.Element {
               {t("settings.modeLocal")}
             </span>
           </button>
+          )}
           <button
             className={`settings-theme-option ${connMode === "remote" ? "active" : ""}`}
             onClick={() => void handleSwitchToRemote()}
@@ -87,6 +89,7 @@ export default function ConnectionPane(): React.JSX.Element {
               {t("settings.modeRemote")}
             </span>
           </button>
+{connMode !== "remote" && (
           <button
             className={`settings-theme-option ${connMode === "ssh" ? "active" : ""}`}
             onClick={() => void handleSwitchToSsh()}
@@ -96,6 +99,7 @@ export default function ConnectionPane(): React.JSX.Element {
               {t("settings.modeSsh")}
             </span>
           </button>
+          )}
         </div>
         <div className="settings-field-hint">
           {connMode === "local"

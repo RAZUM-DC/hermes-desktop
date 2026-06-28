@@ -16,6 +16,7 @@ export default function DataPane(): React.JSX.Element {
     importResult,
     handleBackup,
     handleImport,
+    connMode,
     openclawFound,
     openclawPath,
     migrationDismissed,
@@ -70,7 +71,7 @@ export default function DataPane(): React.JSX.Element {
         )}
       </div>
 
-      {openclawFound && !migrationDismissed && (
+      {connMode !== "remote" && openclawFound && !migrationDismissed && (
         <div className="settings-migration-banner">
           <div className="settings-migration-header">
             <div>
