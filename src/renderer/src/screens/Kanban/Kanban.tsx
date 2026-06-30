@@ -231,6 +231,8 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState<string | null>(null);
+  const [approvalComment, setApprovalComment] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showNewBoard, setShowNewBoard] = useState(false);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
@@ -552,6 +554,40 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
     }
     setShowCreate(false);
     resetCreateForm();
+    loadAll(true);
+  }
+
+  async function handleApproval(
+    verdict: "approve" | "changes" | "reject",
+  ): Promise<void> {
+    if (!detail) return;
+    const taskId = detail.task.id;
+    setApprovalBusy(verdict);
+    const labels: Record<string, string> = {
+      approve: "✅ Утверждено",
+      changes: "🔄 Требуются правки",
+      reject: "❌ Отклонено",
+    };
+    const note = approvalComment.trim();
+    const commentBody = note ? `${labels[verdict]}: ${note}` : labels[verdict];
+    const cr = await window.hermesAPI.kanbanCommentTask(taskId, commentBody, profile);
+    if (!cr.success) {
+      setError(cr.error || "Ошибка комментария");
+      setApprovalBusy(null);
+      return;
+    }
+    if (verdict !== "reject") {
+      const ur = await window.hermesAPI.kanbanUnblockTask(taskId, profile);
+      if (!ur.success) {
+        setError(ur.error || "Ошибка разблокировки");
+        setApprovalBusy(null);
+        return;
+      }
+    }
+    setApprovalBusy(null);
+    setApprovalComment("");
+    const r = await window.hermesAPI.kanbanGetTask(taskId, profile);
+    if (r.success && r.data) setDetail(r.data);
     loadAll(true);
   }
 
@@ -1440,6 +1476,29 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
                     >
                       {t("kanban.downloadResult")}
                     </button>
+                  )}
+                  {detail.task.status === "blocked" && !isHqActive && (
+                    <div className="kanban-detail-section">
+                      <label>{t("kanban.approvalLabel")}</label>
+                      <textarea
+                        style={{ width: "100%", marginBottom: "8px" }}
+                        placeholder={t("kanban.approvalCommentPlaceholder")}
+                        value={approvalComment}
+                        onChange={(e) => setApprovalComment(e.target.value)}
+                        rows={2}
+                      />
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <button className="btn btn-primary" disabled={!!approvalBusy} onClick={() => handleApproval("approve")}>
+                          {approvalBusy === "approve" ? "…" : t("kanban.approvalApprove")}
+                        </button>
+                        <button className="btn btn-secondary" disabled={!!approvalBusy} onClick={() => handleApproval("changes")}>
+                          {approvalBusy === "changes" ? "…" : t("kanban.approvalChanges")}
+                        </button>
+                        <button className="btn btn-danger" disabled={!!approvalBusy} onClick={() => handleApproval("reject")}>
+                          {approvalBusy === "reject" ? "…" : t("kanban.approvalReject")}
+                        </button>
+                      </div>
+                    </div>
                   )}
                   {detail.task.body && (
                     <div className="kanban-detail-section">
