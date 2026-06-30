@@ -663,21 +663,17 @@ export async function dispatchOnce(
 }
 
 
-// ── FEAT-office: мостик к доскам ШТАТНЫХ агентов через identity-proxy /agents ──
-// remoteUrl может оканчиваться на /agent (путь своей доски); реестр и доски
-// штатных живут в КОРНЕ прокси (/agents), поэтому корень = base без хвоста /agent.
-function proxyRoot(): string {
-  const conn = getConnectionConfig();
-  const base = (conn.remoteUrl || "").replace(/\/+$/, "");
-  return base.replace(/\/agent$/, "");
-}
+// ── FEAT-office: мостик к доскам ШТАТНЫХ агентов ──
+// Десктоп ходит через companion-шим (remoteUrl=127.0.0.1:18644), который
+// прибавляет префикс /agent → identity-proxy. Поэтому путь = base + "/staff…"
+// (на сервере маршруты /agent/staff и /agent/staff/<rid>/… ДО catch-all).
 
 export async function listStaffAgents(): Promise<KanbanResult<unknown>> {
   const conn = getConnectionConfig();
-  const root = proxyRoot();
-  if (!root) return { success: false, error: "remoteUrl не задан" };
+  const base = (conn.remoteUrl || "").replace(/\/+$/, "");
+  if (!base) return { success: false, error: "remoteUrl не задан" };
   try {
-    const resp = await fetch(root + "/agents", {
+    const resp = await fetch(base + "/staff", {
       headers: conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {},
     });
     if (!resp.ok) return { success: false, error: "agents HTTP " + resp.status };
@@ -694,8 +690,8 @@ export async function agentKanbanRequest(
   body?: unknown,
 ): Promise<KanbanResult<unknown>> {
   const conn = getConnectionConfig();
-  const root = proxyRoot();
-  if (!root) return { success: false, error: "remoteUrl не задан" };
+  const base = (conn.remoteUrl || "").replace(/\/+$/, "");
+  if (!base) return { success: false, error: "remoteUrl не задан" };
   try {
     const init: RequestInit = {
       method,
@@ -705,7 +701,7 @@ export async function agentKanbanRequest(
       },
     };
     if (body !== undefined) init.body = JSON.stringify(body);
-    const resp = await fetch(root + "/agents/" + runtimeId + path, init);
+    const resp = await fetch(base + "/staff/" + runtimeId + path, init);
     if (!resp.ok) return { success: false, error: "agent-kanban HTTP " + resp.status };
     const data = resp.status === 204 ? null : await resp.json().catch(() => null);
     return { success: true, data };
