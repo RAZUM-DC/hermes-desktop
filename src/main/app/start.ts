@@ -29,6 +29,7 @@ import { showChatContextMenu } from "./context-menu";
 import { buildMenu } from "./menu";
 import { setupUpdater } from "./updater";
 import { startCompanion, stopCompanion } from "../companion";
+import { startStaffWatcher, stopStaffWatcher } from "../staff-watcher";
 
 const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "РАЗУМ Ассистент";
 const OPEN_DEVTOOLS_ON_START =
@@ -134,6 +135,8 @@ export function startMainProcess(): void {
     createWindow();
     buildMenu({ getMainWindow: () => mainWindow, openExternalUrl });
     createTray();
+    // Фоновые уведомления по доске «ИИ-сотрудники» (Фаза B).
+    startStaffWatcher(() => mainWindow);
     registerQuickCallShortcut();
 
     app.on("activate", () => {
@@ -151,6 +154,7 @@ export function startMainProcess(): void {
     tray?.destroy();
     tray = null;
     stopCompanion();
+    stopStaffWatcher();
     stopHealthPolling();
     for (const abort of activeRuns.values()) abort();
     activeRuns.clear();
