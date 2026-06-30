@@ -1017,6 +1017,27 @@ interface HermesAPI {
     error?: string;
   }>;
 
+  // Виртуальная доска ИИ-сотрудников (staff-мостик через identity-proxy)
+  listStaffAgents: () => Promise<{
+    success: boolean;
+    data?: { agents?: { runtime_id: string; email?: string; title?: string }[] };
+    error?: string;
+  }>;
+  agentKanbanRequest: (
+    runtimeId: string,
+    method: string,
+    path: string,
+    body?: unknown,
+  ) => Promise<{ success: boolean; data?: unknown; error?: string }>;
+  agentMontageArtifact: (
+    projectId: string,
+    which: string,
+  ) => Promise<{
+    success: boolean;
+    data?: { dataUrl?: string; mime?: string };
+    error?: string;
+  }>;
+
   // Shell
   openExternal: (url: string) => Promise<void>;
 
