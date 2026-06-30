@@ -1315,6 +1315,8 @@ const hermesAPI = {
     path: string,
     body?: unknown,
   ) => ipcRenderer.invoke("agent-kanban-request", runtimeId, method, path, body),
+  agentMontageArtifact: (projectId: string, which: string) =>
+    ipcRenderer.invoke("agent-montage-artifact", projectId, which),
   kanbanDispatchOnce: (dryRun?: boolean, profile?: string) =>
     ipcRenderer.invoke("kanban-dispatch-once", dryRun, profile),
   kanbanListClaw3dHqTasks: () =>

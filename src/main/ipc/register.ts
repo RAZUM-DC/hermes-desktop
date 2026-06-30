@@ -301,6 +301,7 @@ import {
   type CreateTaskInput,
   listStaffAgents,
   agentKanbanRequest,
+  agentMontageArtifact,
 } from "../kanban";
 import { getAppLocale, setAppLocale } from "../locale";
 import {
@@ -2492,6 +2493,11 @@ export function registerIpcHandlers(context: IpcContext): void {
         path,
         body,
       ),
+  );
+  ipcMain.handle(
+    "agent-montage-artifact",
+    (_event, projectId: string, which: string) =>
+      agentMontageArtifact(projectId, which),
   );
   ipcMain.handle(
     "kanban-dispatch-once",

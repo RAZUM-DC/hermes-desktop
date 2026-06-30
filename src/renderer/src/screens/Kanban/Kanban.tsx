@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import StaffMedia from "./StaffMedia";
 import {
   Plus,
   Refresh,
@@ -165,6 +166,7 @@ const POLL_INTERVAL_MS = 6000;
 // real hermes-agent kanban board slug (which is bash-safe alphanumeric per
 // the backend CLI).
 const HQ_BOARD_SLUG = "__claw3d_hq__";
+const STAFF_BOARD_SLUG = "__staff__";
 
 // localStorage key for remembering which board the user last viewed across
 // sessions. Stored value is either a real board slug or HQ_BOARD_SLUG.
@@ -256,6 +258,9 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
     readStoredActiveBoard,
   );
   const isHqActive = activeBoardSlug === HQ_BOARD_SLUG;
+  const isStaffActive = activeBoardSlug === STAFF_BOARD_SLUG;
+  const [staffAvailable, setStaffAvailable] = useState(false);
+  const [staffRid, setStaffRid] = useState<string | null>(null);
   const [hqAvailable, setHqAvailable] = useState(false);
   // One-shot guard: only auto-default to HQ on the first loadAll. After
   // that, respect the user's explicit choice (including switching back to
@@ -294,20 +299,26 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
         // Always refresh the real boards list, plus either the active real
         // board's tasks OR the Claw3D HQ tasks depending on which is selected.
         const wantHq = activeBoardSlug === HQ_BOARD_SLUG;
+        const wantStaff = activeBoardSlug === STAFF_BOARD_SLUG;
         type TasksRes = {
           success: boolean;
           data?: KanbanTask[];
           error?: string;
         };
-        const [boardsRes, tasksRes, hqRes] = await Promise.all([
+        const staffApi = window.hermesAPI as unknown as {
+          listStaffAgents: () => Promise<{ success: boolean; data?: { agents?: { runtime_id: string }[] }; error?: string }>;
+          agentKanbanRequest: (rid: string, method: string, path: string, body?: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }>;
+        };
+        const [boardsRes, tasksRes, hqRes, staffRes] = await Promise.all([
           window.hermesAPI.kanbanListBoards(false, profile),
-          wantHq
+          wantHq || wantStaff
             ? Promise.resolve<TasksRes>({ success: true, data: [] })
             : window.hermesAPI.kanbanListTasks({
                 includeArchived: showArchived,
                 profile,
               }),
           window.hermesAPI.kanbanListClaw3dHqTasks(),
+          staffApi.listStaffAgents().catch(() => ({ success: false }) as { success: boolean }),
         ]);
         if (!boardsRes.success) {
           // Only the genuine unsupported-mode result (plain remote HTTP)
@@ -330,6 +341,10 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
         setHqAvailable(hqOk);
         setRemoteUnsupported(false);
         setBoards(boardsRes.data || []);
+        const staffAgents = ((staffRes as { success: boolean; data?: { agents?: { runtime_id: string }[] } }).success && (staffRes as { data?: { agents?: { runtime_id: string }[] } }).data?.agents) || [];
+        const sRid = staffAgents[0]?.runtime_id || null;
+        setStaffAvailable(staffAgents.length > 0);
+        setStaffRid(sRid);
 
         // One-shot auto-default to HQ: if this is the first load AND the
         // user has no stored preference AND HQ is available, jump straight
@@ -349,6 +364,20 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
 
         if (wantHq) {
           setTasks(hqTasks);
+        } else if (wantStaff) {
+          const rid = staffAgents[0]?.runtime_id;
+          if (rid) {
+            const br = await staffApi.agentKanbanRequest(rid, "GET", "/api/plugins/kanban/board");
+            if (br.success) {
+              const cols = ((br.data as { columns?: { tasks?: KanbanTask[] }[] })?.columns) || [];
+              setTasks(cols.flatMap((c) => c.tasks || []));
+            } else {
+              setError(br.error || "Не удалось загрузить доску ИИ-сотрудников");
+              return;
+            }
+          } else {
+            setTasks([]);
+          }
         } else {
           if (!tasksRes.success) {
             setError(tasksRes.error || t("kanban.errLoadTasks"));
@@ -423,15 +452,19 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
     }
     let cancelled = false;
     setDetailLoading(true);
-    window.hermesAPI.kanbanGetTask(detailTaskId, profile).then((res) => {
+    const detLoader =
+      isStaffActive && staffRid
+        ? (window.hermesAPI as unknown as { agentKanbanRequest: (rid: string, method: string, path: string, body?: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }> }).agentKanbanRequest(staffRid, "GET", "/api/plugins/kanban/tasks/" + detailTaskId)
+        : window.hermesAPI.kanbanGetTask(detailTaskId, profile);
+    detLoader.then((res) => {
       if (cancelled) return;
-      if (res.success && res.data) setDetail(res.data);
+      if (res.success && res.data) setDetail(res.data as KanbanTaskDetail);
       setDetailLoading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [detailTaskId, profile]);
+  }, [detailTaskId, profile, isStaffActive, staffRid]);
 
   // Visible columns: the canonical 8, plus a trailing archived lane when the
   // toggle is on (backend only returns archived rows when includeArchived).
@@ -570,14 +603,20 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
     };
     const note = approvalComment.trim();
     const commentBody = note ? `${labels[verdict]}: ${note}` : labels[verdict];
-    const cr = await window.hermesAPI.kanbanCommentTask(taskId, commentBody, profile);
+    const agentApi = window.hermesAPI as unknown as { agentKanbanRequest: (rid: string, method: string, path: string, body?: unknown) => Promise<{ success: boolean; data?: unknown; error?: string }> };
+    const useStaff = isStaffActive && !!staffRid;
+    const cr = useStaff
+      ? await agentApi.agentKanbanRequest(staffRid as string, "POST", `/api/plugins/kanban/tasks/${taskId}/comments`, { body: commentBody })
+      : await window.hermesAPI.kanbanCommentTask(taskId, commentBody, profile);
     if (!cr.success) {
       setError(cr.error || "Ошибка комментария");
       setApprovalBusy(null);
       return;
     }
     if (verdict !== "reject") {
-      const ur = await window.hermesAPI.kanbanUnblockTask(taskId, profile);
+      const ur = useStaff
+        ? await agentApi.agentKanbanRequest(staffRid as string, "PATCH", `/api/plugins/kanban/tasks/${taskId}`, { status: "ready" })
+        : await window.hermesAPI.kanbanUnblockTask(taskId, profile);
       if (!ur.success) {
         setError(ur.error || "Ошибка разблокировки");
         setApprovalBusy(null);
@@ -586,8 +625,10 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
     }
     setApprovalBusy(null);
     setApprovalComment("");
-    const r = await window.hermesAPI.kanbanGetTask(taskId, profile);
-    if (r.success && r.data) setDetail(r.data);
+    const r = useStaff
+      ? await agentApi.agentKanbanRequest(staffRid as string, "GET", `/api/plugins/kanban/tasks/${taskId}`)
+      : await window.hermesAPI.kanbanGetTask(taskId, profile);
+    if (r.success && r.data) setDetail(r.data as KanbanTaskDetail);
     loadAll(true);
   }
 
@@ -626,6 +667,13 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
       if (isHqActive) return;
       setActiveBoardSlug(HQ_BOARD_SLUG);
       setDetailTaskId(null);
+      return;
+    }
+    if (slug === STAFF_BOARD_SLUG) {
+      if (isStaffActive) return;
+      setActiveBoardSlug(STAFF_BOARD_SLUG);
+      setDetailTaskId(null);
+      loadAll();
       return;
     }
     if (currentBoard?.slug === slug && !isHqActive) return;
@@ -904,6 +952,19 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
               <span className="kanban-board-count">
                 {isHqActive ? tasks.length : ""}
               </span>
+            </button>
+          )}
+          {staffAvailable && (
+            <button
+              key={STAFF_BOARD_SLUG}
+              className={`kanban-board-chip${isStaffActive ? " kanban-board-chip-active" : ""}`}
+              onClick={() => handleBoardSwitch(STAFF_BOARD_SLUG)}
+              disabled={actionBusy === "board-switch"}
+              title="Задачи штатных ИИ-сотрудников"
+            >
+              {isStaffActive && <span className="kanban-board-dot" />}
+              <span>ИИ-сотрудники</span>
+              <span className="kanban-board-count">{isStaffActive ? tasks.length : ""}</span>
             </button>
           )}
           {!isHqActive && (
@@ -1541,6 +1602,13 @@ function Kanban({ profile, visible }: KanbanProps): React.JSX.Element {
                       ))}
                     </div>
                   )}
+                  <StaffMedia
+                    texts={[
+                      detail.task.result || "",
+                      detail.latest_summary || "",
+                      ...detail.comments.map((c) => c.body || ""),
+                    ]}
+                  />
                   {detail.events.length > 0 && (
                     <div className="kanban-detail-section">
                       <label>

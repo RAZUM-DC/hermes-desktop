@@ -709,3 +709,24 @@ export async function agentKanbanRequest(
     return { success: false, error: (e as Error).message };
   }
 }
+
+export async function agentMontageArtifact(
+  projectId: string,
+  which: string,
+): Promise<KanbanResult<unknown>> {
+  const conn = getConnectionConfig();
+  const base = (conn.remoteUrl || "").replace(/\/+$/, "");
+  if (!base) return { success: false, error: "remoteUrl не задан" };
+  try {
+    const resp = await fetch(
+      base + "/montage/artifact/" + projectId + "?which=" + encodeURIComponent(which),
+      { headers: conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {} },
+    );
+    if (!resp.ok) return { success: false, error: "artifact HTTP " + resp.status };
+    const buf = Buffer.from(await resp.arrayBuffer());
+    const mime = resp.headers.get("content-type") || "video/mp4";
+    return { success: true, data: { dataUrl: `data:${mime};base64,${buf.toString("base64")}`, mime } };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+}
