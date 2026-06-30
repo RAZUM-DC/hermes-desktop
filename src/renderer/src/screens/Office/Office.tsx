@@ -3,6 +3,7 @@ import { Crown, Move, RefreshCw, Users, X } from "lucide-react";
 import { useI18n } from "../../components/useI18n";
 import oneChatIcon from "../../assets/images/one-chat.svg";
 import OneChatModal from "./OneChatModal";
+import StaffPanel from "./StaffPanel";
 import Office3D from "./office3d/Office3D";
 import { profilesToOfficeAgents } from "./office3d/agents";
 import type { OfficeAgent } from "./office3d/core/types";
@@ -35,6 +36,7 @@ function Office({ visible }: OfficeProps): React.JSX.Element {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [ceoId, setCeoId] = useState<string | null>(readStoredCeo);
   const [chatOpen, setChatOpen] = useState(false);
+  const [staffOpen, setStaffOpen] = useState(false);
   // Developer building-mover: click a building, then click ground to reposition
   // it; positions are logged to the console so the cityPlan constants can be
   // updated to match.
@@ -188,6 +190,13 @@ function Office({ visible }: OfficeProps): React.JSX.Element {
             <Users size={15} />
             {t("office.agentCount", { count: agents.length })}
           </span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setStaffOpen(true)}
+          >
+            Штат
+          </button>
           {import.meta.env.DEV && (
             <button
               type="button"
@@ -298,6 +307,8 @@ function Office({ visible }: OfficeProps): React.JSX.Element {
             className="h-6 brightness-0 invert"
           />
         </button>
+
+        <StaffPanel open={staffOpen} onClose={() => setStaffOpen(false)} />
 
         <OneChatModal
           open={chatOpen}

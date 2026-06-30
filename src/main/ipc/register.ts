@@ -299,6 +299,8 @@ import {
   dispatchOnce as kanbanDispatchOnce,
   listClaw3dHqTasks as kanbanListClaw3dHqTasks,
   type CreateTaskInput,
+  listStaffAgents,
+  agentKanbanRequest,
 } from "../kanban";
 import { getAppLocale, setAppLocale } from "../locale";
 import {
@@ -2479,6 +2481,17 @@ export function registerIpcHandlers(context: IpcContext): void {
     "kanban-comment-task",
     (_event, taskId: string, body: string, profile?: string) =>
       kanbanCommentTask(taskId, body, profile),
+  );
+  ipcMain.handle("list-staff-agents", () => listStaffAgents());
+  ipcMain.handle(
+    "agent-kanban-request",
+    (_event, runtimeId: string, method: string, path: string, body?: unknown) =>
+      agentKanbanRequest(
+        runtimeId,
+        method as "GET" | "POST" | "PATCH" | "DELETE",
+        path,
+        body,
+      ),
   );
   ipcMain.handle(
     "kanban-dispatch-once",

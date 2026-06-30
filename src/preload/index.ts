@@ -1308,6 +1308,13 @@ const hermesAPI = {
     ipcRenderer.invoke("kanban-reclaim-task", taskId, reason, profile),
   kanbanCommentTask: (taskId: string, body: string, profile?: string) =>
     ipcRenderer.invoke("kanban-comment-task", taskId, body, profile),
+  listStaffAgents: () => ipcRenderer.invoke("list-staff-agents"),
+  agentKanbanRequest: (
+    runtimeId: string,
+    method: string,
+    path: string,
+    body?: unknown,
+  ) => ipcRenderer.invoke("agent-kanban-request", runtimeId, method, path, body),
   kanbanDispatchOnce: (dryRun?: boolean, profile?: string) =>
     ipcRenderer.invoke("kanban-dispatch-once", dryRun, profile),
   kanbanListClaw3dHqTasks: () =>

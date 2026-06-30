@@ -661,3 +661,55 @@ export async function dispatchOnce(
   const res = await runKanban(args, { profile, parseJson: true });
   return { success: res.success, error: res.error, data: res.data };
 }
+
+
+// ── FEAT-office: мостик к доскам ШТАТНЫХ агентов через identity-proxy /agents ──
+// remoteUrl может оканчиваться на /agent (путь своей доски); реестр и доски
+// штатных живут в КОРНЕ прокси (/agents), поэтому корень = base без хвоста /agent.
+function proxyRoot(): string {
+  const conn = getConnectionConfig();
+  const base = (conn.remoteUrl || "").replace(/\/+$/, "");
+  return base.replace(/\/agent$/, "");
+}
+
+export async function listStaffAgents(): Promise<KanbanResult<unknown>> {
+  const conn = getConnectionConfig();
+  const root = proxyRoot();
+  if (!root) return { success: false, error: "remoteUrl не задан" };
+  try {
+    const resp = await fetch(root + "/agents", {
+      headers: conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {},
+    });
+    if (!resp.ok) return { success: false, error: "agents HTTP " + resp.status };
+    return { success: true, data: await resp.json() };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+}
+
+export async function agentKanbanRequest(
+  runtimeId: string,
+  method: "GET" | "POST" | "PATCH" | "DELETE",
+  path: string,
+  body?: unknown,
+): Promise<KanbanResult<unknown>> {
+  const conn = getConnectionConfig();
+  const root = proxyRoot();
+  if (!root) return { success: false, error: "remoteUrl не задан" };
+  try {
+    const init: RequestInit = {
+      method,
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {}),
+      },
+    };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    const resp = await fetch(root + "/agents/" + runtimeId + path, init);
+    if (!resp.ok) return { success: false, error: "agent-kanban HTTP " + resp.status };
+    const data = resp.status === 204 ? null : await resp.json().catch(() => null);
+    return { success: true, data };
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
+  }
+}
