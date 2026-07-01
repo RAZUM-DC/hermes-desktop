@@ -1034,7 +1034,7 @@ interface HermesAPI {
     which: string,
   ) => Promise<{
     success: boolean;
-    data?: { dataUrl?: string; mime?: string };
+    data?: { dataUrl?: string; fileUrl?: string; filePath?: string; mime?: string };
     error?: string;
   }>;
 

@@ -11,7 +11,7 @@ const api = () =>
     agentMontageArtifact: (
       projectId: string,
       which: string,
-    ) => Promise<{ success: boolean; data?: { dataUrl?: string }; error?: string }>;
+    ) => Promise<{ success: boolean; data?: { dataUrl?: string; fileUrl?: string }; error?: string }>;
   };
 
 function MontageVideo({ which, pid }: { which: string; pid: string }): React.JSX.Element {
@@ -23,7 +23,8 @@ function MontageVideo({ which, pid }: { which: string; pid: string }): React.JSX
       .agentMontageArtifact(pid, which)
       .then((r) => {
         if (!on) return;
-        if (r.success && r.data?.dataUrl) setUrl(r.data.dataUrl);
+        const u = r.data?.dataUrl || r.data?.fileUrl;
+        if (r.success && u) setUrl(u);
         else setErr(r.error || "не удалось загрузить видео");
       });
     return () => {

@@ -1,5 +1,8 @@
 import { execFile, ExecFileOptions } from "child_process";
 import { join } from "path";
+import { tmpdir } from "os";
+import { mkdirSync, writeFileSync } from "fs";
+import { pathToFileURL } from "url";
 import {
   HERMES_HOME,
   HERMES_PYTHON,
@@ -725,7 +728,34 @@ export async function agentMontageArtifact(
     if (!resp.ok) return { success: false, error: "artifact HTTP " + resp.status };
     const buf = Buffer.from(await resp.arrayBuffer());
     const mime = resp.headers.get("content-type") || "video/mp4";
-    return { success: true, data: { dataUrl: `data:${mime};base64,${buf.toString("base64")}`, mime } };
+    // Маленькие ролики — data-url (быстро). Большие — во временный файл + file://
+    // URL, чтобы не держать многомегабайтную base64-строку в памяти рендерера.
+    // Каталог тот же, что чистит cleanupTempMediaFiles на выходе приложения.
+    const INLINE_MAX = 6 * 1024 * 1024;
+    if (buf.byteLength <= INLINE_MAX) {
+      return {
+        success: true,
+        data: { dataUrl: `data:${mime};base64,${buf.toString("base64")}`, mime },
+      };
+    }
+    try {
+      const dir = join(tmpdir(), "hermes-desktop-media");
+      mkdirSync(dir, { recursive: true });
+      const ext = mime.includes("mp4")
+        ? "mp4"
+        : (mime.split("/")[1] || "bin").replace(/[^a-z0-9]/gi, "");
+      const filePath = join(dir, `montage_${which}_${projectId}.${ext}`);
+      writeFileSync(filePath, buf);
+      return {
+        success: true,
+        data: { fileUrl: pathToFileURL(filePath).href, filePath, mime },
+      };
+    } catch {
+      return {
+        success: true,
+        data: { dataUrl: `data:${mime};base64,${buf.toString("base64")}`, mime },
+      };
+    }
   } catch (e) {
     return { success: false, error: (e as Error).message };
   }
