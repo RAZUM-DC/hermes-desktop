@@ -141,8 +141,8 @@ describe("listProfiles", () => {
   });
 
   it("rejects invalid profile names before invoking the Hermes CLI", () => {
-    expect(createProfile("../outside", "default").success).toBe(false);
-    expect(createProfile("-flag", "default").success).toBe(false);
+    expect(createProfile("../outside", true).success).toBe(false);
+    expect(createProfile("-flag", true).success).toBe(false);
     expect(deleteProfile("../outside").success).toBe(false);
     expect(() => setActiveProfile("../outside")).toThrow(
       "Profile names may contain lowercase letters",
@@ -196,7 +196,14 @@ describe("listProfiles", () => {
 
     expect(execFileSyncMock).toHaveBeenCalledWith(
       "/usr/bin/python3",
-      ["/dev/null", "profile", "create", "slow-clone", "--clone-from", "default"],
+      [
+        "/dev/null",
+        "profile",
+        "create",
+        "slow-clone",
+        "--clone-from",
+        "default",
+      ],
       expect.objectContaining({ timeout: 30000 }),
     );
   });

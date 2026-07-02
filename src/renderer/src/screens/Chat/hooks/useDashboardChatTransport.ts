@@ -616,21 +616,50 @@ function logDashboardEvent(
   console.info("[Hermes dashboard event]", summary);
 }
 
-function usageFromPayload(payload: unknown): Partial<UsageState> | null {
+export function usageFromPayload(payload: unknown): Partial<UsageState> | null {
   const usage = asRecord(asRecord(payload).usage);
-  const promptTokens = Number(usage.prompt_tokens ?? usage.promptTokens ?? 0);
+  // The Hermes gateway (`_get_usage` in tui_gateway/server.py) emits
+  // snake-case, non-`_tokens` keys: input/output/prompt/completion/total plus
+  // context_used/context_max/context_percent when the context compressor is
+  // active. Older OpenAI-style payloads use prompt_tokens/promptTokens. Read
+  // every spelling so the context gauge works regardless of which backend/
+  // provider produced the usage record — no chars/4 estimate needed because
+  // the gateway already reports exact counts.
+  const promptTokens = Number(
+    usage.input ??
+      usage.prompt ??
+      usage.prompt_tokens ??
+      usage.promptTokens ??
+      0,
+  );
   const completionTokens = Number(
-    usage.completion_tokens ?? usage.completionTokens ?? 0,
+    usage.output ??
+      usage.completion ??
+      usage.completion_tokens ??
+      usage.completionTokens ??
+      0,
   );
   const totalTokens = Number(
-    usage.total_tokens ?? usage.totalTokens ?? promptTokens + completionTokens,
+    usage.total ??
+      usage.total_tokens ??
+      usage.totalTokens ??
+      promptTokens + completionTokens,
   );
-  if (!promptTokens && !completionTokens && !totalTokens) return null;
+  // context_used = the current turn's prompt-token occupancy of the context
+  // window (compressor's last_prompt_tokens), which is exactly what the gauge
+  // wants — a live snapshot, not a cross-turn sum. Fall back to the latest
+  // prompt count when the compressor hasn't reported yet.
+  const contextUsed = Number(usage.context_used ?? 0);
+  const contextMax = Number(usage.context_max ?? 0);
+  if (!promptTokens && !completionTokens && !totalTokens && !contextUsed) {
+    return null;
+  }
   return {
     promptTokens,
     completionTokens,
     totalTokens,
-    contextTokens: promptTokens || undefined,
+    contextTokens: contextUsed || promptTokens || undefined,
+    contextWindowTokens: contextMax || undefined,
   };
 }
 
@@ -972,6 +1001,8 @@ export function useDashboardChatTransport({
             totalTokens: (prev?.totalTokens || 0) + (usage.totalTokens || 0),
             cost: prev?.cost,
             contextTokens: usage.contextTokens || prev?.contextTokens,
+            contextWindowTokens:
+              usage.contextWindowTokens || prev?.contextWindowTokens,
             cacheReadTokens: prev?.cacheReadTokens,
             cacheWriteTokens: prev?.cacheWriteTokens,
           }));
