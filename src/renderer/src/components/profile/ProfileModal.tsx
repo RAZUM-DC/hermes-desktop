@@ -75,6 +75,15 @@ const PROFILE_SECTIONS: ReadonlyArray<{
   { id: "advanced", labelKey: "agents.sectionAdvanced", Icon: Settings },
 ];
 
+// remote: SOUL.md is local-only (src/main/soul.ts always reads/writes the
+// on-disk file next to the profile). In remote mode there's no local profile
+// filesystem to edit against, so editing it here is a no-op against the
+// server agent (and litters the user's disk with a stray SOUL.md). Hide the
+// section rather than let it silently do nothing.
+const REMOTE_HIDDEN_SECTIONS: ReadonlySet<ProfileSection> = new Set([
+  "persona",
+]);
+
 /**
  * Global profile detail/appearance modal (80vw × 80vh). Opened from anywhere
  * via the ProfileModalProvider's `openProfile`. Self-loads its data through
@@ -99,6 +108,8 @@ export default function ProfileModal({
   const [memoryError, setMemoryError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // remote: hide sections listed in REMOTE_HIDDEN_SECTIONS (see comment above).
+  const [remoteMode, setRemoteMode] = useState(false);
 
   const load = useCallback(async (): Promise<void> => {
     try {
@@ -112,6 +123,21 @@ export default function ProfileModal({
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.hermesAPI
+      .isRemoteOnlyMode()
+      .then((ro) => {
+        if (!cancelled) setRemoteMode(ro);
+      })
+      .catch(() => {
+        /* default to non-remote (local sections stay visible) */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadMemoryData = useCallback(async (): Promise<void> => {
     if (!profile) return;
@@ -142,6 +168,12 @@ export default function ProfileModal({
     await load();
     onChanged?.();
   }, [load, onChanged]);
+
+  useEffect(() => {
+    if (remoteMode && REMOTE_HIDDEN_SECTIONS.has(section)) {
+      setSection("profile");
+    }
+  }, [remoteMode, section]);
 
   async function handlePickColor(color: string): Promise<void> {
     setProfile((cur) => (cur ? { ...cur, color } : cur));
@@ -268,7 +300,9 @@ export default function ProfileModal({
       {profile ? (
         <div className="profile-modal-layout">
           <nav className="profile-modal-nav" aria-label={t("agents.title")}>
-            {PROFILE_SECTIONS.map((s) => (
+            {PROFILE_SECTIONS.filter(
+              (s) => !remoteMode || !REMOTE_HIDDEN_SECTIONS.has(s.id),
+            ).map((s) => (
               <button
                 key={s.id}
                 type="button"
@@ -368,7 +402,7 @@ export default function ProfileModal({
               </div>
             )}
 
-            {section === "persona" && (
+            {section === "persona" && !remoteMode && (
               <div className="profile-modal-pane profile-modal-memory-pane">
                 <div className="memory-soul-tab">
                   <Soul profile={profile.name} />
