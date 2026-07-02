@@ -80,8 +80,13 @@ const PROFILE_SECTIONS: ReadonlyArray<{
 // filesystem to edit against, so editing it here is a no-op against the
 // server agent (and litters the user's disk with a stray SOUL.md). Hide the
 // section rather than let it silently do nothing.
+//
+// The crypto wallet is an upstream feature not part of the corp build; hide
+// it in remote mode too (main-process wallet code is left untouched — this
+// only hides the renderer entry point).
 const REMOTE_HIDDEN_SECTIONS: ReadonlySet<ProfileSection> = new Set([
   "persona",
+  "wallet",
 ]);
 
 /**
@@ -428,7 +433,7 @@ export default function ProfileModal({
               </div>
             )}
 
-            {section === "wallet" && (
+            {section === "wallet" && !remoteMode && (
               <ProfileWalletPane profile={profile.name} />
             )}
 
