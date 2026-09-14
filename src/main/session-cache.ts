@@ -1,16 +1,20 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import {
-  activeStateDbPath,
-  profileHome,
-  getActiveProfileNameSync,
-  safeWriteFile,
-} from "./utils";
+import { profileHome, getActiveProfileNameSync, safeWriteFile } from "./utils";
 import Database from "better-sqlite3";
 import { t } from "../shared/i18n";
+import {
+  isSessionTitleUniqueViolation,
+  MAX_SESSION_TITLE_LENGTH,
+  normalizeSessionTitle,
+  validateNormalizedSessionTitle,
+} from "../shared/session-title";
 import { getAppLocale } from "./locale";
 import { getDbConnection } from "./db";
 import { getSessionContextFolders } from "./session-context-folder-store";
+
+// Re-export for callers/docs that historically imported the cap from here.
+export { MAX_SESSION_TITLE_LENGTH } from "../shared/session-title";
 
 /**
  * The session cache lives alongside its own profile's data so profiles
@@ -192,7 +196,7 @@ export function syncSessionCache(): CachedSession[] {
       });
     }
 
-    // Phase 2: refresh message_count for cached sessions that weren't
+    // Phase 2: refresh mutable metadata for cached sessions that weren't
     // returned by the lastSync-windowed query above. Without this, an
     // old session that's still accumulating messages keeps the stale
     // count it had at first sync — the renderer reads from the cache,
@@ -208,24 +212,37 @@ export function syncSessionCache(): CachedSession[] {
       // SQLITE_MAX_VARIABLE_NUMBER (default 999 on older builds) for
       // portability across the better-sqlite3 versions hermes ships.
       const CHUNK = 500;
-      const countsById = new Map<string, number>();
+      const metadataById = new Map<
+        string,
+        { messageCount: number; title: string | null }
+      >();
       for (let i = 0; i < staleIds.length; i += CHUNK) {
         const chunk = staleIds.slice(i, i + CHUNK);
         const placeholders = chunk.map(() => "?").join(", ");
         const refreshed = db
           .prepare(
-            `SELECT id, message_count FROM sessions WHERE id IN (${placeholders})`,
+            `SELECT id, message_count, title FROM sessions WHERE id IN (${placeholders})`,
           )
-          .all(...chunk) as Array<{ id: string; message_count: number }>;
-        for (const r of refreshed) countsById.set(r.id, r.message_count);
+          .all(...chunk) as Array<{
+          id: string;
+          message_count: number;
+          title: string | null;
+        }>;
+        for (const r of refreshed) {
+          metadataById.set(r.id, {
+            messageCount: r.message_count,
+            title: r.title,
+          });
+        }
       }
       cache.sessions = cache.sessions.filter(
-        (s) => refreshedIds.has(s.id) || countsById.has(s.id),
+        (s) => refreshedIds.has(s.id) || metadataById.has(s.id),
       );
       for (const s of cache.sessions) {
-        const fresh = countsById.get(s.id);
-        if (fresh !== undefined && fresh !== s.messageCount) {
-          s.messageCount = fresh;
+        const fresh = metadataById.get(s.id);
+        if (fresh) {
+          s.messageCount = fresh.messageCount;
+          if (fresh.title) s.title = fresh.title;
         }
       }
     }
@@ -258,30 +275,81 @@ export function listCachedSessions(limit = 50, offset = 0): CachedSession[] {
   return cache.sessions.slice(offset, offset + limit);
 }
 
-// Update title for a specific session
+/**
+ * Persist a user-chosen session title to state.db, then mirror it into the
+ * desktop sessions.json cache.
+ *
+ * Order matters: the durable DB write must succeed before the cache is
+ * updated. The previous cache-first + swallow-errors approach left the UI
+ * looking renamed while the next syncSessionCache restored the old DB title
+ * (Hermes enforces UNIQUE non-NULL titles via idx_sessions_title_unique).
+ */
 export function updateSessionTitle(sessionId: string, title: string): void {
+  const locale = getAppLocale();
+  const normalized = normalizeSessionTitle(title);
+  const validation = validateNormalizedSessionTitle(normalized);
+  switch (validation) {
+    case "empty":
+      throw new Error(t("sessions.renameInvalid", locale));
+    case "too_long":
+      throw new Error(
+        t("sessions.renameTooLong", locale, {
+          max: String(MAX_SESSION_TITLE_LENGTH),
+        }),
+      );
+    case null:
+      break;
+    default: {
+      const _exhaustive: never = validation;
+      throw new Error(String(_exhaustive));
+    }
+  }
+
+  const db = getDbConnection(false);
+  if (!db) {
+    throw new Error(t("sessions.renameUnavailable", locale));
+  }
+
+  // Match Hermes SessionDB.set_session_title: reject conflicts before write so
+  // we never partially update the JSON cache on a UNIQUE constraint failure.
+  const conflict = db
+    .prepare("SELECT id FROM sessions WHERE title = ? AND id != ?")
+    .get(normalized, sessionId) as { id: string } | undefined;
+  if (conflict) {
+    throw new Error(
+      t("sessions.renameDuplicate", locale, { title: normalized }),
+    );
+  }
+
+  let changes = 0;
+  try {
+    const columns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{
+      name: string;
+    }>;
+    const titleSource = columns.some((column) => column.name === "title_source")
+      ? ", title_source = 'user'"
+      : "";
+    changes = db
+      .prepare(`UPDATE sessions SET title = ?${titleSource} WHERE id = ?`)
+      .run(normalized, sessionId).changes;
+  } catch (err) {
+    if (isSessionTitleUniqueViolation(err)) {
+      throw new Error(
+        t("sessions.renameDuplicate", locale, { title: normalized }),
+      );
+    }
+    throw err instanceof Error ? err : new Error(String(err));
+  }
+
+  if (changes === 0) {
+    throw new Error(t("sessions.renameNotFound", locale));
+  }
+
   const cache = readCache();
   const idx = cache.sessions.findIndex((s) => s.id === sessionId);
   if (idx >= 0) {
-    cache.sessions[idx].title = title;
+    cache.sessions[idx].title = normalized;
     writeCache(cache);
-  }
-  // Also persist in state.db so the rename survives cache rebuilds
-  try {
-    const dbPath = activeStateDbPath();
-    if (existsSync(dbPath)) {
-      const db = new Database(dbPath);
-      try {
-        db.prepare("UPDATE sessions SET title = ? WHERE id = ?").run(
-          title,
-          sessionId,
-        );
-      } finally {
-        db.close();
-      }
-    }
-  } catch {
-    // ignore DB errors — cache update above is the fast path
   }
 }
 

@@ -16,6 +16,12 @@ export default {
   messageSingular: "رسالة",
   delete: "حذف المحادثة",
   rename: "إعادة تسمية المحادثة",
+  renameFailed: "تعذر إعادة تسمية المحادثة",
+  renameInvalid: "أدخل اسماً صالحاً (100 حرف كحد أقصى)",
+  renameTooLong: "العنوان طويل جداً (الحد الأقصى {{max}} حرفاً)",
+  renameUnavailable: "قاعدة بيانات الجلسات غير متاحة",
+  renameDuplicate: "العنوان «{{title}}» مستخدم بالفعل",
+  renameNotFound: "لم يتم العثور على الجلسة",
   deleteConfirmTitle: "حذف المحادثة",
   deleteConfirm:
     "حذف هذه المحادثة؟ لا يمكن التراجع عن هذا — سيتم إزالة كل من الرسائل وسجل الجلسة بشكل دائم.",

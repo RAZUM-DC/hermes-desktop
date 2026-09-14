@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo, memo } from "react";
 import { Plus, Search, X, ChatBubble, Trash, Pencil } from "../../assets/icons";
 import { useI18n } from "../../components/useI18n";
+import { confirmSessionRename } from "./confirmSessionRename";
 
 interface CachedSession {
   id: string;
@@ -133,6 +134,7 @@ const SessionCard = memo(function SessionCard({
   onRenameConfirm,
   onRenameCancel,
   renameInputRef,
+  renameSaving,
   selectionMode = false,
   selected = false,
   onToggleSelected,
@@ -153,6 +155,7 @@ const SessionCard = memo(function SessionCard({
   onRenameConfirm?: () => void;
   onRenameCancel?: () => void;
   renameInputRef?: React.RefObject<HTMLInputElement | null>;
+  renameSaving?: boolean;
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelected?: (id: string) => void;
@@ -202,6 +205,7 @@ const SessionCard = memo(function SessionCard({
         {isRenaming ? (
           <input
             ref={renameInputRef}
+            disabled={renameSaving}
             className="sessions-card-rename-input"
             type="text"
             value={renameValue}
@@ -318,6 +322,7 @@ function Sessions({
   const loadRequestId = useRef(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const [renameSaving, setRenameSaving] = useState(false);
 
   // Rename state
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -375,6 +380,7 @@ function Sessions({
 
   const startRename = useCallback(
     (sessionId: string, currentTitle: string): void => {
+      if (renameSaving) return;
       setEditingSessionId(sessionId);
       setEditingTitle(currentTitle || "");
       // Focus the input on the next tick after render
@@ -383,7 +389,7 @@ function Sessions({
         renameInputRef.current?.select();
       }, 0);
     },
-    [],
+    [renameSaving],
   );
 
   const cancelRename = useCallback((): void => {
@@ -393,54 +399,46 @@ function Sessions({
 
   const confirmRename = useCallback(
     async (sessionId: string, newTitle: string): Promise<void> => {
-      const trimmed = newTitle.trim();
-      if (!trimmed) {
-        cancelRename();
-        return;
-      }
-      // Capture old titles so we can roll back on failure.
-      let oldSessionTitle = "";
-      let oldSearchResultTitle = "";
-      // Optimistic update
-      setSessions((prev) => {
-        oldSessionTitle = prev.find((s) => s.id === sessionId)?.title ?? "";
-        return prev.map((s) =>
-          s.id === sessionId ? { ...s, title: trimmed } : s,
-        );
+      const oldSessionTitle =
+        sessions.find((s) => s.id === sessionId)?.title ?? "";
+      const oldSearchResultTitle =
+        searchResults.find((r) => r.sessionId === sessionId)?.title ?? "";
+      await confirmSessionRename({
+        sessionId,
+        value: newTitle,
+        currentTitle: oldSessionTitle,
+        isCurrentContext: () => true,
+        setSaving: setRenameSaving,
+        isStillEditing: () => editingSessionIdRef.current === sessionId,
+        applyOptimistic: (title) => {
+          setSessions((prev) =>
+            prev.map((s) => (s.id === sessionId ? { ...s, title } : s)),
+          );
+          setSearchResults((prev) =>
+            prev.map((r) => (r.sessionId === sessionId ? { ...r, title } : r)),
+          );
+        },
+        rollback: () => {
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId ? { ...s, title: oldSessionTitle } : s,
+            ),
+          );
+          setSearchResults((prev) =>
+            prev.map((r) =>
+              r.sessionId === sessionId
+                ? { ...r, title: oldSearchResultTitle }
+                : r,
+            ),
+          );
+        },
+        clearEditing: cancelRename,
+        inputRef: renameInputRef,
+        fallbackErrorMessage: t("sessions.renameFailed"),
+        persist: (id, title) => window.hermesAPI.updateSessionTitle(id, title),
       });
-      setSearchResults((prev) => {
-        oldSearchResultTitle =
-          prev.find((r) => r.sessionId === sessionId)?.title ?? "";
-        return prev.map((r) =>
-          r.sessionId === sessionId ? { ...r, title: trimmed } : r,
-        );
-      });
-      try {
-        await window.hermesAPI.updateSessionTitle(sessionId, trimmed);
-      } catch (err) {
-        console.error("Failed to rename session", sessionId, err);
-        // Rollback optimistic update
-        setSessions((prev) =>
-          prev.map((s) =>
-            s.id === sessionId ? { ...s, title: oldSessionTitle } : s,
-          ),
-        );
-        setSearchResults((prev) =>
-          prev.map((r) =>
-            r.sessionId === sessionId
-              ? { ...r, title: oldSearchResultTitle }
-              : r,
-          ),
-        );
-      }
-      // Guard: only clear editing state if the user hasn't started editing
-      // a different session while this request was in flight.
-      if (editingSessionIdRef.current === sessionId) {
-        setEditingSessionId(null);
-        setEditingTitle("");
-      }
     },
-    [cancelRename],
+    [cancelRename, searchResults, sessions, t],
   );
 
   const cancelDelete = useCallback((): void => {
@@ -808,6 +806,7 @@ function Sessions({
                     {editingSessionId === r.sessionId ? (
                       <input
                         ref={renameInputRef}
+                        disabled={renameSaving}
                         className="sessions-card-rename-input"
                         type="text"
                         value={editingTitle}
@@ -925,6 +924,7 @@ function Sessions({
                   onRenameConfirm={() => confirmRename(s.id, editingTitle)}
                   onRenameCancel={cancelRename}
                   renameInputRef={renameInputRef}
+                  renameSaving={renameSaving}
                   selectionMode={isSelectionMode}
                   selected={selectedSessionIds.has(s.id)}
                   onToggleSelected={toggleSessionSelected}

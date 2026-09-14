@@ -42,6 +42,24 @@ Each action calls an existing desktop API with an optimistic local update and ro
 
 Pinned rows are a desktop-only affordance: their ids live in `localStorage` (`hermes.sidebar.pinnedSessions`), and pinned sessions are pulled out of the normal grouping into a collapsible **Pinned** section at the top of the list.
 
+### Rename persistence
+
+Session renames must survive `syncSessionCache`, so the durable `state.db` write happens before the JSON cache is updated.
+
+Title policy lives in [[src/shared/session-title.ts]] (`normalizeSessionTitle`, `MAX_SESSION_TITLE_LENGTH`) so the renderer optimistic path and [[src/main/session-cache.ts#updateSessionTitle]] cannot diverge. Main writes the active profile’s `state.db` first, recording `title_source = user` when supported, then mirrors into `sessions.json`. Database errors throw; a failed cache mirror remains recoverable from the committed title on the next full sync. Both the sidebar and Sessions modal call [[src/renderer/src/screens/Sessions/confirmSessionRename.ts#confirmSessionRename]] for optimistic update, toast/rollback, and keep-editor-on-failure. Each editor allows one save at a time; the sidebar ignores late responses after the active profile changes. Normalization strips Agent-disallowed controls and counts Unicode characters for the 100-character limit.
+
+#### User title provenance
+
+Modern Agent schemas record explicit renames as user-authored so late automatic title generation cannot overwrite them; older schemas remain writable without migrations.
+
+#### Cache mirror recovery
+
+If mirroring a committed rename to JSON fails, the next full metadata sync restores the durable database title even for sessions older than the incremental sync window.
+
+#### Overlapping rename protection
+
+The editor prevents overlapping saves and restores editing after failures. Sidebar results from a previous profile cannot roll back a different session list.
+
 ## Full-list modal
 
 The Cmd/Ctrl+K menu action opens an 80%×80% modal that reuses the existing Sessions screen rather than a separate route.

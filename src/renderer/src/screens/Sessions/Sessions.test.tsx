@@ -29,6 +29,7 @@ function installHermesAPI(initialSessions: unknown[] = []): {
   listCachedSessions: ReturnType<typeof vi.fn>;
   syncSessionCache: ReturnType<typeof vi.fn>;
   searchSessions: ReturnType<typeof vi.fn>;
+  updateSessionTitle: ReturnType<typeof vi.fn>;
   deleteSession: ReturnType<typeof vi.fn>;
   deleteSessions: ReturnType<typeof vi.fn>;
   emitConnectionConfigChanged: () => void;
@@ -38,6 +39,7 @@ function installHermesAPI(initialSessions: unknown[] = []): {
     listCachedSessions: vi.fn().mockResolvedValue(initialSessions),
     syncSessionCache: vi.fn().mockResolvedValue(initialSessions),
     searchSessions: vi.fn().mockResolvedValue([]),
+    updateSessionTitle: vi.fn().mockResolvedValue(undefined),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     deleteSessions: vi.fn().mockResolvedValue({ requested: 0, deleted: 0 }),
     onConnectionConfigChanged: vi.fn((callback: () => void) => {
@@ -98,6 +100,40 @@ describe("Sessions tab live refresh (#322)", () => {
     vi.useRealTimers();
   });
 
+  it("disables the rename input during persistence and ignores a duplicate submit", async () => {
+    vi.useRealTimers();
+    const api = installHermesAPI([
+      {
+        id: "pending-session",
+        title: "Original",
+        startedAt: Date.now() / 1000,
+        source: "desktop",
+        messageCount: 1,
+        model: "test",
+      },
+    ]);
+    let complete!: () => void;
+    api.updateSessionTitle.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    render(<Sessions {...baseProps} visible={true} />);
+    await waitFor(() => expect(screen.getByText("Original")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "sessions.rename" }));
+    const input = screen.getAllByRole("textbox")[1] as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Saved name" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input.disabled).toBe(true);
+    fireEvent.blur(input);
+    expect(api.updateSessionTitle).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      complete();
+    });
+    expect(screen.getByText("Saved name")).toBeTruthy();
+    expect(screen.getAllByRole("textbox")).toHaveLength(1);
+  });
   it("re-syncs from state.db on an interval while the tab is visible", async () => {
     const api = installHermesAPI();
     render(<Sessions {...baseProps} visible={true} />);
