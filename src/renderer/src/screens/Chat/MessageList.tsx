@@ -11,7 +11,10 @@ import { HermesAvatar, MessageRow } from "./MessageRow";
 import { ReasoningRow, ToolActivityGroup } from "./HistoryRow";
 import { ClarifyCard } from "./ClarifyCard";
 import { useI18n } from "../../components/useI18n";
+import { ApprovalCard } from "./ApprovalCard";
+import type { ApprovalChoice } from "../../../../shared/chat-approval";
 import type {
+  ApprovalMessage,
   ChatMessage,
   ClarifyMessage,
   ToolCallMessage,
@@ -35,6 +38,11 @@ interface MessageListProps {
   /** Mark an inline clarify card resolved once the user answers/skips. */
   onClarifyRespond?: (msg: ClarifyMessage, answer: string) => Promise<boolean>;
   onClarifyResolved: (requestId: string, answer: string) => void;
+  onApprovalRespond?: (
+    msg: ApprovalMessage,
+    choice: ApprovalChoice,
+  ) => Promise<boolean>;
+  onApprovalResolved?: (msg: ApprovalMessage, choice: ApprovalChoice) => void;
 }
 
 function TypingIndicator({
@@ -80,6 +88,8 @@ export const MessageList = memo(function MessageList({
   onDeny,
   onClarifyRespond,
   onClarifyResolved,
+  onApprovalRespond = () => Promise.resolve(false),
+  onApprovalResolved = () => undefined,
 }: MessageListProps): React.JSX.Element {
   const { t } = useI18n();
   const [extraRows, setExtraRows] = useState(0);
@@ -248,6 +258,14 @@ export const MessageList = memo(function MessageList({
     }
   }
   const lastMessageIsAgent = !!lastBubble && lastBubble.role === "agent";
+  const awaitingApproval = messages.some(
+    (message) =>
+      message.kind === "approval" && !message.resolved && !message.unavailable,
+  );
+  const activeApprovalId = messages.find(
+    (message) =>
+      message.kind === "approval" && !message.resolved && !message.unavailable,
+  )?.id;
 
   // Render plan: bubble/reasoning rows pass through one-to-one, but a
   // contiguous run of tool_call/tool_result rows folds into a single
@@ -312,6 +330,19 @@ export const MessageList = memo(function MessageList({
       continue;
     }
 
+    if (k === "approval") {
+      rows.push(
+        <ApprovalCard
+          key={msg.id}
+          msg={msg as ApprovalMessage}
+          isActive={msg.id === activeApprovalId}
+          onRespond={onApprovalRespond}
+          onResolved={onApprovalResolved}
+        />,
+      );
+      continue;
+    }
+
     const bubble = msg as Extract<ChatMessage, { role: "user" | "agent" }>;
     rows.push(
       <MessageRow
@@ -347,7 +378,7 @@ export const MessageList = memo(function MessageList({
 
       {rows}
 
-      {isLoading && !lastMessageIsAgent && (
+      {isLoading && !lastMessageIsAgent && !awaitingApproval && (
         <TypingIndicator toolProgress={toolProgress} />
       )}
 

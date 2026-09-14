@@ -50,10 +50,14 @@ vi.mock("../dashboardGatewayClient", () => ({
 interface HarnessApi {
   isLoading?: boolean;
   activeTurnRef?: MutableRefObject<ActiveTurn | null>;
+  abort?: () => void;
   messages?: ChatMessage[];
   respondClarify?: ReturnType<
     typeof useDashboardChatTransport
   >["respondClarify"];
+  respondApproval?: ReturnType<
+    typeof useDashboardChatTransport
+  >["respondApproval"];
   send?: (text: string) => Promise<boolean>;
   setConnectionMode?: Dispatch<SetStateAction<"local" | "remote" | "ssh">>;
   setMessages?: Dispatch<SetStateAction<ChatMessage[]>>;
@@ -127,8 +131,10 @@ function Harness({
     Object.assign(api, {
       isLoading,
       activeTurnRef,
+      abort: transport.abort,
       messages,
       respondClarify: transport.respondClarify,
+      respondApproval: transport.respondApproval,
       send: transport.sendMessage,
       setConnectionMode,
       setMessages,
@@ -144,6 +150,8 @@ function Harness({
     setMessages,
     transport.sendMessage,
     transport.respondClarify,
+    transport.respondApproval,
+    transport.abort,
   ]);
 
   return null;
@@ -664,6 +672,270 @@ describe("useDashboardChatTransport recovery", () => {
     expect(requests.map((request) => request.method)).toContain(
       "prompt.submit",
     );
+  });
+});
+
+describe("useDashboardChatTransport approvals", () => {
+  beforeEach(() => {
+    dashboardMock.close.mockClear();
+    dashboardMock.connect.mockClear();
+    dashboardMock.instances.length = 0;
+    dashboardMock.onEvent = null;
+    dashboardMock.request.mockReset();
+    dashboardMock.request.mockImplementation(async (method: string) => {
+      if (method === "session.create") {
+        return { session_id: "live-1", stored_session_id: "stored-1" };
+      }
+      if (method === "model.options")
+        return { provider: "bad-provider", model: "bad-model" };
+      if (method === "approval.respond") return { resolved: 1 };
+      return {};
+    });
+    Object.defineProperty(window, "hermesAPI", {
+      configurable: true,
+      value: {
+        recordSessionContinuation: vi.fn(async () => true),
+        recordSessionLocalError: vi.fn(async () => true),
+        startDashboard: vi.fn(async () => ({
+          connection: { wsUrl: "ws://127.0.0.1:12345" },
+          running: true,
+        })),
+      },
+    });
+  });
+
+  afterEach(() => vi.clearAllMocks());
+
+  it("responds only to the pending offered choice and clears after ack", async () => {
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await act(async () => {
+      await api.send?.("hello");
+      dashboardMock.onEvent?.({
+        type: "approval.request",
+        session_id: "live-1",
+        payload: {
+          request_id: "approval-1",
+          command: "npm publish",
+          choices: ["once"],
+        },
+      });
+    });
+
+    await expect(api.respondApproval?.("approval-1", "always")).resolves.toBe(
+      false,
+    );
+    await expect(api.respondApproval?.("approval-1", "once")).resolves.toBe(
+      true,
+    );
+    expect(dashboardMock.request).toHaveBeenCalledWith("approval.respond", {
+      session_id: "live-1",
+      request_id: "approval-1",
+      choice: "once",
+      all: false,
+    });
+    await expect(api.respondApproval?.("approval-1", "once")).resolves.toBe(
+      false,
+    );
+  });
+
+  it("keeps a failed response pending for retry", async () => {
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await act(async () => {
+      await api.send?.("hello");
+      dashboardMock.onEvent?.({
+        type: "approval.request",
+        session_id: "live-1",
+        payload: { request_id: "approval-2", choices: ["deny"] },
+      });
+    });
+    dashboardMock.request.mockRejectedValueOnce(new Error("offline"));
+
+    await expect(api.respondApproval?.("approval-2", "deny")).resolves.toBe(
+      false,
+    );
+    dashboardMock.request.mockResolvedValueOnce({ resolved: 1 });
+    await expect(api.respondApproval?.("approval-2", "deny")).resolves.toBe(
+      true,
+    );
+  });
+
+  // @lat: [[chat-commands#Structured command approvals#Stale approval isolation]]
+  it.each(["expired", "lost acknowledgement"])(
+    "never applies a %s approval to the next queued command",
+    async (failure) => {
+      const api: HarnessApi = {};
+      const serverPending = new Set(["first", "second"]);
+      const approved: string[] = [];
+      let loseAck = failure === "lost acknowledgement";
+      render(<Harness api={api} />);
+      await act(async () => {
+        await api.send?.("hello");
+        for (const request_id of serverPending) {
+          dashboardMock.onEvent?.({
+            type: "approval.request",
+            session_id: "live-1",
+            payload: { request_id, choices: ["once"] },
+          });
+        }
+      });
+      if (failure === "expired") serverPending.delete("first");
+      dashboardMock.request.mockImplementation(
+        async (method: string, params: Record<string, unknown>) => {
+          if (method !== "approval.respond") return {};
+          // Match the upstream resolver: omitting request_id consumes the FIFO head.
+          const target = String(
+            params.request_id ?? serverPending.values().next().value,
+          );
+          if (!serverPending.delete(target)) return { resolved: 0 };
+          approved.push(target);
+          if (loseAck) {
+            loseAck = false;
+            throw new Error("acknowledgement lost");
+          }
+          return { resolved: 1 };
+        },
+      );
+      await act(async () => {
+        expect(await api.respondApproval?.("first", "once")).toBe(false);
+        if (failure === "lost acknowledgement")
+          expect(await api.respondApproval?.("first", "once")).toBe(false);
+      });
+      expect(serverPending.has("second")).toBe(true);
+      expect(approved).not.toContain("second");
+      expect(dashboardMock.request).toHaveBeenCalledWith("session.interrupt", {
+        session_id: "live-1",
+      });
+      expect(await api.respondApproval?.("second", "once")).toBe(false);
+      expect(
+        api.messages
+          ?.filter((msg) => msg.kind === "approval")
+          .every((msg) => msg.kind === "approval" && msg.unavailable),
+      ).toBe(true);
+    },
+  );
+
+  it("stops an approval that has no gateway-issued request ID", async () => {
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await act(async () => {
+      await api.send?.("hello");
+      dashboardMock.onEvent?.({
+        type: "approval.request",
+        session_id: "live-1",
+        payload: { id: "display-only", command: "npm publish" },
+      });
+    });
+    expect(await api.respondApproval?.("display-only", "once")).toBe(false);
+    expect(dashboardMock.request).toHaveBeenCalledWith("session.interrupt", {
+      session_id: "live-1",
+    });
+    expect(
+      dashboardMock.request.mock.calls.some(
+        ([method]) => method === "approval.respond",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not recover and replay after an approval precedes a missing-session error", async () => {
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    dashboardMock.request.mockImplementation(async (method: string) => {
+      if (method === "session.create")
+        return { session_id: "live-1", stored_session_id: "stored-1" };
+      if (method === "model.options")
+        return { provider: "bad-provider", model: "bad-model" };
+      if (method === "prompt.submit") {
+        dashboardMock.onEvent?.({
+          type: "approval.request",
+          session_id: "live-1",
+          payload: { request_id: "before-ack", choices: ["once"] },
+        });
+        throw new Error("session not found");
+      }
+      return {};
+    });
+    await act(async () => {
+      await api.send?.("hello");
+    });
+    expect(
+      dashboardMock.request.mock.calls.filter(
+        ([method]) => method === "prompt.submit",
+      ),
+    ).toHaveLength(1);
+    expect(
+      dashboardMock.request.mock.calls.some(
+        ([method]) => method === "session.resume",
+      ),
+    ).toBe(false);
+  });
+
+  it("clears pending approval on completion and abort", async () => {
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await act(async () => {
+      await api.send?.("hello");
+      dashboardMock.onEvent?.({
+        type: "approval.request",
+        session_id: "live-1",
+        payload: { request_id: "approval-3", choices: ["once"] },
+      });
+      dashboardMock.onEvent?.({
+        type: "message.complete",
+        session_id: "live-1",
+        payload: { text: "complete" },
+      });
+    });
+
+    expect(
+      api.messages?.find(
+        (msg) => msg.kind === "approval" && msg.requestId === "approval-3",
+      ),
+    ).toMatchObject({ unavailable: true });
+    await expect(api.respondApproval?.("approval-3", "once")).resolves.toBe(
+      false,
+    );
+
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        type: "approval.request",
+        session_id: "live-1",
+        payload: { request_id: "approval-4", choices: ["once"] },
+      });
+      api.abort?.();
+    });
+    await expect(api.respondApproval?.("approval-4", "once")).resolves.toBe(
+      false,
+    );
+  });
+
+  it("presents queued approvals in arrival order", async () => {
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await act(async () => {
+      await api.send?.("hello");
+      dashboardMock.onEvent?.({
+        type: "approval.request",
+        session_id: "live-1",
+        payload: { request_id: "approval-first", choices: ["deny"] },
+      });
+      dashboardMock.onEvent?.({
+        type: "approval.request",
+        session_id: "live-1",
+        payload: { request_id: "approval-second", choices: ["once"] },
+      });
+    });
+
+    await expect(
+      api.respondApproval?.("approval-second", "once"),
+    ).resolves.toBe(false);
+    await expect(api.respondApproval?.("approval-first", "deny")).resolves.toBe(
+      true,
+    );
+    await expect(
+      api.respondApproval?.("approval-second", "once"),
+    ).resolves.toBe(true);
   });
 });
 

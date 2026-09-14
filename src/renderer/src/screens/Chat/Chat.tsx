@@ -30,9 +30,11 @@ import { buildChatTranscript } from "./transcriptUtils";
 import { ConfigHealthBanner } from "../../components/ConfigHealthBanner";
 import FollowUsModal from "../../components/FollowUsModal";
 import type { Attachment } from "../../../../shared/attachments";
+import type { ApprovalChoice } from "../../../../shared/chat-approval";
 import type { SessionModelOverride } from "../../../../shared/model-override";
 import type {
   ActiveTurn,
+  ApprovalMessage,
   ChatMessage,
   ClarifyMessage,
   UsageState,
@@ -606,6 +608,32 @@ function Chat({
     [respondDashboardClarify],
   );
 
+  const respondDashboardApproval = dashboardTransport.respondApproval;
+  const handleApprovalRespond = useCallback(
+    (msg: ApprovalMessage, choice: ApprovalChoice): Promise<boolean> =>
+      msg.responsePath === "dashboard"
+        ? respondDashboardApproval(msg.requestId, choice)
+        : window.hermesAPI.respondApproval(
+            msg.requestId,
+            choice,
+            msg.runId || "",
+          ),
+    [respondDashboardApproval],
+  );
+
+  const handleApprovalResolved = useCallback(
+    (msg: ApprovalMessage, choice: ApprovalChoice) => {
+      setMessages((prev) =>
+        prev.map((candidate) =>
+          candidate.kind === "approval" && candidate.id === msg.id
+            ? { ...candidate, choice, resolved: true }
+            : candidate,
+        ),
+      );
+    },
+    [setMessages],
+  );
+
   const [agentCommandCatalog, setAgentCommandCatalog] =
     useState<AgentCommandsCatalogResponse | null>(null);
   const getCommandCatalog = dashboardTransport.getCommandCatalog;
@@ -1037,6 +1065,8 @@ function Chat({
               onDeny={actions.handleDeny}
               onClarifyRespond={handleClarifyRespond}
               onClarifyResolved={handleClarifyResolved}
+              onApprovalRespond={handleApprovalRespond}
+              onApprovalResolved={handleApprovalResolved}
             />
           )}
           <div ref={bottomRef} />

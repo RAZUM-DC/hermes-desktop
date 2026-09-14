@@ -7,6 +7,7 @@ import {
 } from "../chatMessages";
 import {
   applyDashboardStreamEvent,
+  dashboardApprovalRequestId,
   type DashboardStreamEvent,
 } from "../dashboardEventAdapter";
 import { DashboardGatewayClient } from "../dashboardGatewayClient";
@@ -14,6 +15,11 @@ import { executeSlash, type SlashExecOutcome } from "../slashExec";
 import type { AgentCommandsCatalogResponse } from "../slash/types";
 import type { ActiveTurn, Attachment, ChatMessage, UsageState } from "../types";
 import type { DesktopSessionContinuationItem } from "../../../../../shared/session-continuation";
+import {
+  gatewayApprovalRequestId,
+  normalizeApprovalRequest,
+  type ApprovalChoice,
+} from "../../../../../shared/chat-approval";
 
 interface SessionResponse {
   info?: unknown;
@@ -106,6 +112,10 @@ interface UseDashboardChatTransportResult {
   abort: () => void;
   enabled: boolean;
   respondClarify: (requestId: string, answer: string) => Promise<boolean>;
+  respondApproval: (
+    requestId: string,
+    choice: ApprovalChoice,
+  ) => Promise<boolean>;
   sendMessage: (text: string, attachments?: Attachment[]) => Promise<boolean>;
   /**
    * Run a slash command through the gateway's `slash.exec` pipeline instead of
@@ -125,6 +135,14 @@ interface UseDashboardChatTransportResult {
    * a `background.complete` event rendered into the transcript.
    */
   runBackground: (text: string) => Promise<{ taskId?: string; error?: string }>;
+}
+
+interface PendingDashboardApproval {
+  choices: ApprovalChoice[];
+  gatewayRequestId: string | null;
+  requestId: string;
+  responding: boolean;
+  sessionId: string;
 }
 
 interface DashboardSeedMessage {
@@ -179,6 +197,7 @@ export async function submitDashboardPromptWithRecovery(
   client: DashboardPromptClient,
   params: {
     onRecoveredSessionId?: (sessionId: string) => void;
+    canRecover?: () => boolean;
     sessionId: string;
     storedSessionId?: string | null;
     text: string;
@@ -191,7 +210,11 @@ export async function submitDashboardPromptWithRecovery(
     });
     return params.sessionId;
   } catch (err) {
-    if (!params.storedSessionId || !isDashboardSessionNotFoundError(err)) {
+    if (
+      params.canRecover?.() === false ||
+      !params.storedSessionId ||
+      !isDashboardSessionNotFoundError(err)
+    ) {
       throw err;
     }
 
@@ -869,6 +892,8 @@ export function useDashboardChatTransport({
     responding: boolean;
     activeTurn: ActiveTurn | null;
   } | null>(null);
+  const pendingApprovalsRef = useRef<PendingDashboardApproval[]>([]);
+  const approvalNonceRef = useRef(0);
   const pendingRecoveredContinuationRef = useRef<
     DesktopSessionContinuationItem[]
   >([]);
@@ -945,11 +970,44 @@ export function useDashboardChatTransport({
 
   useEffect(() => {
     // Clearing a conversation invalidates a pending renderer-only question.
-    if (messagesRef.current.length === 0) pendingClarifyRef.current = null;
+    if (messagesRef.current.length === 0) {
+      pendingClarifyRef.current = null;
+      pendingApprovalsRef.current = [];
+    }
   });
+
+  const expirePendingApprovalsRef = useRef<(failActiveTurn?: boolean) => void>(
+    () => undefined,
+  );
+  expirePendingApprovalsRef.current = (failActiveTurn = false): void => {
+    if (pendingApprovalsRef.current.length === 0) return;
+    const pendingIds = new Set(
+      pendingApprovalsRef.current.map(({ requestId }) => requestId),
+    );
+    pendingApprovalsRef.current = [];
+    setMessages((current) => {
+      const unavailable = current.map((message) =>
+        message.kind === "approval" &&
+        pendingIds.has(message.requestId) &&
+        !message.resolved
+          ? { ...message, unavailable: true }
+          : message,
+      );
+      messagesRef.current = unavailable;
+      return unavailable;
+    });
+    if (failActiveTurn) {
+      const activeTurn = activeTurnRef.current;
+      if (activeTurn) activeTurn.status = "failed";
+      activeTurnRef.current = null;
+      setToolProgress(null);
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (hermesSessionId === storedSessionIdRef.current) return;
+    expirePendingApprovalsRef.current();
     storedSessionIdRef.current = hermesSessionId;
     runtimeSessionIdRef.current = null;
     reasoningSegmentClosedRef.current = false;
@@ -967,6 +1025,7 @@ export function useDashboardChatTransport({
   useEffect(() => {
     clientGenerationRef.current += 1;
     dashboardUnavailableRef.current = false;
+    expirePendingApprovalsRef.current(true);
     clientRef.current?.close();
     clientRef.current = null;
     connectingRef.current = null;
@@ -1018,6 +1077,38 @@ export function useDashboardChatTransport({
 
       const failed =
         event.type === "message.complete" && completionFailed(event.payload);
+      const approvalRequestId =
+        event.type === "approval.request"
+          ? dashboardApprovalRequestId(
+              event,
+              Date.now(),
+              ++approvalNonceRef.current,
+            )
+          : undefined;
+      if (approvalRequestId) {
+        const sessionId = event.session_id || runtimeSessionId;
+        if (sessionId) {
+          if (
+            !pendingApprovalsRef.current.some(
+              (pending) => pending.requestId === approvalRequestId,
+            )
+          ) {
+            pendingApprovalsRef.current = [
+              ...pendingApprovalsRef.current,
+              {
+                requestId: approvalRequestId,
+                gatewayRequestId: gatewayApprovalRequestId(event.payload),
+                responding: false,
+                sessionId,
+                choices: normalizeApprovalRequest(
+                  event.payload,
+                  approvalRequestId,
+                ).choices,
+              },
+            ];
+          }
+        }
+      }
       const next = applyDashboardStreamEvent(
         {
           messages: messagesRef.current,
@@ -1026,6 +1117,7 @@ export function useDashboardChatTransport({
         event,
         {
           activeTurn: activeTurnRef.current,
+          approvalRequestId,
           renderAssistantDeltas: connectionMode === "local",
         },
       );
@@ -1050,11 +1142,27 @@ export function useDashboardChatTransport({
         flushDeltasNow(nextMessages);
       }
 
+      if (
+        event.type === "approval.request" &&
+        !gatewayApprovalRequestId(event.payload)
+      ) {
+        // A local display ID cannot safely select a command in an upstream
+        // FIFO queue. Stop instead of asking the user to approve an unknown target.
+        expirePendingApprovalsRef.current(true);
+        if (runtimeSessionId) {
+          void clientRef.current
+            ?.request("session.interrupt", { session_id: runtimeSessionId })
+            .catch(() => undefined);
+        }
+        return;
+      }
+
       if (event.type === "message.complete") {
         // The resumed turn can finish before the clarify RPC acknowledgement.
         if (!pendingClarifyRef.current?.responding) {
           expirePendingClarifyRef.current();
         }
+        expirePendingApprovalsRef.current();
         if (failed) {
           appliedModelRef.current = null;
           recreateRuntimeSessionRef.current = true;
@@ -1194,6 +1302,7 @@ export function useDashboardChatTransport({
           onClose: () => {
             if (clientRef.current === client) {
               expirePendingClarifyRef.current(true);
+              expirePendingApprovalsRef.current(true);
               clientRef.current = null;
             }
           },
@@ -1305,6 +1414,7 @@ export function useDashboardChatTransport({
           .request("session.close", { session_id: targetSessionId })
           .catch(() => undefined);
         runtimeSessionIdRef.current = null;
+        pendingApprovalsRef.current = [];
         storedSessionIdRef.current = storedSessionId;
         reasoningSegmentClosedRef.current = false;
         appliedModelRef.current = null;
@@ -1554,6 +1664,14 @@ export function useDashboardChatTransport({
       const failActiveTurn = (message: string): true => {
         const activeTurn = activeTurnRef.current;
         if (activeTurn) activeTurn.status = "failed";
+        if (pendingApprovalsRef.current.length) {
+          expirePendingApprovalsRef.current();
+          void clientRef.current
+            ?.request("session.interrupt", {
+              session_id: runtimeSessionIdRef.current,
+            })
+            .catch(() => undefined);
+        }
         let failedMessages: ChatMessage[] | null = null;
         setMessages((prev) => {
           failedMessages = markActiveTurnFailed(prev, message, activeTurn);
@@ -1616,6 +1734,7 @@ export function useDashboardChatTransport({
               .catch(() => undefined);
           }
           runtimeSessionIdRef.current = null;
+          pendingApprovalsRef.current = [];
           reasoningSegmentClosedRef.current = false;
           appliedModelRef.current = null;
         }
@@ -1652,7 +1771,10 @@ export function useDashboardChatTransport({
           dashboardText,
           syncedAttachments.refs,
         );
+        const approvalNonceBeforeSubmit = approvalNonceRef.current;
         await submitDashboardPromptWithRecovery(client, {
+          canRecover: () =>
+            approvalNonceRef.current === approvalNonceBeforeSubmit,
           sessionId: selectedSessionId,
           storedSessionId: storedSessionIdRef.current,
           text: submitText,
@@ -1683,6 +1805,56 @@ export function useDashboardChatTransport({
       setMessages,
       setToolProgress,
     ],
+  );
+
+  const respondApproval = useCallback(
+    async (requestId: string, choice: ApprovalChoice): Promise<boolean> => {
+      const pending = pendingApprovalsRef.current[0];
+      const runtimeSessionId = runtimeSessionIdRef.current;
+      if (
+        !enabled ||
+        !pending ||
+        pending.responding ||
+        !pending.gatewayRequestId ||
+        pending.requestId !== requestId ||
+        pending.sessionId !== runtimeSessionId ||
+        !pending.choices.includes(choice)
+      ) {
+        return false;
+      }
+
+      const client = clientRef.current;
+      if (!client?.connected) return false;
+      pending.responding = true;
+      try {
+        const result = await client.request<{ resolved?: unknown }>(
+          "approval.respond",
+          {
+            session_id: pending.sessionId,
+            request_id: pending.gatewayRequestId,
+            choice,
+            all: false,
+          },
+        );
+        if (pendingApprovalsRef.current[0] !== pending) return false;
+        if (result?.resolved !== 1) {
+          expirePendingApprovalsRef.current(true);
+          void client
+            .request("session.interrupt", { session_id: pending.sessionId })
+            .catch(() => undefined);
+          return false;
+        }
+        pendingApprovalsRef.current = pendingApprovalsRef.current.slice(1);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        if (pendingApprovalsRef.current[0] === pending) {
+          pending.responding = false;
+        }
+      }
+    },
+    [enabled],
   );
 
   const execSlash = useCallback(
@@ -1748,6 +1920,7 @@ export function useDashboardChatTransport({
 
   const abort = useCallback(() => {
     expirePendingClarifyRef.current();
+    expirePendingApprovalsRef.current();
     const client = clientRef.current;
     const sessionId = runtimeSessionIdRef.current;
     if (!enabled || !client || !sessionId) return;
@@ -1761,6 +1934,7 @@ export function useDashboardChatTransport({
   useEffect(
     () => () => {
       expirePendingClarifyRef.current();
+      expirePendingApprovalsRef.current();
       clientRef.current?.close();
       clientRef.current = null;
     },
@@ -1771,6 +1945,7 @@ export function useDashboardChatTransport({
     abort,
     enabled,
     respondClarify,
+    respondApproval,
     sendMessage,
     execSlash,
     getCommandCatalog,
