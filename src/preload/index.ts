@@ -16,6 +16,10 @@ import type {
   MessagingPlatformUpdate,
 } from "../shared/messaging-platforms";
 import type { ChatToolEvent } from "../shared/chat-stream";
+import type {
+  ApprovalChoice,
+  ChatApprovalRequest,
+} from "../shared/chat-approval";
 
 /**
  * Mirror of the renderer-side `CredentialPoolEntry` ambient type
@@ -646,6 +650,25 @@ const hermesAPI = {
    *  autonomously (the gateway treats it as "you decide"). */
   respondClarify: (requestId: string, answer: string): Promise<boolean> =>
     ipcRenderer.invoke("clarify-respond", { requestId, answer }),
+
+  onApprovalRequest: (
+    callback: (runId: string, req: ChatApprovalRequest) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      runId: string,
+      req: ChatApprovalRequest,
+    ): void => callback(runId, req);
+    ipcRenderer.on("chat-approval-request", handler);
+    return () => ipcRenderer.removeListener("chat-approval-request", handler);
+  },
+
+  respondApproval: (
+    requestId: string,
+    choice: ApprovalChoice,
+    runId: string,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke("approval-respond", { requestId, choice, runId }),
 
   // Gateway
   startGateway: (): Promise<GatewayStartResult> =>
@@ -1314,7 +1337,8 @@ const hermesAPI = {
     method: string,
     path: string,
     body?: unknown,
-  ) => ipcRenderer.invoke("agent-kanban-request", runtimeId, method, path, body),
+  ) =>
+    ipcRenderer.invoke("agent-kanban-request", runtimeId, method, path, body),
   agentMontageArtifact: (projectId: string, which: string) =>
     ipcRenderer.invoke("agent-montage-artifact", projectId, which),
   kanbanDispatchOnce: (dryRun?: boolean, profile?: string) =>

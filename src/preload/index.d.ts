@@ -22,6 +22,10 @@ import type {
   MessagingPlatformUpdate,
 } from "../shared/messaging-platforms";
 import type { ChatToolEvent } from "../shared/chat-stream";
+import type {
+  ApprovalChoice,
+  ChatApprovalRequest,
+} from "../shared/chat-approval";
 
 interface ElectronAPI {
   process: {
@@ -472,6 +476,14 @@ interface HermesAPI {
     ) => void,
   ) => () => void;
   respondClarify: (requestId: string, answer: string) => Promise<boolean>;
+  onApprovalRequest: (
+    callback: (runId: string, req: ChatApprovalRequest) => void,
+  ) => () => void;
+  respondApproval: (
+    requestId: string,
+    choice: ApprovalChoice,
+    runId: string,
+  ) => Promise<boolean>;
 
   // Gateway
   startGateway: () => Promise<GatewayStartResult>;
@@ -1020,7 +1032,9 @@ interface HermesAPI {
   // Виртуальная доска ИИ-сотрудников (staff-мостик через identity-proxy)
   listStaffAgents: () => Promise<{
     success: boolean;
-    data?: { agents?: { runtime_id: string; email?: string; title?: string }[] };
+    data?: {
+      agents?: { runtime_id: string; email?: string; title?: string }[];
+    };
     error?: string;
   }>;
   agentKanbanRequest: (
@@ -1034,7 +1048,12 @@ interface HermesAPI {
     which: string,
   ) => Promise<{
     success: boolean;
-    data?: { dataUrl?: string; fileUrl?: string; filePath?: string; mime?: string };
+    data?: {
+      dataUrl?: string;
+      fileUrl?: string;
+      filePath?: string;
+      mime?: string;
+    };
     error?: string;
   }>;
 

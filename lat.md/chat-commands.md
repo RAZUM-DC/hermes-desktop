@@ -58,7 +58,29 @@ The canonical time comes from state.db: [[src/renderer/src/screens/Chat/sessionH
 
 A few non-local commands have dedicated desktop handling and must NOT be diverted to the gateway slash pipeline, or they'd lose their behaviour.
 
-The approval responses `/approve` and `/deny` (the `RENDERER_NATIVE_SLASH` set) are excluded from the pipeline and sent as prompt-level input, matching their dedicated button handlers — `slash.exec` rejects pending-input commands anyway.
+The legacy approval responses `/approve` and `/deny` (the `RENDERER_NATIVE_SLASH` set) are excluded from the pipeline and sent as prompt-level input. They remain a compatibility path for text-only backends; structured gateway approvals use the flow below.
+
+## Structured command approvals
+
+Dangerous commands pause the current turn until the user explicitly allows or denies them; the desktop never auto-approves or replays a prompt after an approval request.
+
+[[src/shared/chat-approval.ts#normalizeApprovalRequest]] limits choices to the gateway's offered permissions and preserves a deny path. Dashboard chat renders [[src/renderer/src/screens/Chat/ApprovalCard.tsx#ApprovalCard]] from `approval.request`. Responses include the gateway-issued `request_id` and runtime session ID through [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]]. Cards queue in arrival order, with an in-flight guard. Only an acknowledgment resolving exactly one request succeeds. Network failures can retry the same ID; a missing ID or unresolved acknowledgment invalidates the cards and interrupts the turn.
+
+Gateway-only WebSocket chat registers opaque renderer IDs through [[src/main/hermes.ts#registerPendingApproval]], bound to the originating renderer and run by [[src/main/ipc/register.ts#registerIpcHandlers]]. These IDs map to the upstream request IDs; they never substitute for them. Completion, cancellation, renderer destruction, or connection loss clears pending requests. Run cleanup retains the originating connection key; cancelled IPC calls settle, and runs that finish before their handle arrives are not registered as active. A transport failure after any approval request cannot replay the prompt. Callers without an approval UI fail closed. `Always allow` requires a second confirmation because the gateway persists that permission.
+
+The current upstream `/v1/runs/{run_id}/approval` handler ignores request IDs and resolves the queue head. Desktop therefore stops Runs API turns that request approval, using the original connection's credentials, and directs users to Dashboard chat. Ordinary Runs streaming remains available; manual Runs approvals require an upstream contract change first.
+
+### Stale approval isolation
+
+Dashboard regression tests simulate expired requests and lost acknowledgments with a queued second command, ensuring retries cannot approve that next command and unresolved responses stop the turn.
+
+### Gateway approval correlation
+
+WebSocket transport tests verify opaque renderer IDs map to gateway IDs, and missing IDs, disconnects, or lost prompt acknowledgments stop the turn without replaying it.
+
+### Runs approval fail-closed
+
+Runs transport tests verify approval events stop the original run with its captured credentials, never POST an approval, and never replay through chat completions.
 
 ## Side questions (`/btw`)
 
