@@ -55,6 +55,7 @@ export default {
   categoryTools: "Narzędzia",
   categoryInfo: "Informacje",
   noUsageData: "Brak danych użycia. Najpierw wyślij wiadomość.",
+  showEarlierMessages: "Pokaż {{count}} wcześniejszych wiadomości",
   media: {
     open: "Otwórz",
     saveAs: "Zapisz jako…",

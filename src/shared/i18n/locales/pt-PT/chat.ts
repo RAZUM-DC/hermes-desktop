@@ -61,6 +61,7 @@ export default {
   categoryTools: "Ferramentas",
   categoryInfo: "Informação",
   noUsageData: "Ainda sem dados de utilização. Envie uma mensagem primeiro.",
+  showEarlierMessages: "Mostrar {{count}} mensagens anteriores",
   media: {
     open: "Abrir",
     saveAs: "Guardar como…",

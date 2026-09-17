@@ -50,6 +50,7 @@ export default {
   categoryInfo: "情報",
   noUsageData:
     "まだ使用データがありません。まずメッセージを送ってみてください。",
+  showEarlierMessages: "以前のメッセージを{{count}}件表示",
   media: {
     open: "開く",
     saveAs: "名前を付けて保存…",

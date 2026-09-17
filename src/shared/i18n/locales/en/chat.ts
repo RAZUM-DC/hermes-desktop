@@ -100,6 +100,7 @@ export default {
   categoryTools: "Tools",
   categoryInfo: "Info",
   noUsageData: "No usage data yet. Send a message first.",
+  showEarlierMessages: "Show {{count}} earlier messages",
   media: {
     open: "Open",
     saveAs: "Save as…",

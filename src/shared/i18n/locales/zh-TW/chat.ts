@@ -35,6 +35,7 @@ export default {
   categoryTools: "工具",
   categoryInfo: "資訊",
   noUsageData: "目前沒有使用資料。請先傳送一則訊息。",
+  showEarlierMessages: "顯示更早的 {{count}} 則訊息",
   media: {
     open: "開啟",
     saveAs: "另存新檔…",
