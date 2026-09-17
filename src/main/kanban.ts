@@ -238,13 +238,21 @@ async function remoteKanbanReq(
   }
 }
 
-async function remoteKanbanPost(path: string, body?: unknown) {
+async function remoteKanbanPost(
+  path: string,
+  body?: unknown,
+): Promise<KanbanResult<unknown>> {
   return remoteKanbanReq("POST", path, body);
 }
-async function remoteKanbanPatch(path: string, body: unknown) {
+async function remoteKanbanPatch(
+  path: string,
+  body: unknown,
+): Promise<KanbanResult<unknown>> {
   return remoteKanbanReq("PATCH", path, body);
 }
-async function remoteKanbanDelete(path: string) {
+async function remoteKanbanDelete(
+  path: string,
+): Promise<KanbanResult<unknown>> {
   return remoteKanbanReq("DELETE", path);
 }
 
