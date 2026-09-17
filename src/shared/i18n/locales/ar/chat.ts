@@ -38,6 +38,7 @@ export default {
   approve: "موافقة",
   deny: "رفض",
   clarify: {
+    unavailable: "لم يعد هذا السؤال بانتظار إجابة.",
     defaultQuestion: "يحتاج Hermes إلى مدخلاتك.",
     placeholder: "اكتب إجابتك… (Ctrl+Enter للإرسال)",
     send: "إرسال",

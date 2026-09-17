@@ -33,6 +33,7 @@ interface MessageListProps {
   onApprove: () => void;
   onDeny: () => void;
   /** Mark an inline clarify card resolved once the user answers/skips. */
+  onClarifyRespond?: (msg: ClarifyMessage, answer: string) => Promise<boolean>;
   onClarifyResolved: (requestId: string, answer: string) => void;
 }
 
@@ -77,6 +78,7 @@ export const MessageList = memo(function MessageList({
   toolProgress,
   onApprove,
   onDeny,
+  onClarifyRespond,
   onClarifyResolved,
 }: MessageListProps): React.JSX.Element {
   const { t } = useI18n();
@@ -303,6 +305,7 @@ export const MessageList = memo(function MessageList({
         <ClarifyCard
           key={msg.id}
           msg={msg as ClarifyMessage}
+          onRespond={onClarifyRespond}
           onResolved={onClarifyResolved}
         />,
       );

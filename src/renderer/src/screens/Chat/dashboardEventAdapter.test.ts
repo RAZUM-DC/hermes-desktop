@@ -166,4 +166,52 @@ describe("applyDashboardStreamEvent — message.complete text reconciliation", (
     expect(bubble).toBeDefined();
     expect((bubble as { content: string }).content).toBe("Remote answer");
   });
+
+  it("preserves gateway clarification choices as an interactive card", () => {
+    const next = applyDashboardStreamEvent(
+      { messages: [], reasoningSegmentClosed: false },
+      {
+        type: "clarify.request",
+        session_id: "live",
+        payload: {
+          request_id: "question-1",
+          question: "Which environment?",
+          choices: ["staging", "production"],
+        },
+      },
+    );
+    expect(next.messages[0]).toMatchObject({
+      kind: "clarify",
+      requestId: "question-1",
+      question: "Which environment?",
+      choices: ["staging", "production"],
+      responsePath: "dashboard",
+    });
+  });
+
+  it("does not reopen an answered card when the gateway replays it", () => {
+    const original = {
+      id: "clarify-question-1",
+      kind: "clarify" as const,
+      role: "agent" as const,
+      requestId: "question-1",
+      question: "Which environment?",
+      choices: ["staging"],
+      responsePath: "dashboard" as const,
+      resolved: true,
+      answer: "staging",
+    };
+    const next = applyDashboardStreamEvent(
+      { messages: [original], reasoningSegmentClosed: false },
+      {
+        type: "clarify.request",
+        payload: {
+          request_id: "question-1",
+          question: "Which environment?",
+          choices: ["production"],
+        },
+      },
+    );
+    expect(next.messages[0]).toEqual(original);
+  });
 });

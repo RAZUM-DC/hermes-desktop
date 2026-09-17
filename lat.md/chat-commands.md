@@ -103,3 +103,9 @@ Typing `/` opens a centered command palette in [[src/renderer/src/screens/Chat/C
 Escape is captured at the document level while the palette is open, so it closes even if focus has moved from the composer into a command row. Dismissal preserves the slash draft and returns focus to the composer.
 
 The palette pre-normalizes searchable command metadata and virtualizes its grouped rows through [[src/renderer/src/screens/Chat/slash/virtualSlashCommands.ts#createSlashCommandVirtualLayout]]. Only visible rows plus a small overscan are mounted, while keyboard selection uses calculated offsets.
+
+## Dashboard clarification cards
+
+Dashboard questions preserve their structured choices and return answers through the originating WebSocket client; local clarification cards retain IPC delivery.
+
+[[src/renderer/src/screens/Chat/dashboardEventAdapter.ts#appendClarifyRequest]] creates a dashboard-tagged card. [[src/renderer/src/screens/Chat/Chat.tsx#Chat]] supplies the correct responder to [[src/renderer/src/screens/Chat/ClarifyCard.tsx]], while [[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] owns delivery and expiry. See [[dashboard-clarify]].

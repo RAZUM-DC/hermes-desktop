@@ -74,6 +74,10 @@ export interface ClarifyMessage {
   kind: "clarify";
   role: "agent";
   requestId: string;
+  /** Delivery route for this question. Older/local gateway cards use IPC. */
+  responsePath?: "dashboard" | "ipc";
+  /** The gateway no longer accepts an answer for this request. */
+  unavailable?: boolean;
   question: string;
   choices: string[];
   answer?: string;
