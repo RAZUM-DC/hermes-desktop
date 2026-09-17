@@ -85,7 +85,8 @@ interface UseDashboardChatTransportArgs {
   enabled: boolean;
   fallbackOnUnavailable: boolean;
   hermesSessionId: string | null;
-  messages: ChatMessage[];
+  /** Shared write-through transcript ref maintained by useTranscriptState. */
+  messagesRef: React.MutableRefObject<ChatMessage[]>;
   model?: string;
   modelBaseUrl?: string;
   profile?: string;
@@ -833,7 +834,7 @@ export function useDashboardChatTransport({
   enabled,
   fallbackOnUnavailable,
   hermesSessionId,
-  messages,
+  messagesRef,
   model,
   modelBaseUrl,
   profile,
@@ -857,7 +858,6 @@ export function useDashboardChatTransport({
   const dashboardUnavailableRef = useRef(false);
   const runtimeSessionIdRef = useRef<string | null>(null);
   const storedSessionIdRef = useRef<string | null>(hermesSessionId);
-  const messagesRef = useRef<ChatMessage[]>(messages);
   const reasoningSegmentClosedRef = useRef(false);
   const appliedModelRef = useRef<string | null>(null);
   const recreateRuntimeSessionRef = useRef(false);
@@ -868,9 +868,45 @@ export function useDashboardChatTransport({
   >([]);
   const lastSyncedCwdRef = useRef<string | null>(null);
 
+  // Streaming deltas can arrive much faster than the display refresh rate.
+  // Keep applying them synchronously to messagesRef, but publish at most one
+  // React state update per animation frame.
+  const deltaFlushHandleRef = useRef<number | null>(null);
+
+  const cancelScheduledFlush = useCallback((): void => {
+    if (deltaFlushHandleRef.current === null) return;
+    const cancel =
+      typeof cancelAnimationFrame === "function"
+        ? cancelAnimationFrame
+        : clearTimeout;
+    cancel(deltaFlushHandleRef.current);
+    deltaFlushHandleRef.current = null;
+  }, []);
+
+  const scheduleDeltaFlush = useCallback((): void => {
+    if (deltaFlushHandleRef.current !== null) return;
+    const raf =
+      typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame
+        : (callback: FrameRequestCallback): number =>
+            setTimeout(() => callback(0), 16) as unknown as number;
+    deltaFlushHandleRef.current = raf(() => {
+      deltaFlushHandleRef.current = null;
+      setMessages(messagesRef.current);
+    });
+  }, [messagesRef, setMessages]);
+
+  const flushDeltasNow = useCallback(
+    (next: ChatMessage[]): void => {
+      cancelScheduledFlush();
+      setMessages(next);
+    },
+    [cancelScheduledFlush, setMessages],
+  );
+
   useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+    return cancelScheduledFlush;
+  }, [cancelScheduledFlush]);
 
   useEffect(() => {
     if (hermesSessionId === storedSessionIdRef.current) return;
@@ -936,8 +972,7 @@ export function useDashboardChatTransport({
             content: `${label}${body}`,
           },
         ];
-        messagesRef.current = appended;
-        setMessages(appended);
+        flushDeltasNow(appended);
         return;
       }
 
@@ -963,7 +998,17 @@ export function useDashboardChatTransport({
           )
         : next.messages;
       messagesRef.current = nextMessages;
-      setMessages(nextMessages);
+      const isCoalescableDelta =
+        event.type === "message.delta" ||
+        event.type === "thinking.delta" ||
+        event.type === "reasoning.delta" ||
+        event.type === "tool.progress" ||
+        event.type === "tool.generating";
+      if (isCoalescableDelta) {
+        scheduleDeltaFlush();
+      } else {
+        flushDeltasNow(nextMessages);
+      }
 
       if (event.type === "message.complete") {
         if (failed) {
@@ -1027,8 +1072,10 @@ export function useDashboardChatTransport({
     [
       activeTurnRef,
       connectionMode,
+      flushDeltasNow,
+      messagesRef,
+      scheduleDeltaFlush,
       setIsLoading,
-      setMessages,
       setToolProgress,
       setUsage,
     ],
@@ -1168,7 +1215,7 @@ export function useDashboardChatTransport({
 
       return targetSessionId;
     },
-    [activeTurnRef, contextFolder, profile, setHermesSessionId],
+    [activeTurnRef, contextFolder, messagesRef, profile, setHermesSessionId],
   );
 
   const ensureSelectedModel = useCallback(
@@ -1496,6 +1543,7 @@ export function useDashboardChatTransport({
       ensureClient,
       ensureRuntimeSession,
       ensureSelectedModel,
+      messagesRef,
       syncDashboardAttachments,
       setIsLoading,
       setMessages,

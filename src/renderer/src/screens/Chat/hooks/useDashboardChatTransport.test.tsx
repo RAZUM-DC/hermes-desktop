@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DashboardRpcEvent } from "../dashboardGatewayClient";
 import { useDashboardChatTransport } from "./useDashboardChatTransport";
+import { useTranscriptState } from "./useTranscriptState";
 import type { ActiveTurn, ChatMessage } from "../types";
 
 const dashboardMock = vi.hoisted(() => ({
@@ -76,7 +77,7 @@ function Harness({
   initialConnectionMode?: "local" | "remote" | "ssh";
   onDashboardUnavailable?: (reason: string) => void;
 }): null {
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const { messages, setMessages, messagesRef } = useTranscriptState([
     {
       id: "u-bad",
       role: "user",
@@ -97,7 +98,7 @@ function Harness({
     enabled: true,
     fallbackOnUnavailable,
     hermesSessionId: null,
-    messages,
+    messagesRef,
     model,
     profile: undefined,
     provider,
@@ -452,5 +453,168 @@ describe("useDashboardChatTransport unavailable fallback (issue #667)", () => {
     });
     // Local dashboard may still be spawning, so each send re-checks.
     expect(startDashboard).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("useDashboardChatTransport delta coalescing", () => {
+  beforeEach(() => {
+    dashboardMock.close.mockClear();
+    dashboardMock.connect.mockClear();
+    dashboardMock.instances.length = 0;
+    dashboardMock.onEvent = null;
+    dashboardMock.request.mockReset();
+    dashboardMock.request.mockImplementation(async (method: string) => {
+      if (method === "session.create") {
+        return { session_id: "live-1", stored_session_id: "stored-1" };
+      }
+      return {};
+    });
+    Object.defineProperty(window, "hermesAPI", {
+      configurable: true,
+      value: {
+        recordSessionContinuation: vi.fn(async () => true),
+        recordSessionLocalError: vi.fn(async () => true),
+        startDashboard: vi.fn(async () => ({
+          connection: { wsUrl: "ws://127.0.0.1:12345" },
+          running: true,
+        })),
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("coalesces a burst of deltas into one frame without losing text", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await act(async () => {
+      await api.send?.("hello");
+    });
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        payload: {},
+        session_id: "live-1",
+        type: "message.start",
+      });
+      for (const chunk of ["a", "b", "c", "d", "e"]) {
+        dashboardMock.onEvent?.({
+          payload: { text: chunk },
+          session_id: "live-1",
+          type: "message.delta",
+        });
+      }
+    });
+
+    expect(frames).toHaveLength(1);
+    await act(async () => frames[0](0));
+    const last = api.messages?.[api.messages.length - 1] as
+      | { role?: string; content?: string }
+      | undefined;
+    expect(last?.role).toBe("agent");
+    expect(last?.content).toBe("abcde");
+  });
+
+  it("flushes completion immediately and cancels the pending frame", async () => {
+    const frames: FrameRequestCallback[] = [];
+    const cancelled: number[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
+      cancelled.push(handle);
+    });
+
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await act(async () => {
+      await api.send?.("hello");
+    });
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        payload: {},
+        session_id: "live-1",
+        type: "message.start",
+      });
+      dashboardMock.onEvent?.({
+        payload: { text: "partial" },
+        session_id: "live-1",
+        type: "message.delta",
+      });
+      dashboardMock.onEvent?.({
+        payload: { text: "partial and done" },
+        session_id: "live-1",
+        type: "message.complete",
+      });
+    });
+
+    expect(cancelled).toHaveLength(1);
+    const last = api.messages?.[api.messages.length - 1] as
+      | { content?: string }
+      | undefined;
+    expect(last?.content).toBe("partial and done");
+    await act(async () => frames.forEach((callback) => callback(0)));
+    const afterStaleFrame = api.messages?.[api.messages.length - 1] as
+      | { content?: string }
+      | undefined;
+    expect(afterStaleFrame?.content).toBe("partial and done");
+  });
+
+  it("preserves deltas when another transcript writer lands mid-frame", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+
+    const api: HarnessApi = {};
+    render(<Harness api={api} />);
+    await act(async () => {
+      await api.send?.("hello");
+    });
+    await act(async () => {
+      dashboardMock.onEvent?.({
+        payload: {},
+        session_id: "live-1",
+        type: "message.start",
+      });
+      for (const chunk of ["alpha", "beta"]) {
+        dashboardMock.onEvent?.({
+          payload: { text: chunk },
+          session_id: "live-1",
+          type: "message.delta",
+        });
+      }
+    });
+    await act(async () => {
+      api.setMessages?.((previous) => [
+        ...previous,
+        { id: "side-q", role: "user", content: "btw question" },
+      ]);
+    });
+
+    const afterAppend = api.messages ?? [];
+    expect(afterAppend[afterAppend.length - 1]?.id).toBe("side-q");
+    expect(
+      (afterAppend[afterAppend.length - 2] as { content?: string }).content,
+    ).toBe("alphabeta");
+
+    await act(async () => frames.forEach((callback) => callback(0)));
+    const afterFlush = api.messages ?? [];
+    expect(afterFlush[afterFlush.length - 1]?.id).toBe("side-q");
+    expect(
+      (afterFlush[afterFlush.length - 2] as { content?: string }).content,
+    ).toBe("alphabeta");
   });
 });
