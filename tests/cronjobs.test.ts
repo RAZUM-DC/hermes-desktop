@@ -33,14 +33,14 @@ vi.mock("../src/main/installer", () => ({
   hermesCliArgs: (args: string[] = []) => ["-m", "hermes_cli.main", ...args],
 }));
 
+import { createCronJob, parseCronListOutput } from "../src/main/cronjobs";
+
 describe("createCronJob", () => {
   beforeEach(() => {
     execFileSpy.mockClear();
   });
 
   it("passes the prompt as the cron create positional argument before flags", async () => {
-    const { createCronJob } = await import("../src/main/cronjobs");
-
     await createCronJob(
       "7 17 * * *",
       "Create a daily brief with local news, weather, and quotes.",
@@ -66,9 +66,7 @@ describe("createCronJob", () => {
 });
 
 describe("parseCronListOutput", () => {
-  it("parses the Hermes cron list table used by SSH profiles", async () => {
-    const { parseCronListOutput } = await import("../src/main/cronjobs");
-
+  it("parses the Hermes cron list table used by SSH profiles", () => {
     const jobs = parseCronListOutput(`
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         Scheduled Jobs                                  │

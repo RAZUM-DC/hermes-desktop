@@ -53,7 +53,15 @@ const sshConfig: SshConfig = {
   localPort: 18642,
 };
 
+// These tests execute generated commands in a real POSIX shell. They are
+// intentionally skipped on Windows, while the platform-independent command
+// construction assertions below continue to run everywhere.
+const itPosix = process.platform === "win32" ? it.skip : it;
+
 function runWithHermesShim(command: string): Buffer {
+  if (process.platform === "win32") {
+    throw new Error("POSIX-only helper — guard the calling test with itPosix");
+  }
   const home = mkdtempSync(join(tmpdir(), "hermes-ssh-cmd-home-"));
   // Install the shim at a path buildRemoteHermesCmd PROBES BY ABSOLUTE PATH
   // ($HOME/.local/bin/hermes), not just on PATH. The command runs under
@@ -130,7 +138,7 @@ describe("ssh Hermes command quoting", () => {
     );
   });
 
-  it.each([
+  itPosix.each([
     [
       "multi-word title",
       ["kanban", "create", "My task title", "--triage", "--json"],
@@ -160,12 +168,16 @@ describe("ssh Hermes command quoting", () => {
     30000,
   );
 
-  it("preserves existing extraShell redirects", () => {
-    const output = runWithHermesShim(
-      buildRemoteHermesCmd(["doctor"], " 2>&1"),
-    ).toString("utf8");
-    expect(output).toBe("doctor stderr preserved\n");
-  }, 30000);
+  itPosix(
+    "preserves existing extraShell redirects",
+    () => {
+      const output = runWithHermesShim(
+        buildRemoteHermesCmd(["doctor"], " 2>&1"),
+      ).toString("utf8");
+      expect(output).toBe("doctor stderr preserved\n");
+    },
+    30000,
+  );
 });
 
 describe("ssh gateway commands (issue #285)", () => {
