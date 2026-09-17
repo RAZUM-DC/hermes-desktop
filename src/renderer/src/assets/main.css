@@ -7845,6 +7845,8 @@ body {
 /* Profiles list — a table-style layout with a shared column grid so the
    header and every row align. The active row is marked by a left green bar. */
 .agents-table {
+  /* Let the page own vertical scrolling instead of shrinking and clipping rows. */
+  flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
