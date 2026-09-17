@@ -20,6 +20,14 @@ Opening an existing conversation must land at its newest messages without racing
 
 [[src/renderer/src/screens/Chat/hooks/useChatScroll.ts#useChatScroll]] jumps to the bottom instantly on the first non-empty history paint. Later incoming messages retain smooth scrolling unless the reader has manually scrolled upward.
 
+## Streaming delta coalescing
+
+High-frequency dashboard deltas update the synchronous transcript immediately but publish to React at most once per animation frame, keeping input responsive without losing streamed text.
+
+[[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] coalesces text, reasoning, and tool-progress deltas. Lifecycle boundaries such as start, completion, clarification, and background completion cancel any queued frame and commit immediately.
+
+The shared write-through state in [[src/renderer/src/screens/Chat/hooks/useTranscriptState.ts#useTranscriptState]] ensures every transcript writer builds on the newest streamed array. A delayed frame can therefore only republish or advance state; it cannot overwrite a concurrent user action or resurrect stale messages.
+
 ## Off-screen rows are skipped with content-visibility
 
 Every transcript row (`.chat-message`) sets `content-visibility: auto` with `contain-intrinsic-size: auto 120px`, so the browser skips layout and paint for off-screen rows. That turns a forced reflow from O(all messages) into O(visible rows).
