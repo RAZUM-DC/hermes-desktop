@@ -1,0 +1,11 @@
+extends: ./electron-builder.yml
+
+# Local unsigned portable builds must work on a standard Windows account.
+# Resource editing/signing downloads the legacy winCodeSign archive, whose
+# macOS symlinks cannot be extracted without Developer Mode or admin rights.
+# Release/installer builds keep the normal signed configuration in the base
+# file; only this explicit portable profile disables that step.
+win:
+  signAndEditExecutable: false
+  target:
+    - portable
