@@ -31,7 +31,12 @@ import { ConfigHealthBanner } from "../../components/ConfigHealthBanner";
 import FollowUsModal from "../../components/FollowUsModal";
 import type { Attachment } from "../../../../shared/attachments";
 import type { SessionModelOverride } from "../../../../shared/model-override";
-import type { ActiveTurn, ChatMessage, UsageState } from "./types";
+import type {
+  ActiveTurn,
+  ChatMessage,
+  ClarifyMessage,
+  UsageState,
+} from "./types";
 import type { ContextUsage } from "./ContextGauge";
 import { contextWindowForModel } from "./contextWindows";
 import { QueuedMessages } from "./QueuedMessages";
@@ -592,6 +597,15 @@ function Chat({
     onDashboardUnavailable: handleDashboardUnavailable,
   });
 
+  const respondDashboardClarify = dashboardTransport.respondClarify;
+  const handleClarifyRespond = useCallback(
+    (msg: ClarifyMessage, answer: string): Promise<boolean> =>
+      msg.responsePath === "dashboard"
+        ? respondDashboardClarify(msg.requestId, answer)
+        : window.hermesAPI.respondClarify(msg.requestId, answer),
+    [respondDashboardClarify],
+  );
+
   const [agentCommandCatalog, setAgentCommandCatalog] =
     useState<AgentCommandsCatalogResponse | null>(null);
   const getCommandCatalog = dashboardTransport.getCommandCatalog;
@@ -1021,6 +1035,7 @@ function Chat({
               toolProgress={toolProgress}
               onApprove={actions.handleApprove}
               onDeny={actions.handleDeny}
+              onClarifyRespond={handleClarifyRespond}
               onClarifyResolved={handleClarifyResolved}
             />
           )}

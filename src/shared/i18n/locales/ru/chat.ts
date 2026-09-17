@@ -41,6 +41,7 @@ export default {
   approve: "Одобрить",
   deny: "Отклонить",
   clarify: {
+    unavailable: "Этот вопрос больше не ожидает ответа.",
     defaultQuestion: "Hermes нужен ваш ответ.",
     placeholder: "Введите ответ…  (Ctrl+Enter — отправить)",
     send: "Отправить",

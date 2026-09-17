@@ -1,5 +1,10 @@
 import type { ChatToolEvent } from "../../../../shared/chat-stream";
-import type { ActiveTurn, ChatBubbleMessage, ChatMessage } from "./types";
+import type {
+  ActiveTurn,
+  ChatBubbleMessage,
+  ChatMessage,
+  ClarifyMessage,
+} from "./types";
 
 export interface DashboardStreamEvent<T = unknown> {
   payload?: T;
@@ -142,20 +147,26 @@ function appendClarifyRequest(
         .map((choice) => stringValue(choice))
         .filter((choice) => choice.trim())
     : [];
-  const content =
-    choices.length > 0
-      ? `${question}\n\n${choices
-          .map((choice, index) => `${index + 1}. ${choice}`)
-          .join("\n")}`
-      : question;
   const id = `clarify-${requestId || `${now}-${messages.length}`}`;
   const existingIndex = messages.findIndex((message) => message.id === id);
-  const bubble: ChatBubbleMessage = {
+  const existing = messages[existingIndex];
+  // A gateway replay must not re-open a question the user already answered or
+  // that the server has expired.
+  if (
+    existing?.kind === "clarify" &&
+    (existing.resolved || existing.unavailable)
+  ) {
+    return [...messages];
+  }
+  const bubble: ClarifyMessage = {
     id,
+    kind: "clarify",
     role: "agent",
-    content,
-    pending: false,
-    localOnly: true,
+    requestId,
+    question,
+    choices,
+    responsePath: "dashboard",
+    unavailable: !requestId,
   };
   if (existingIndex >= 0) {
     return [
