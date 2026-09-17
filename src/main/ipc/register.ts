@@ -232,6 +232,7 @@ import {
 } from "../wallet-store";
 import { getTokenBalances } from "../wallet-balances";
 import type { ImportWalletInput } from "../../shared/wallets";
+import { getActiveProfileNameSync } from "../utils";
 import {
   readMemory,
   addMemoryEntry,
@@ -370,6 +371,17 @@ const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "Hermes One";
 
 type RemoteSessionBridgeConfig = RemoteSessionConfig;
 
+function activeSessionProfile(profile?: string): string {
+  return profile?.trim() || getActiveProfileNameSync();
+}
+
+function scopedRemoteSessionConfig(
+  conn: ConnectionConfig,
+  profile?: string,
+): RemoteSessionConfig {
+  return { ...conn, profile: activeSessionProfile(profile) };
+}
+
 async function getSshDashboardSessionConfig(
   conn: ConnectionConfig,
   profile?: string,
@@ -388,7 +400,7 @@ async function getSshDashboardSessionConfig(
       "SSH dashboard sessions need a configured dashboard token or API_SERVER_KEY on the remote Hermes host.",
     );
   setSshRemoteApiKey(apiKey);
-  return { remoteUrl, apiKey };
+  return { remoteUrl, apiKey, profile };
 }
 
 async function withSshDashboardSessions<T>(
@@ -1700,38 +1712,73 @@ export function registerIpcHandlers(context: IpcContext): void {
   );
 
   // Sessions
-  ipcMain.handle("list-sessions", (_event, limit?: number, offset?: number) => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteListSessions(conn, limit, offset);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) => remoteListSessions(config, limit, offset),
-        () => sshListSessions(conn.ssh, limit, offset),
-      );
-    return listSessions(limit, offset);
-  });
+  ipcMain.handle(
+    "list-sessions",
+    (
+      _event,
+      limit?: number,
+      offset?: number,
+      _connectionId?: string,
+      profile?: string,
+    ) => {
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteListSessions(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          limit,
+          offset,
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteListSessions(config, limit, offset),
+          () => sshListSessions(conn.ssh!, limit, offset, scopedProfile),
+          scopedProfile,
+        );
+      return listSessions(limit, offset, scopedProfile);
+    },
+  );
 
-  ipcMain.handle("get-session-messages", (_event, sessionId: string) => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote")
-      return remoteGetSessionMessages(conn, sessionId).then((items) =>
-        applySessionLocalOverlays(sessionId, items),
-      );
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) =>
-          remoteGetSessionMessages(config, sessionId).then((items) =>
-            applySessionLocalOverlays(sessionId, items),
-          ),
-        () =>
-          sshGetSessionMessages(conn.ssh, sessionId).then((items) =>
-            applySessionLocalOverlays(sessionId, items),
-          ),
-      );
-    return getSessionMessages(sessionId);
-  });
+  ipcMain.handle(
+    "get-session-messages",
+    (_event, sessionId: string, _connectionId?: string, profile?: string) => {
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteGetSessionMessages(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          sessionId,
+        ).then((items) =>
+          applySessionLocalOverlays(sessionId, items, undefined, scopedProfile),
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) =>
+            remoteGetSessionMessages(config, sessionId).then((items) =>
+              applySessionLocalOverlays(
+                sessionId,
+                items,
+                undefined,
+                scopedProfile,
+              ),
+            ),
+          () =>
+            sshGetSessionMessages(conn.ssh!, sessionId, scopedProfile).then(
+              (items) =>
+                applySessionLocalOverlays(
+                  sessionId,
+                  items,
+                  undefined,
+                  scopedProfile,
+                ),
+            ),
+          scopedProfile,
+        );
+      return getSessionMessages(sessionId, scopedProfile);
+    },
+  );
 
   ipcMain.handle(
     "record-session-continuation",
@@ -1797,26 +1844,53 @@ export function registerIpcHandlers(context: IpcContext): void {
     },
   );
 
-  ipcMain.handle("delete-session", (_event, sessionId: string) => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteDeleteSession(conn, sessionId);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(conn, (config) =>
-        remoteDeleteSession(config, sessionId),
-      );
-    return deleteSession(sessionId);
-  });
+  ipcMain.handle(
+    "delete-session",
+    (_event, sessionId: string, _connectionId?: string, profile?: string) => {
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteDeleteSession(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          sessionId,
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteDeleteSession(config, sessionId),
+          undefined,
+          scopedProfile,
+        );
+      return deleteSession(sessionId, scopedProfile);
+    },
+  );
 
-  ipcMain.handle("delete-sessions", (_event, sessionIds: string[]) => {
-    const ids = Array.isArray(sessionIds) ? sessionIds : [];
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteDeleteSessions(conn, ids);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(conn, (config) =>
-        remoteDeleteSessions(config, ids),
-      );
-    return deleteSessions(ids);
-  });
+  ipcMain.handle(
+    "delete-sessions",
+    (
+      _event,
+      sessionIds: string[],
+      _connectionId?: string,
+      profile?: string,
+    ) => {
+      const ids = Array.isArray(sessionIds) ? sessionIds : [];
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteDeleteSessions(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          ids,
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteDeleteSessions(config, ids),
+          undefined,
+          scopedProfile,
+        );
+      return deleteSessions(ids, scopedProfile);
+    },
+  );
 
   // Profiles
   ipcMain.handle("list-profiles", async () => {
@@ -2042,61 +2116,112 @@ export function registerIpcHandlers(context: IpcContext): void {
   // Session cache (fast local cache with generated titles)
   ipcMain.handle(
     "list-cached-sessions",
-    (_event, limit?: number, offset?: number) => {
+    (
+      _event,
+      limit?: number,
+      offset?: number,
+      _connectionId?: string,
+      profile?: string,
+    ) => {
       const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
       if (conn.mode === "remote")
-        return remoteListCachedSessions(conn, limit, offset);
+        return remoteListCachedSessions(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          limit,
+          offset,
+        );
       if (conn.mode === "ssh" && conn.ssh)
         return withSshDashboardSessions(
           conn,
           (config) => remoteListCachedSessions(config, limit, offset),
-          () => sshListCachedSessions(conn.ssh, limit, offset),
+          () => sshListCachedSessions(conn.ssh!, limit, offset, scopedProfile),
+          scopedProfile,
         );
-      return listCachedSessions(limit, offset);
+      return listCachedSessions(limit, offset, scopedProfile);
     },
   );
-  ipcMain.handle("sync-session-cache", () => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteListCachedSessions(conn, 50);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) => remoteListCachedSessions(config, 50),
-        () => sshListCachedSessions(conn.ssh, 50),
-      );
-    try {
-      return syncSessionCache();
-    } catch (error) {
-      console.error("sync-session-cache failed; using local cache", error);
-      return listCachedSessions(50);
-    }
-  });
+  ipcMain.handle(
+    "sync-session-cache",
+    (_event, _connectionId?: string, profile?: string) => {
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteListCachedSessions(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          50,
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteListCachedSessions(config, 50),
+          () => sshListCachedSessions(conn.ssh!, 50, 0, scopedProfile),
+          scopedProfile,
+        );
+      try {
+        return syncSessionCache(scopedProfile);
+      } catch (error) {
+        console.error("sync-session-cache failed; using local cache", error);
+        return listCachedSessions(50, 0, scopedProfile);
+      }
+    },
+  );
   ipcMain.handle(
     "update-session-title",
-    (_event, sessionId: string, title: string) => {
+    (
+      _event,
+      sessionId: string,
+      title: string,
+      _connectionId?: string,
+      profile?: string,
+    ) => {
       const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
       if (conn.mode === "remote")
-        return remoteUpdateSessionTitle(conn, sessionId, title);
-      if (conn.mode === "ssh" && conn.ssh)
-        return withSshDashboardSessions(conn, (config) =>
-          remoteUpdateSessionTitle(config, sessionId, title),
+        return remoteUpdateSessionTitle(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          sessionId,
+          title,
         );
-      return updateSessionTitle(sessionId, title);
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteUpdateSessionTitle(config, sessionId, title),
+          undefined,
+          scopedProfile,
+        );
+      return updateSessionTitle(sessionId, title, scopedProfile);
     },
   );
 
   // Session search
-  ipcMain.handle("search-sessions", (_event, query: string, limit?: number) => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteSearchSessions(conn, query, limit);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) => remoteSearchSessions(config, query, limit),
-        () => sshSearchSessions(conn.ssh, query, limit),
-      );
-    return searchSessions(query, limit);
-  });
+  ipcMain.handle(
+    "search-sessions",
+    (
+      _event,
+      query: string,
+      limit?: number,
+      _connectionId?: string,
+      profile?: string,
+    ) => {
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteSearchSessions(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          query,
+          limit,
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteSearchSessions(config, query, limit),
+          () => sshSearchSessions(conn.ssh!, query, limit, scopedProfile),
+          scopedProfile,
+        );
+      return searchSessions(query, limit, scopedProfile);
+    },
+  );
 
   // Credential Pool — profile-aware. When `profile` is omitted, the
   // credential pool helpers default to the currently active profile's

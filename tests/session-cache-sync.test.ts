@@ -26,12 +26,22 @@ vi.mock("../src/main/installer", () => ({
 }));
 
 vi.mock("../src/main/utils", () => ({
-  activeStateDbPath: () => {
+  activeStateDbPath: (profile?: unknown) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const path = require("path");
-    return path.join(TEST_HOME, "state.db");
+    const home =
+      profile && profile !== "default"
+        ? path.join(TEST_HOME, "profiles", String(profile))
+        : TEST_HOME;
+    return path.join(home, "state.db");
   },
-  profileHome: () => TEST_HOME,
+  profileHome: (profile?: unknown) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require("path");
+    return profile && profile !== "default"
+      ? path.join(TEST_HOME, "profiles", String(profile))
+      : TEST_HOME;
+  },
   getActiveProfileNameSync: () => "default",
   safeWriteFile: (path: string, data: string) => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -276,7 +286,12 @@ import {
 import { closeDbConnection } from "../src/main/db";
 
 const CACHE_FILE = join(TEST_HOME, "desktop", "sessions.json");
-const DB_PATH = join(TEST_HOME, "state.db");
+
+function testProfileHome(profile = "default"): string {
+  return profile === "default"
+    ? TEST_HOME
+    : join(TEST_HOME, "profiles", profile);
+}
 
 function seedDb(
   sessions: Array<{
@@ -288,8 +303,9 @@ function seedDb(
     title?: string | null;
     firstUserMessage?: string;
   }>,
+  profile = "default",
 ): void {
-  const db = new Database(DB_PATH);
+  const db = new Database(join(testProfileHome(profile), "state.db"));
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -372,6 +388,40 @@ describe("syncSessionCache", () => {
     expect(result[0].title).toContain("RAII");
     expect(result[1].title).toContain("Python decorator");
     expect(existsSync(CACHE_FILE)).toBe(true);
+  });
+
+  it("reads and writes only the explicitly selected local profile", () => {
+    const now = Math.floor(Date.now() / 1000);
+    seedDb([
+      {
+        id: "default-session",
+        started_at: now,
+        firstUserMessage: "Default profile",
+      },
+    ]);
+    seedDb(
+      [
+        {
+          id: "work-session",
+          started_at: now + 1,
+          firstUserMessage: "Work profile",
+        },
+      ],
+      "work",
+    );
+
+    expect(syncSessionCache("work").map((session) => session.id)).toEqual([
+      "work-session",
+    ]);
+    expect(
+      existsSync(join(testProfileHome("work"), "desktop", "sessions.json")),
+    ).toBe(true);
+    expect(
+      listCachedSessions(50, 0, "work").map((session) => session.id),
+    ).toEqual(["work-session"]);
+    expect(syncSessionCache().map((session) => session.id)).toEqual([
+      "default-session",
+    ]);
   });
 
   it("treats an empty cache with a stale lastSync as a cold cache", () => {

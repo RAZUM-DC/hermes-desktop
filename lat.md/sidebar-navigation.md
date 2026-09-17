@@ -24,13 +24,23 @@ The native sidebar scrollbar is hidden to avoid layout shifts. [[src/renderer/sr
 
 Local lists follow the Agent's native archive flag. Archiving hides a conversation without deleting its messages or linked project folder; restoring it makes it visible on the next sync.
 
-[[src/main/db.ts#sessionVisibilityPredicate]] detects whether the active profile's database has an `archived` column. [[src/main/sessions.ts#listSessions]] filters `archived = 0` before pagination, while legacy databases without that column remain readable.
+[[src/main/db.ts#sessionVisibilityPredicate]] detects whether the selected profile's database has an `archived` column. [[src/main/sessions.ts#listSessions]] filters `archived = 0` before pagination, while legacy databases without that column remain readable.
 
 [[src/main/session-cache.ts#syncSessionCache]] reconciles the complete visible metadata set rather than using `started_at` as a change cursor: archive and restore do not change creation time. Cached titles are reused, and message bodies are read only to generate missing titles for newly visible rows. Successful sync replaces the cached membership, including an empty set; unavailable databases or failed reads retain the last good cache until retry. [[src/main/session-cache.ts#listCachedSessions]] remains DB-free, so an initial cached paint can be stale until sync finishes. Message history and search are unchanged.
 
 [[src/renderer/src/screens/Sessions/Sessions.tsx]] accepts an empty quiet-refresh result for the current local connection, allowing the last archived row to disappear. Network-backed lists retain their transient-empty guard, and failed connection checks retain visible rows until the next retry.
 
 [[tests/session-archive.test.ts]] executes real SQLite queries for cold and warm caches, archive/restore without timestamp changes, pagination, legacy schema upgrades, read failure and recovery, and retained history/project folders. [[src/renderer/src/screens/Sessions/Sessions.test.tsx]] covers the last local row disappearing and returning plus failed refresh recovery.
+
+## Profile-scoped session browsing
+
+Session browsing always carries the selected profile through the renderer/preload/IPC boundary, so switching agents cannot mix histories, cached rows, or mutations.
+
+[[src/renderer/src/screens/Layout/SidebarRecentSessions.tsx]] and [[src/renderer/src/screens/Sessions/Sessions.tsx]] pass the active profile to list, sync, search, history, rename, single-delete, and bulk-delete operations. Request generations discard results that complete after a profile or active connection change; rename rollback is likewise tied to the profile where editing began. RAZUM currently keeps one active connection configuration, while the optional `connectionId` preload arguments preserve the boundary needed by a future named-connection registry.
+
+[[src/main/db.ts#getDbConnection]], [[src/main/sessions.ts]], and [[src/main/session-cache.ts]] resolve the explicitly selected profile instead of relying on the process-wide active profile. Each local profile reads its own `state.db` and `desktop/sessions.json`, including batched project-folder attachment. [[src/main/ipc/register.ts]] sends the same profile through SSH legacy/dashboard paths and adds it to Remote dashboard requests; [[src/main/remote-sessions.ts]] preserves an explicit profile on every endpoint and no longer requests the cross-profile `all` list when one is selected.
+
+[[tests/session-cache-sync.test.ts]] proves that default and named Local profile caches stay separate, [[tests/session-archive.test.ts]] covers equal session ids across profiles, [[tests/remote-sessions.test.ts]] verifies URL-encoded Remote profile routing, and [[src/renderer/src/screens/Sessions/Sessions.test.tsx]] checks renderer routing plus rejection of delayed results from the previous profile.
 
 ## Project grouping
 
@@ -58,7 +68,7 @@ Pinned rows are a desktop-only affordance: their ids live in `localStorage` (`he
 
 Session renames must survive `syncSessionCache`, so the durable `state.db` write happens before the JSON cache is updated.
 
-Title policy lives in [[src/shared/session-title.ts]] (`normalizeSessionTitle`, `MAX_SESSION_TITLE_LENGTH`) so the renderer optimistic path and [[src/main/session-cache.ts#updateSessionTitle]] cannot diverge. Main writes the active profile’s `state.db` first, recording `title_source = user` when supported, then mirrors into `sessions.json`. Database errors throw; a failed cache mirror remains recoverable from the committed title on the next full sync. Both the sidebar and Sessions modal call [[src/renderer/src/screens/Sessions/confirmSessionRename.ts#confirmSessionRename]] for optimistic update, toast/rollback, and keep-editor-on-failure. Each editor allows one save at a time; the sidebar ignores late responses after the active profile changes. Normalization strips Agent-disallowed controls and counts Unicode characters for the 100-character limit.
+Title policy lives in [[src/shared/session-title.ts]] (`normalizeSessionTitle`, `MAX_SESSION_TITLE_LENGTH`) so the renderer optimistic path and [[src/main/session-cache.ts#updateSessionTitle]] cannot diverge. Main writes the selected profile’s `state.db` first, recording `title_source = user` when supported, then mirrors into that profile's `sessions.json`. Database errors throw; a failed cache mirror remains recoverable from the committed title on the next full sync. Both the sidebar and Sessions modal call [[src/renderer/src/screens/Sessions/confirmSessionRename.ts#confirmSessionRename]] for optimistic update, toast/rollback, and keep-editor-on-failure. Each editor allows one save at a time; the sidebar ignores late responses after the active profile changes. Normalization strips Agent-disallowed controls and counts Unicode characters for the 100-character limit.
 
 #### User title provenance
 

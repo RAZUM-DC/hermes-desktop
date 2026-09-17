@@ -422,6 +422,7 @@ function Chat({
   useChatIPC({
     runId,
     sessionScopeId: visibleSessionScopeId,
+    profile,
     setMessages,
     setHermesSessionId,
     setToolProgress,
@@ -542,7 +543,7 @@ function Chat({
     }
     const idToDelete = hermesSessionId;
     if (idToDelete) {
-      void window.hermesAPI.deleteSession(idToDelete);
+      void window.hermesAPI.deleteSession(idToDelete, undefined, profile);
       void window.hermesAPI.clearStagedAttachments(idToDelete);
     }
     setMessages([]);
@@ -557,7 +558,14 @@ function Chat({
     setToolProgress(null);
     queueRef.current = [];
     setQueuedMessages([]);
-  }, [isLoading, runId, hermesSessionId, setMessages, modelConfig.reload]);
+  }, [
+    isLoading,
+    runId,
+    hermesSessionId,
+    profile,
+    setMessages,
+    modelConfig.reload,
+  ]);
 
   const localCommands = useLocalCommands({
     profile,

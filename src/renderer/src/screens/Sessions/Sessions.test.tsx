@@ -23,6 +23,7 @@ const baseProps = {
   onResumeSession: (): void => {},
   onNewChat: (): void => {},
   currentSessionId: null,
+  profile: "default",
 };
 
 function installHermesAPI(initialSessions: unknown[] = []): {
@@ -95,11 +96,115 @@ function sessionSearchResult(
 
 describe("Sessions tab live refresh (#322)", () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.useFakeTimers();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("routes browsing and rename operations through the selected connection and profile", async () => {
+    vi.useRealTimers();
+    const api = installHermesAPI([
+      {
+        id: "routed-session",
+        title: "Routed chat",
+        startedAt: Math.floor(Date.now() / 1000),
+        source: "desktop",
+        messageCount: 2,
+        model: "gpt-5.5",
+      },
+    ]);
+
+    render(
+      <Sessions
+        {...baseProps}
+        connectionId="connection-one"
+        profile="work"
+        visible={true}
+      />,
+    );
+    await waitFor(() => {
+      expect(api.syncSessionCache).toHaveBeenCalledWith(
+        "connection-one",
+        "work",
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "sessions.rename" }));
+    const renameInput = screen.getAllByRole("textbox")[1];
+    fireEvent.change(renameInput, { target: { value: "Renamed route" } });
+    fireEvent.keyDown(renameInput, { key: "Enter" });
+    await waitFor(() => {
+      expect(api.updateSessionTitle).toHaveBeenCalledWith(
+        "routed-session",
+        "Renamed route",
+        "connection-one",
+        "work",
+      );
+    });
+
+    fireEvent.change(
+      screen.getByPlaceholderText("sessions.searchPlaceholder"),
+      { target: { value: "route" } },
+    );
+    await waitFor(() => {
+      expect(api.searchSessions).toHaveBeenCalledWith(
+        "route",
+        undefined,
+        "connection-one",
+        "work",
+      );
+    });
+  });
+
+  it("ignores a delayed session response from the previously selected profile", async () => {
+    vi.useRealTimers();
+    const api = installHermesAPI();
+    let resolveDefault!: (rows: unknown[]) => void;
+    const delayedDefault = new Promise<unknown[]>((resolve) => {
+      resolveDefault = resolve;
+    });
+    api.syncSessionCache.mockImplementation(
+      (_connectionId: string | undefined, profile: string) =>
+        profile === "work"
+          ? Promise.resolve([
+              {
+                id: "work-session",
+                title: "Work chat",
+                startedAt: 200,
+                source: "desktop",
+                messageCount: 2,
+                model: "gpt-5.5",
+              },
+            ])
+          : delayedDefault,
+    );
+
+    const view = render(<Sessions {...baseProps} visible={true} />);
+    await waitFor(() =>
+      expect(api.syncSessionCache).toHaveBeenCalledWith(undefined, "default"),
+    );
+
+    view.rerender(<Sessions {...baseProps} profile="work" visible={true} />);
+    await waitFor(() => expect(screen.getByText("Work chat")).toBeTruthy());
+
+    await act(async () => {
+      resolveDefault([
+        {
+          id: "default-session",
+          title: "Stale default chat",
+          startedAt: 100,
+          source: "desktop",
+          messageCount: 1,
+          model: "gpt-5.5",
+        },
+      ]);
+    });
+
+    expect(screen.getByText("Work chat")).toBeTruthy();
+    expect(screen.queryByText("Stale default chat")).toBeNull();
   });
 
   it("disables the rename input during persistence and ignores a duplicate submit", async () => {
@@ -486,7 +591,11 @@ describe("Sessions tab — delete affordance (#408)", () => {
       );
     });
 
-    expect(api.deleteSession).toHaveBeenCalledWith("sess-abc-123");
+    expect(api.deleteSession).toHaveBeenCalledWith(
+      "sess-abc-123",
+      undefined,
+      "default",
+    );
   });
 
   it("does NOT call deleteSession when the confirm is cancelled", async () => {
@@ -625,7 +734,11 @@ describe("Sessions tab — bulk delete selection (#490)", () => {
     });
 
     await waitFor(() => {
-      expect(api.deleteSessions).toHaveBeenCalledWith(["sess-one", "sess-two"]);
+      expect(api.deleteSessions).toHaveBeenCalledWith(
+        ["sess-one", "sess-two"],
+        undefined,
+        "default",
+      );
     });
     expect(api.deleteSession).not.toHaveBeenCalled();
   });
@@ -679,10 +792,11 @@ describe("Sessions tab — bulk delete selection (#490)", () => {
     });
 
     await waitFor(() => {
-      expect(api.deleteSessions).toHaveBeenCalledWith([
-        "search-one",
-        "search-two",
-      ]);
+      expect(api.deleteSessions).toHaveBeenCalledWith(
+        ["search-one", "search-two"],
+        undefined,
+        "default",
+      );
     });
     expect(api.deleteSessions).not.toHaveBeenCalledWith(["main-session"]);
   });

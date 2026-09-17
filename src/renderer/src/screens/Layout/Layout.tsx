@@ -604,6 +604,8 @@ function Layout({
       try {
         const items = (await window.hermesAPI.getSessionMessages(
           sessionId,
+          undefined,
+          activeProfile,
         )) as DbHistoryItem[];
         const run = mintRun(activeProfile, dbItemsToChatMessages(items));
         run.sessionId = sessionId;
@@ -885,6 +887,7 @@ function Layout({
               onClick={(e) => e.stopPropagation()}
             >
               <Sessions
+                profile={activeProfile}
                 onResumeSession={(id) => {
                   setSessionsModalOpen(false);
                   void handleResumeSession(id);

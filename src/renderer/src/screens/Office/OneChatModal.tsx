@@ -55,6 +55,8 @@ export default function OneChatModal({
       try {
         const items = (await window.hermesAPI.getSessionMessages(
           sessionId,
+          undefined,
+          selectedAgentId,
         )) as Array<{
           kind: "user" | "assistant";
           id: number;
@@ -141,6 +143,8 @@ export default function OneChatModal({
       // Reload persisted messages from the session
       const items = (await window.hermesAPI.getSessionMessages(
         sessionId,
+        undefined,
+        selectedAgentId,
       )) as Array<{
         kind: "user" | "assistant";
         id: number;
@@ -163,6 +167,8 @@ export default function OneChatModal({
         const reloadSessionId = `office-${selectedAgentId}`;
         const items = (await window.hermesAPI.getSessionMessages(
           reloadSessionId,
+          undefined,
+          selectedAgentId,
         )) as Array<{
           kind: "user" | "assistant";
           id: number;
