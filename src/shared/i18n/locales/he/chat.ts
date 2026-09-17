@@ -88,6 +88,7 @@ export default {
   categoryTools: "כלים",
   categoryInfo: "מידע",
   noUsageData: "אין נתוני שימוש עדיין. שלחו הודעה תחילה.",
+  showEarlierMessages: "הצג {{count}} הודעות קודמות",
   media: {
     open: "פתיחה",
     saveAs: "שמירה בשם…",

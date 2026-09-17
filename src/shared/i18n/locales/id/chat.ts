@@ -51,6 +51,7 @@ export default {
   categoryTools: "Alat",
   categoryInfo: "Info",
   noUsageData: "Belum ada data penggunaan. Kirim pesan terlebih dahulu.",
+  showEarlierMessages: "Tampilkan {{count}} pesan sebelumnya",
   media: {
     open: "Buka",
     saveAs: "Simpan sebagai…",

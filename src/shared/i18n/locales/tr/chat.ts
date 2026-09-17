@@ -73,6 +73,7 @@ export default {
   contextUsed: "%{{pct}} kullanıldı (%{{left}} kaldı)",
   contextTokens: "{{used}} / {{total}} token kullanıldı",
   contextCache: "Önbellek: %{{pct}} isabet ({{read}} okuma / {{write}} yazma)",
+  showEarlierMessages: "Önceki {{count}} mesajı göster",
   media: {
     open: "Aç",
     saveAs: "Farklı kaydet…",

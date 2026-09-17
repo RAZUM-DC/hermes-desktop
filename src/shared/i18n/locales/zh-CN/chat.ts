@@ -47,6 +47,7 @@ export default {
   categoryTools: "工具",
   categoryInfo: "信息",
   noUsageData: "暂无使用数据。请先发送一条消息。",
+  showEarlierMessages: "显示更早的 {{count}} 条消息",
   media: {
     open: "打开",
     saveAs: "另存为…",
