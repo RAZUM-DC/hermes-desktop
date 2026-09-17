@@ -6,7 +6,12 @@ import { useEffect, useState } from "react";
 // <video> + кнопку Скачать. Видео-плеера в апстриме нет — это наш компонент.
 const TOKEN_RE = /MONTAGE_MEDIA:(sample|final):([A-Za-z0-9_-]+)/gi;
 
-const api = () =>
+const api = (): {
+  agentMontageArtifact: (
+    projectId: string,
+    which: string,
+  ) => Promise<{ success: boolean; data?: { dataUrl?: string; fileUrl?: string }; error?: string }>;
+} =>
   window.hermesAPI as unknown as {
     agentMontageArtifact: (
       projectId: string,
