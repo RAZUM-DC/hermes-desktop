@@ -17,12 +17,15 @@ export function sessionVisibilityPredicate(db: Database.Database): string {
 }
 
 /**
- * Return a cached database connection for the active profile state DB.
- * If the active profile database path or readonly status changes,
+ * Return a cached database connection for the selected profile state DB.
+ * If the selected profile database path or readonly status changes,
  * the old database connection is cleanly closed and a new one is established.
  */
-export function getDbConnection(readonly = true): Database.Database | null {
-  const dbPath = activeStateDbPath();
+export function getDbConnection(
+  readonly = true,
+  profile?: unknown,
+): Database.Database | null {
+  const dbPath = activeStateDbPath(profile);
   if (!existsSync(dbPath)) {
     closeDbConnection();
     return null;

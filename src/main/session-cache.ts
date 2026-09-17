@@ -22,12 +22,12 @@ export { MAX_SESSION_TITLE_LENGTH } from "../shared/session-title";
  * ~/.hermes/desktop/sessions.json; named profiles use
  * ~/.hermes/profiles/<name>/desktop/sessions.json (issue #311).
  */
-function cacheFilePath(): string {
-  return join(
-    profileHome(getActiveProfileNameSync()),
-    "desktop",
-    "sessions.json",
-  );
+function cacheFilePath(profile?: unknown): string {
+  const selectedProfile =
+    profile === undefined || profile === ""
+      ? getActiveProfileNameSync()
+      : profile;
+  return join(profileHome(selectedProfile), "desktop", "sessions.json");
 }
 
 export interface CachedSession {
@@ -76,8 +76,8 @@ function generateTitle(message: string): string {
   return title || text.slice(0, 45) + "...";
 }
 
-function readCache(): CacheData {
-  const file = cacheFilePath();
+function readCache(profile?: unknown): CacheData {
+  const file = cacheFilePath(profile);
   try {
     if (!existsSync(file)) return { sessions: [], lastSync: 0 };
     const parsed = JSON.parse(readFileSync(file, "utf-8")) as CacheData;
@@ -96,24 +96,30 @@ function readCache(): CacheData {
   }
 }
 
-function writeCache(data: CacheData): void {
+function writeCache(data: CacheData, profile?: unknown): void {
   try {
-    safeWriteFile(cacheFilePath(), JSON.stringify(data));
+    safeWriteFile(cacheFilePath(profile), JSON.stringify(data));
   } catch {
     // non-fatal
   }
 }
 
-function getDb(): Database.Database | null {
-  return getDbConnection(true);
+function getDb(profile?: unknown): Database.Database | null {
+  return getDbConnection(true, profile);
 }
 
 // Attach each session's linked folder in a single batched store read, so a
 // full sync stays a couple of queries rather than two per row. The result is
 // written into the JSON cache by `syncSessionCache`, which lets the renderer's
 // fast read path (`listCachedSessions`) stay DB-free.
-function attachContextFolders(sessions: CachedSession[]): CachedSession[] {
-  const folders = getSessionContextFolders(sessions.map((s) => s.id));
+function attachContextFolders(
+  sessions: CachedSession[],
+  profile?: unknown,
+): CachedSession[] {
+  const folders = getSessionContextFolders(
+    sessions.map((s) => s.id),
+    profile,
+  );
   return sessions.map((session) => ({
     ...session,
     contextFolder: folders.get(session.id) ?? null,
@@ -121,9 +127,9 @@ function attachContextFolders(sessions: CachedSession[]): CachedSession[] {
 }
 
 // Reconcile visible session metadata; archive changes do not update started_at.
-export function syncSessionCache(): CachedSession[] {
-  const cache = readCache();
-  const db = getDb();
+export function syncSessionCache(profile?: unknown): CachedSession[] {
+  const cache = readCache(profile);
+  const db = getDb(profile);
   if (!db) return cache.sessions;
 
   try {
@@ -198,14 +204,14 @@ export function syncSessionCache(): CachedSession[] {
 
     // Rows absent from the visible set are removed only from the desktop
     // cache. Their session/message data and linked folders remain in the DB.
-    const allSessions = attachContextFolders(visibleSessions);
+    const allSessions = attachContextFolders(visibleSessions, profile);
     allSessions.sort((a, b) => b.startedAt - a.startedAt);
 
     const updated: CacheData = {
       sessions: allSessions,
       lastSync: Math.floor(Date.now() / 1000),
     };
-    writeCache(updated);
+    writeCache(updated, profile);
     return updated.sessions;
   } catch {
     return cache.sessions;
@@ -216,8 +222,12 @@ export function syncSessionCache(): CachedSession[] {
 // the cache by `syncSessionCache`, and folder changes trigger a re-sync (the
 // renderer fires `hermes-session-context-folder-changed`), so the cached value
 // stays current without this path touching the DB.
-export function listCachedSessions(limit = 50, offset = 0): CachedSession[] {
-  const cache = readCache();
+export function listCachedSessions(
+  limit = 50,
+  offset = 0,
+  profile?: unknown,
+): CachedSession[] {
+  const cache = readCache(profile);
   return cache.sessions.slice(offset, offset + limit);
 }
 
@@ -230,7 +240,11 @@ export function listCachedSessions(limit = 50, offset = 0): CachedSession[] {
  * looking renamed while the next syncSessionCache restored the old DB title
  * (Hermes enforces UNIQUE non-NULL titles via idx_sessions_title_unique).
  */
-export function updateSessionTitle(sessionId: string, title: string): void {
+export function updateSessionTitle(
+  sessionId: string,
+  title: string,
+  profile?: unknown,
+): void {
   const locale = getAppLocale();
   const normalized = normalizeSessionTitle(title);
   const validation = validateNormalizedSessionTitle(normalized);
@@ -251,7 +265,7 @@ export function updateSessionTitle(sessionId: string, title: string): void {
     }
   }
 
-  const db = getDbConnection(false);
+  const db = getDbConnection(false, profile);
   if (!db) {
     throw new Error(t("sessions.renameUnavailable", locale));
   }
@@ -291,22 +305,25 @@ export function updateSessionTitle(sessionId: string, title: string): void {
     throw new Error(t("sessions.renameNotFound", locale));
   }
 
-  const cache = readCache();
+  const cache = readCache(profile);
   const idx = cache.sessions.findIndex((s) => s.id === sessionId);
   if (idx >= 0) {
     cache.sessions[idx].title = normalized;
-    writeCache(cache);
+    writeCache(cache, profile);
   }
 }
 
 // Remove a session entry from the local cache. Called after the underlying
 // row in state.db is deleted so the renderer's fast-path cache doesn't keep
 // surfacing a session that no longer exists.
-export function removeSessionFromCache(sessionId: string): void {
-  const cache = readCache();
+export function removeSessionFromCache(
+  sessionId: string,
+  profile?: unknown,
+): void {
+  const cache = readCache(profile);
   const next = cache.sessions.filter((s) => s.id !== sessionId);
   if (next.length !== cache.sessions.length) {
     cache.sessions = next;
-    writeCache(cache);
+    writeCache(cache, profile);
   }
 }

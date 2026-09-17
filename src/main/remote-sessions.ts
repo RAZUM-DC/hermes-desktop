@@ -18,6 +18,8 @@ import { isImageMime, MAX_IMAGE_BYTES } from "../shared/attachments";
 export interface RemoteSessionConfig {
   remoteUrl: string;
   apiKey: string;
+  /** Optional profile served by the unified dashboard. */
+  profile?: string;
 }
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
@@ -45,7 +47,12 @@ function normalizeRemoteDashboardBaseUrl(value: string): string {
 
 function dashboardApiUrl(config: RemoteSessionConfig, path: string): string {
   const base = normalizeRemoteDashboardBaseUrl(config.remoteUrl);
-  return new URL(path, `${base}/`).toString();
+  const url = new URL(path, `${base}/`);
+  const profile = config.profile?.trim();
+  if (profile && profile !== "default" && !url.searchParams.has("profile")) {
+    url.searchParams.set("profile", profile);
+  }
+  return url.toString();
 }
 
 export function remoteRequestJson<T>(
@@ -257,9 +264,10 @@ async function remoteSessionListPage(
   limit: number,
   offset: number,
 ): Promise<unknown> {
+  const profile = config.profile?.trim() || "all";
   const profileEndpoint =
     `/api/profiles/sessions?limit=${limit}&offset=${offset}` +
-    "&min_messages=0&archived=exclude&order=recent&profile=all";
+    `&min_messages=0&archived=exclude&order=recent&profile=${encodeURIComponent(profile)}`;
 
   try {
     return await remoteRequestJson(config, profileEndpoint);

@@ -183,6 +183,25 @@ describe("native session archive visibility", () => {
     expect(listCachedSessions(2, 4)).toEqual([]);
   });
 
+  it("keeps archive transitions isolated between profiles with equal session IDs", () => {
+    const defaultDb = seedProfile();
+    const workDb = seedProfile("work");
+    addSession(defaultDb, "shared", 100);
+    addSession(workDb, "shared", 100);
+    syncSessionCache();
+    syncSessionCache("work");
+    workDb.exec("UPDATE sessions SET archived = 1");
+
+    expect(syncSessionCache("work")).toEqual([]);
+    expect(listSessions(30, 0, "work")).toEqual([]);
+    expect(syncSessionCache().map((session) => session.id)).toEqual(["shared"]);
+    expect(listCachedSessions(50, 0, "work")).toEqual([]);
+    workDb.exec("UPDATE sessions SET archived = 0");
+    expect(syncSessionCache("work").map((session) => session.id)).toEqual([
+      "shared",
+    ]);
+  });
+
   it("reads legacy databases and detects an archive column added to an open database", () => {
     const db = seedProfile("default", false);
     addSession(db, "legacy", 100);

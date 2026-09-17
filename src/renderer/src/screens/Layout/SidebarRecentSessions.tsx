@@ -160,6 +160,7 @@ function groupSessionsByWorkspace(sessions: RecentSession[]): {
  */
 const SidebarRecentSessions = memo(function SidebarRecentSessions({
   open,
+  connectionId,
   activeProfile,
   currentSessionId,
   loadingSessionIds,
@@ -169,6 +170,8 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   scrollRootRef,
 }: {
   open: boolean;
+  /** Reserved for the future named-connection registry; active connection when omitted. */
+  connectionId?: string;
   /** Active profile — the list is per-profile, so switching forces a reload. */
   activeProfile: string;
   currentSessionId: string | null;
@@ -210,7 +213,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   const editingIdRef = useRef<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [renameSaving, setRenameSaving] = useState(false);
-  const renameContext = activeProfile;
+  const renameContext = `${connectionId ?? "active"}\u0000${activeProfile}`;
   const renameContextRef = useRef(renameContext);
   useEffect(() => {
     renameContextRef.current = renameContext;
@@ -222,6 +225,11 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   const sessionsRef = useRef<RecentSession[]>([]);
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
+  const requestGenerationRef = useRef(0);
+
+  useEffect(() => {
+    requestGenerationRef.current += 1;
+  }, [activeProfile, connectionId]);
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -320,25 +328,34 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       const now = Date.now();
       if (!force && now - lastRefreshRef.current < REFRESH_THROTTLE_MS) return;
       lastRefreshRef.current = now;
+      const generation = requestGenerationRef.current;
       try {
-        const synced = await window.hermesAPI.syncSessionCache();
+        const synced = await window.hermesAPI.syncSessionCache(
+          connectionId,
+          activeProfile,
+        );
+        if (requestGenerationRef.current !== generation) return;
         applyLoadedWindow(synced);
       } catch {
         // keep whatever we had — the list is best-effort UI sugar
       }
     },
-    [applyLoadedWindow],
+    [activeProfile, applyLoadedWindow, connectionId],
   );
 
   const loadNextPage = useCallback(async (): Promise<void> => {
     if (!open || !hasMoreRef.current || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
+    const generation = requestGenerationRef.current;
     try {
       const nextPage = await window.hermesAPI.listCachedSessions(
         RECENT_SESSIONS_PAGE_SIZE + 1,
         sessionsRef.current.length,
+        connectionId,
+        activeProfile,
       );
+      if (requestGenerationRef.current !== generation) return;
       appendPage(nextPage);
     } catch {
       // keep the current list; scrolling can retry on the next event
@@ -346,7 +363,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [appendPage, open]);
+  }, [activeProfile, appendPage, connectionId, open]);
 
   const maybeLoadNextPage = useCallback((): void => {
     const root = scrollRootRef.current;
@@ -369,6 +386,9 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
           // One over the page size so the cache read alone can decide whether
           // another page exists without a separate count query.
           RECENT_SESSIONS_PAGE_SIZE + 1,
+          0,
+          connectionId,
+          activeProfile,
         );
         if (!cancelled) applyFirstPage(cached);
       } catch {
@@ -376,7 +396,10 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       }
       lastRefreshRef.current = Date.now();
       try {
-        const synced = await window.hermesAPI.syncSessionCache();
+        const synced = await window.hermesAPI.syncSessionCache(
+          connectionId,
+          activeProfile,
+        );
         if (!cancelled) applyFirstPage(synced);
       } catch {
         // cache read above already painted something
@@ -385,7 +408,19 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
     return () => {
       cancelled = true;
     };
-  }, [open, activeProfile, applyFirstPage]);
+  }, [open, connectionId, activeProfile, applyFirstPage]);
+
+  useEffect(() => {
+    return window.hermesAPI.onConnectionConfigChanged(() => {
+      requestGenerationRef.current += 1;
+      setSessions([]);
+      setHasMore(false);
+      setLoadingMore(false);
+      loadingMoreRef.current = false;
+      lastRefreshRef.current = 0;
+      void refresh(true);
+    });
+  }, [refresh]);
 
   // While open: pick up background sessions (gateway, cron, other devices)
   // on focus and on a slow timer. No listeners or timers at all when closed.
@@ -541,10 +576,15 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         inputRef: renameInputRef,
         fallbackErrorMessage: t("sessions.renameFailed"),
         persist: (sessionId, title) =>
-          window.hermesAPI.updateSessionTitle(sessionId, title),
+          window.hermesAPI.updateSessionTitle(
+            sessionId,
+            title,
+            connectionId,
+            activeProfile,
+          ),
       });
     },
-    [cancelRename, t, renameContext],
+    [activeProfile, cancelRename, connectionId, t, renameContext],
   );
 
   const handleMoveToProject = useCallback(
@@ -600,7 +640,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         return next;
       });
       try {
-        await window.hermesAPI.deleteSession(id);
+        await window.hermesAPI.deleteSession(id, connectionId, activeProfile);
         onSessionDeleted?.(id);
       } catch (err) {
         console.error("Failed to delete session", id, err);
@@ -610,7 +650,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         void refresh(true);
       }
     },
-    [onSessionDeleted, refresh],
+    [activeProfile, connectionId, onSessionDeleted, refresh],
   );
 
   const openMenuForSession = useCallback(

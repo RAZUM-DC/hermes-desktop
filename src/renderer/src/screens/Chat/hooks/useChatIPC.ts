@@ -18,6 +18,8 @@ interface UseChatIPCArgs {
   runId: string;
   /** The session currently visible in this Chat, if already known. */
   sessionScopeId: string | null;
+  /** Profile that owns this mounted conversation. */
+  profile?: string;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setHermesSessionId: (id: string) => void;
   setToolProgress: (tool: string | null) => void;
@@ -45,6 +47,7 @@ export function eventMatchesRun(eventRunId: string, ownRunId: string): boolean {
 export function useChatIPC({
   runId,
   sessionScopeId,
+  profile,
   setMessages,
   setHermesSessionId,
   setToolProgress,
@@ -89,6 +92,8 @@ export function useChatIPC({
       try {
         const items = (await window.hermesAPI.getSessionMessages(
           sessionId,
+          undefined,
+          profile,
         )) as DbHistoryItem[];
         if (
           disposed ||
@@ -211,6 +216,8 @@ export function useChatIPC({
         try {
           const items = (await window.hermesAPI.getSessionMessages(
             sessionId,
+            undefined,
+            profile,
           )) as DbHistoryItem[];
           const dbMessages = dbItemsToChatMessages(items);
           if (dbMessages.length > 0) {
@@ -408,6 +415,7 @@ export function useChatIPC({
     };
   }, [
     runId,
+    profile,
     setMessages,
     setHermesSessionId,
     setToolProgress,

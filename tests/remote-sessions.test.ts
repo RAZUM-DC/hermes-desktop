@@ -93,7 +93,9 @@ describe("remote session REST bridge", () => {
 
         if (
           req.url ===
-          "/api/profiles/sessions?limit=2&offset=3&min_messages=0&archived=exclude&order=recent&profile=all"
+            "/api/profiles/sessions?limit=2&offset=3&min_messages=0&archived=exclude&order=recent&profile=all" ||
+          req.url ===
+            "/api/profiles/sessions?limit=2&offset=3&min_messages=0&archived=exclude&order=recent&profile=work%20profile"
         ) {
           res.end(
             JSON.stringify({
@@ -304,6 +306,14 @@ describe("remote session REST bridge", () => {
         preview: "Remote preview",
       },
     ]);
+  });
+
+  it("scopes remote session lists to the selected profile", async () => {
+    await remoteListSessions({ ...config(), profile: "work profile" }, 2, 3);
+
+    expect(requests[0]?.url).toBe(
+      "/api/profiles/sessions?limit=2&offset=3&min_messages=0&archived=exclude&order=recent&profile=work%20profile",
+    );
   });
 
   it("falls back to the legacy session list endpoint for older dashboards", async () => {
