@@ -717,9 +717,16 @@ export function registerIpcHandlers(context: IpcContext): void {
   // Pre-send chat readiness — answers "if Send is clicked right now,
   // will it work?". Fail-open semantics: any uncertain state returns
   // `ok: true`, so the renderer never false-blocks a Send.
-  ipcMain.handle("validate-chat-readiness", (_event, profile?: string) => {
-    return validateChatReadiness(profile);
-  });
+  type ChatReadinessOverride = Parameters<typeof validateChatReadiness>[1];
+  ipcMain.handle(
+    "validate-chat-readiness",
+    (_event, profile?: string, override?: ChatReadinessOverride) => {
+      const conn = getConnectionConfig();
+      return validateChatReadiness(profile, override, {
+        checkLocalConfig: conn.mode === "local",
+      });
+    },
+  );
 
   // Config-health audit + per-issue auto-fix. The renderer renders a
   // dismissible banner above the chat input and a full report in the
@@ -811,10 +818,12 @@ export function registerIpcHandlers(context: IpcContext): void {
 
   ipcMain.handle("get-model-config", (_event, profile?: string) => {
     const conn = getConnectionConfig();
+    const scopedProfile = activeSessionProfile(profile);
     if (conn.mode === "remote")
       return withRemoteDashboard(
         conn,
-        () => remoteGetModelConfig(conn),
+        () =>
+          remoteGetModelConfig(scopedRemoteSessionConfig(conn, scopedProfile)),
         () => getModelConfig(profile),
       );
     if (conn.mode === "ssh" && conn.ssh)
@@ -822,6 +831,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         conn,
         (config) => remoteGetModelConfig(config),
         () => sshGetModelConfig(conn.ssh!, profile),
+        scopedProfile,
       );
     return getModelConfig(profile);
   });
@@ -836,10 +846,17 @@ export function registerIpcHandlers(context: IpcContext): void {
       profile?: string,
     ) => {
       const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
       if (conn.mode === "remote") {
         return withRemoteDashboard(
           conn,
-          () => remoteSetModelConfig(conn, provider, model, baseUrl),
+          () =>
+            remoteSetModelConfig(
+              scopedRemoteSessionConfig(conn, scopedProfile),
+              provider,
+              model,
+              baseUrl,
+            ),
           () => {
             const prev = getModelConfig(profile);
             // Same library-mirroring as the pure-local path below: carry the
@@ -890,6 +907,7 @@ export function registerIpcHandlers(context: IpcContext): void {
             }
             return true;
           },
+          scopedProfile,
         );
       }
       const prev = getModelConfig(profile);

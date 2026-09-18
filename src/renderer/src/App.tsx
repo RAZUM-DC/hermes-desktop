@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Toaster } from "react-hot-toast";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { FontProvider } from "./components/FontProvider";
@@ -33,13 +33,21 @@ function App(): React.JSX.Element {
   const [splashStatus, setSplashStatus] = useState<string | undefined>(
     undefined,
   );
+  const [setupProfile, setSetupProfile] = useState<string | undefined>(
+    undefined,
+  );
   const isMac = window.electron?.process?.platform === "darwin";
+  // A reconnect can supersede an earlier startup check. Only the latest check
+  // may choose the screen or the profile that Setup will configure.
+  const installCheckIdRef = useRef(0);
 
   const runInstallCheck = useCallback(async () => {
+    const checkId = ++installCheckIdRef.current;
     const startedAt = Date.now();
     let next: Screen = "welcome";
     const error: string | null = null;
     let isRemote = false;
+    let nextSetupProfile = "default";
 
     try {
       setSplashStatus("Checking connection…");
@@ -67,6 +75,7 @@ function App(): React.JSX.Element {
       } else {
         setSplashStatus("Checking local install…");
         const status = await window.hermesAPI.checkInstall();
+        nextSetupProfile = status.activeProfile || "default";
         if (!status.installed) {
           next = "welcome";
         } else if (!status.hasApiKey) {
@@ -99,6 +108,8 @@ function App(): React.JSX.Element {
       next = "welcome";
     }
 
+    if (checkId !== installCheckIdRef.current) return;
+
     setSplashStatus(undefined);
     if (error) setInstallError(error);
 
@@ -107,6 +118,8 @@ function App(): React.JSX.Element {
     if (wait > 0) {
       await new Promise((r) => setTimeout(r, wait));
     }
+    if (checkId !== installCheckIdRef.current) return;
+    if (!isRemote) setSetupProfile(nextSetupProfile);
     setScreen(next);
 
     // Lazy deep-verify in the background after the UI is up. If the
@@ -207,6 +220,7 @@ function App(): React.JSX.Element {
         return (
           <Setup
             onComplete={() => setScreen("main")}
+            profile={setupProfile}
             verifyWarning={verifyWarning}
             onReinstall={handleVerifyReinstall}
             onDismissVerifyWarning={handleDismissVerifyWarning}

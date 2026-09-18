@@ -102,6 +102,13 @@ mount_spa(app)
     expect(result.source).toContain(
       '@app.delete("/api/model/library/{model_id:path}")',
     );
+    expect(result.source).toContain(
+      "def hermes_one_get_model_library(profile: Optional[str] = None):",
+    );
+    expect(result.source).toContain('requested.lower() == "default"');
+    expect(result.source).toContain(
+      "set_hermes_home_override(_hermes_one_profile_home(profile))",
+    );
     expect(
       result.source.indexOf('@app.get("/api/model/library")'),
     ).toBeLessThan(result.source.indexOf("mount_spa(app)"));
