@@ -383,3 +383,168 @@ describe("resetAuxiliaryToAuto", () => {
     expect(content).toContain("  default: helpful");
   });
 });
+
+describe("auxiliary credential ownership", () => {
+  const original = [
+    "auxiliary: # Keep task settings",
+    "  vision:",
+    "    provider: custom",
+    "    model: old-model",
+    "    base_url: https://agnes.example/v1",
+    "    api_key: old-direct-secret",
+    "    key_env: HERMES_CUSTOM_AGNESAI_API_KEY",
+    "    api_key_env: LEGACY_AGNES_KEY",
+    "    api: https://agnes.example/legacy",
+    "    api_mode: chat_completions",
+    "    timeout: 42",
+    "    extra_body:",
+    "      key_env: nested-option",
+    "      model: nested-model",
+    "  compression:",
+    "    provider: openai",
+    "    api_key: compression-secret",
+    "",
+  ].join("\n");
+
+  function seed(): string {
+    const path = join(TEST_DIR, "config.yaml");
+    writeFileSync(path, original);
+    return path;
+  }
+
+  // @lat: [[provider-setup#Provider setup#Auxiliary credential ownership#Provider and endpoint changes]]
+  it("clears stale credentials and transport when the provider changes", async () => {
+    const path = seed();
+    const { setAuxiliaryTask } = await importAuxConfigWithHome(TEST_DIR);
+    setAuxiliaryTask("vision", {
+      provider: "anthropic",
+      model: "claude",
+      baseUrl: "",
+    });
+    const saved = readFileSync(path, "utf8");
+    expect(saved).not.toContain("AGNES");
+    expect(saved).not.toContain("old-direct-secret");
+    expect(saved).not.toContain("api_mode:");
+    expect(saved).not.toContain("legacy");
+    expect(saved).toContain('provider: "anthropic"');
+    expect(saved).toContain("api_key: compression-secret");
+    expect(saved).toContain("      key_env: nested-option");
+    expect(saved).toContain("      model: nested-model");
+    expect(saved).toContain("timeout: 42");
+  });
+
+  it("clears stale credentials when only the custom endpoint changes", async () => {
+    const path = seed();
+    const { setAuxiliaryTask } = await importAuxConfigWithHome(TEST_DIR);
+    setAuxiliaryTask("vision", {
+      provider: "custom",
+      model: "new-model",
+      baseUrl: "https://other.example/v1",
+    });
+    const saved = readFileSync(path, "utf8");
+    expect(saved).not.toContain("AGNES");
+    expect(saved).not.toContain("old-direct-secret");
+    expect(saved).not.toContain("api_mode:");
+  });
+
+  // @lat: [[provider-setup#Provider setup#Auxiliary credential ownership#Model-only changes]]
+  it("preserves credentials for the same normalized provider and endpoint", async () => {
+    const path = seed();
+    const { setAuxiliaryTask } = await importAuxConfigWithHome(TEST_DIR);
+    setAuxiliaryTask("vision", {
+      provider: "CUSTOM",
+      model: "new-model",
+      baseUrl: "https://AGNES.example/v1/",
+    });
+    const saved = readFileSync(path, "utf8");
+    expect(saved).toContain("api_key: old-direct-secret");
+    expect(saved).toContain("key_env: HERMES_CUSTOM_AGNESAI_API_KEY");
+    expect(saved).toContain("api_mode: chat_completions");
+    expect(saved).toContain('model: "new-model"');
+  });
+
+  it("preserves credentials when a native default endpoint becomes explicit", async () => {
+    const path = join(TEST_DIR, "config.yaml");
+    writeFileSync(
+      path,
+      "auxiliary:\n  vision:\n    provider: openai\n    api_key: task-secret\n    api_mode: codex_responses\n",
+    );
+    const { setAuxiliaryTask } = await importAuxConfigWithHome(TEST_DIR);
+    setAuxiliaryTask("vision", {
+      provider: "openai",
+      model: "new",
+      baseUrl: "https://api.openai.com/v1/",
+    });
+    const saved = readFileSync(path, "utf8");
+    expect(saved).toContain("api_key: task-secret");
+    expect(saved).toContain("api_mode: codex_responses");
+  });
+
+  // @lat: [[provider-setup#Provider setup#Auxiliary credential ownership#Reset persistence]]
+  it("persists reset without per-task credentials after reloading", async () => {
+    const path = seed();
+    const { resetAuxiliaryToAuto } = await importAuxConfigWithHome(TEST_DIR);
+    resetAuxiliaryToAuto();
+    const saved = readFileSync(path, "utf8");
+    expect(saved).not.toContain("AGNES");
+    expect(saved).not.toContain("old-direct-secret");
+    expect(saved).not.toContain("compression-secret");
+    expect(saved).not.toContain("api_mode:");
+    expect(saved).toContain("      key_env: nested-option");
+    const { getAuxiliaryConfig } = await importAuxConfigWithHome(TEST_DIR);
+    expect(getAuxiliaryConfig().find((slot) => slot.task === "vision")).toEqual(
+      { task: "vision", provider: "auto", model: "", baseUrl: "" },
+    );
+  });
+
+  // @lat: [[provider-setup#Provider setup#Auxiliary credential ownership#YAML field boundaries]]
+  it("edits direct fields without touching nested fields and preserves CRLF", async () => {
+    const content =
+      "auxiliary:\r\n  vision: {} # Empty task\r\n  compression:\r\n    extra_body:\r\n      model: nested-model\r\n";
+    const { setAuxiliaryField } = await importAuxConfigWithHome(TEST_DIR);
+    const first = setAuxiliaryField(content, "vision", "provider", "openai");
+    const saved = setAuxiliaryField(first, "compression", "model", "gpt-4o");
+    expect(saved).toContain('    model: "gpt-4o"\r\n    extra_body:');
+    expect(saved).toContain("      model: nested-model");
+    expect(saved).toContain('    provider: "openai"\r\n');
+    expect(saved.replace(/\r\n/g, "")).not.toContain("\n");
+  });
+
+  it.each([
+    "auxiliary: {vision: {provider: old, key_env: OLD_KEY}}\n",
+    "auxiliary:\n  vision: {provider: old, key_env: OLD_KEY}\n",
+  ])(
+    "rejects unsupported flow mappings without changing the file",
+    async (content) => {
+      const path = join(TEST_DIR, "config.yaml");
+      writeFileSync(path, content);
+      const { setAuxiliaryTask } = await importAuxConfigWithHome(TEST_DIR);
+      expect(() =>
+        setAuxiliaryTask("vision", {
+          provider: "openai",
+          model: "new",
+          baseUrl: "",
+        }),
+      ).toThrow("use a block mapping");
+      expect(readFileSync(path, "utf8")).toBe(content);
+    },
+  );
+
+  it("removes quoted credential keys and complete multiline values", async () => {
+    const path = join(TEST_DIR, "config.yaml");
+    writeFileSync(
+      path,
+      "auxiliary:\n  vision:\n    provider: old\n    \"api_key\": |\n      old-secret\n\n      old-secret-tail\n    'key_env': OLD_KEY\n    timeout: 42\n",
+    );
+    const { setAuxiliaryTask } = await importAuxConfigWithHome(TEST_DIR);
+    setAuxiliaryTask("vision", {
+      provider: "openai",
+      model: "new",
+      baseUrl: "",
+    });
+    const saved = readFileSync(path, "utf8");
+    expect(saved).not.toContain("old-secret");
+    expect(saved).not.toContain("OLD_KEY");
+    expect(saved).toContain("timeout: 42");
+  });
+});
