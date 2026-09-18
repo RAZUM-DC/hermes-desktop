@@ -65,3 +65,27 @@ When live OAuth discovery is unavailable, MiniMax keeps a usable model list alig
 Novita is available as a remote OpenAI-compatible preset, with a dedicated API-key field and the same endpoint used by Hermes Agent.
 
 The desktop stores the model as `custom` at `https://api.novita.ai/openai/v1`. Setup, the configured-provider picker, installer readiness, and runtime key lookup use `NOVITA_API_KEY`; provider branding identifies the endpoint as NovitaAI. The shared URL mapping is covered alongside the other supported commercial endpoints.
+
+## Auxiliary credential ownership
+
+Auxiliary credentials belong to the selected provider and endpoint. Switching either clears stale task-level secrets and pointers; model-only changes preserve them.
+
+[[src/main/auxiliary-config.ts#setAuxiliaryTask]] clears `api_key`, `key_env`, `api_key_env`, legacy `api`, and `api_mode` when the provider or normalized endpoint changes, or routing returns to `auto`. RAZUM keeps this logic independent of upstream's Hermes One named-provider registry.
+
+[[src/main/auxiliary-config.ts#resetAuxiliaryToAuto]] clears the same overrides for every task. The text editor changes only direct task fields, preserving nested `extra_body`, other tasks, comments, and line endings; unsupported flow mappings fail before writing.
+
+### Provider and endpoint changes
+
+Switching providers or changing an endpoint removes prior credential aliases and transport overrides so they cannot leak into the next route.
+
+### Model-only changes
+
+Changing the model under the same effective provider and endpoint preserves task-specific credentials and transport settings. Omitted versus explicit native default URLs resolve to the same route.
+
+### Reset persistence
+
+Resetting to the main model persists `auto` routing without stale task-level credentials, while leaving unrelated settings intact after reload.
+
+### YAML field boundaries
+
+Routing updates and credential removal address direct task children only, preserving nested options, comments, empty task maps, multiline values, and CRLF line endings.
