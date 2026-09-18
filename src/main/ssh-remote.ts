@@ -8,6 +8,11 @@ import { spawn } from "child_process";
 import { homedir } from "os";
 import { join } from "path";
 import { existsSync } from "fs";
+import {
+  REMOTE_ENV_UPDATE_SCRIPT,
+  type RemoteEnvUpdate,
+  type RemoteEnvUpdateResult,
+} from "./ssh-env-update";
 import type { SshConfig } from "./ssh-tunnel";
 import type { KanbanTask } from "./kanban";
 import { buildSshControlOptions } from "./ssh-options";
@@ -976,26 +981,20 @@ export async function sshSetEnvValue(
   value: string,
   profile?: string,
 ): Promise<void> {
-  const envPath = remoteEnvPath(profile);
-  const content = await sshReadFile(config, envPath);
+  await sshUpdateEnv(config, { operation: "set", key, value }, profile);
+}
 
-  if (!content.trim()) {
-    await sshWriteFile(config, envPath, `${key}=${value}\n`);
-    return;
-  }
-
-  const lines = content.split("\n");
-  let found = false;
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim().match(new RegExp(`^#?\\s*${escaped}\\s*=`))) {
-      lines[i] = `${key}=${value}`;
-      found = true;
-      break;
-    }
-  }
-  if (!found) lines.push(`${key}=${value}`);
-  await sshWriteFile(config, envPath, lines.join("\n"));
+async function sshUpdateEnv(
+  config: SshConfig,
+  update: RemoteEnvUpdate,
+  profile?: string,
+): Promise<RemoteEnvUpdateResult> {
+  const output = await sshPython(
+    config,
+    REMOTE_ENV_UPDATE_SCRIPT,
+    JSON.stringify({ path: remoteEnvPath(profile), ...update }),
+  );
+  return JSON.parse(output) as RemoteEnvUpdateResult;
 }
 
 // ─── Dotted-path YAML helpers (mirror of the local-mode fix) ───────────────
