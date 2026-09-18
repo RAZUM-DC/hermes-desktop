@@ -4,6 +4,12 @@ The first-run screen where the user picks an AI provider and enters credentials 
 
 The provider list is data-driven from `PROVIDERS.setup` in [[src/renderer/src/constants.ts]]. Each entry carries an `envKey`, `configProvider`, `baseUrl`, and `needsKey`; selecting a card drives which form fields show (API key, or the Local server/base-URL flow).
 
+## Setup profile credentials
+
+Setup saves credentials and model configuration to the profile returned by the successful install check, keeping named profiles isolated from the default workspace.
+
+The local first-run gate is profile-aware: `checkInstall` decides whether setup is needed for the active profile, so [[src/renderer/src/App.tsx#App]] passes that profile into [[src/renderer/src/screens/Setup/Setup.tsx#Setup]]. Setup writes `.env` and `config.yaml` to the same profile. A generation guard ensures that only the latest completed install check may select the setup profile.
+
 ## Top grid mirrors the agent's native providers
 
 The top provider grid shows only providers the upstream agent supports natively; generic OpenAI-compatible endpoints live in the Local presets instead.

@@ -85,6 +85,7 @@ const hermesAPI = {
     installed: boolean;
     configured: boolean;
     hasApiKey: boolean;
+    activeProfile?: string;
   }> => ipcRenderer.invoke("check-install"),
 
   verifyInstall: (): Promise<boolean> => ipcRenderer.invoke("verify-install"),
@@ -179,6 +180,7 @@ const hermesAPI = {
 
   validateChatReadiness: (
     profile?: string,
+    override?: { provider?: string; model?: string; baseUrl?: string },
   ): Promise<{
     ok: boolean;
     code?:
@@ -190,7 +192,7 @@ const hermesAPI = {
     message?: string;
     fixLocation?: "providers" | "models" | "gateway" | "setup";
     expectedEnvKey?: string;
-  }> => ipcRenderer.invoke("validate-chat-readiness", profile),
+  }> => ipcRenderer.invoke("validate-chat-readiness", profile, override),
 
   getConfigHealth: (profile?: string): Promise<unknown> =>
     ipcRenderer.invoke("get-config-health", profile),

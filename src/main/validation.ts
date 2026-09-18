@@ -45,6 +45,12 @@ export interface ChatReadiness {
   expectedEnvKey?: string;
 }
 
+export interface ChatReadinessModelConfig {
+  provider?: string;
+  model?: string;
+  baseUrl?: string;
+}
+
 const OK: ChatReadiness = { ok: true };
 
 // Provider ids that authenticate ONLY via interactive OAuth login —
@@ -79,11 +85,20 @@ const NO_KEY_PROVIDERS = new Set(["auto"]);
  * Synchronous readiness check against the desktop's own config —
  * no network calls. Fast (single readEnv + getModelConfig).
  *
- * `profile` defaults to the active profile.
+ * `profile` defaults to the active profile. `override` is the model selected
+ * for this chat. Remote checks deliberately do not inspect local credentials.
  */
-export function validateChatReadiness(profile?: string): ChatReadiness {
+export function validateChatReadiness(
+  profile?: string,
+  override?: ChatReadinessModelConfig,
+  options: { checkLocalConfig?: boolean } = {},
+): ChatReadiness {
   try {
-    const mc = getModelConfig(profile);
+    const mc = override?.model?.trim()
+      ? override
+      : options.checkLocalConfig === false
+        ? (override ?? {})
+        : getModelConfig(profile);
     const provider = (mc.provider || "").trim().toLowerCase();
     const model = (mc.model || "").trim();
     const baseUrl = (mc.baseUrl || "").trim();
@@ -112,6 +127,9 @@ export function validateChatReadiness(profile?: string): ChatReadiness {
     // intentionally hit an unauthenticated LM Studio / Ollama. Don't
     // block on missing key in that case.
     if (isLocalBaseUrl(baseUrl)) return OK;
+
+    // A missing key on this computer says nothing about a remote host.
+    if (options.checkLocalConfig === false) return OK;
 
     const expectedKey = expectedEnvKeyForModel(provider, baseUrl);
     if (!expectedKey) {

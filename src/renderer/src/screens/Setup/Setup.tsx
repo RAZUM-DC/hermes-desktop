@@ -8,6 +8,8 @@ import { expectedEnvKeyForUrl } from "../../../../shared/url-key-map";
 
 interface SetupProps {
   onComplete: () => void;
+  /** Profile returned by the install check; omitted means default. */
+  profile?: string;
   verifyWarning?: boolean;
   onReinstall?: () => void;
   onDismissVerifyWarning?: () => void;
@@ -15,6 +17,7 @@ interface SetupProps {
 
 function Setup({
   onComplete,
+  profile,
   verifyWarning,
   onReinstall,
   onDismissVerifyWarning,
@@ -60,10 +63,10 @@ function Setup({
 
     try {
       if (provider.needsKey && provider.envKey) {
-        await window.hermesAPI.setEnv(provider.envKey, apiKey.trim());
+        await window.hermesAPI.setEnv(provider.envKey, apiKey.trim(), profile);
       } else if (isLocal && apiKey.trim()) {
         const envKey = resolveCustomEnvKey(baseUrl.trim());
-        await window.hermesAPI.setEnv(envKey, apiKey.trim());
+        await window.hermesAPI.setEnv(envKey, apiKey.trim(), profile);
       }
 
       const configProvider = isLocal ? "custom" : provider.configProvider;
@@ -73,6 +76,7 @@ function Setup({
         configProvider,
         configModel,
         configBaseUrl,
+        profile,
       );
 
       onComplete();

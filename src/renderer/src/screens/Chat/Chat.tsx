@@ -375,7 +375,11 @@ function Chat({
     let cancelled = false;
     (async (): Promise<void> => {
       try {
-        const r = await window.hermesAPI.validateChatReadiness(profile);
+        const r = await window.hermesAPI.validateChatReadiness(profile, {
+          provider: chatCurrentProvider,
+          model: chatCurrentModel,
+          baseUrl: chatCurrentBaseUrl,
+        });
         if (!cancelled) setReadiness(r);
       } catch {
         // Fail open on IPC error — never block Send on validation failure
@@ -385,7 +389,13 @@ function Chat({
     return (): void => {
       cancelled = true;
     };
-  }, [profile, chatCurrentModel, chatCurrentProvider, chatCurrentBaseUrl]);
+  }, [
+    profile,
+    chatCurrentModel,
+    chatCurrentProvider,
+    chatCurrentBaseUrl,
+    connectionMode,
+  ]);
 
   // Authoritative context-window size for the active model, resolved from the
   // provider's /models catalogue (issue #597). Null until/unless the provider
