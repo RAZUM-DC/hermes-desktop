@@ -25,9 +25,12 @@ import {
 } from "./secrets";
 import { canonicalProviderBaseUrl } from "./provider-registry";
 import {
+  customProviderEnvKey,
   expectedEnvKeyForUrl,
   OPENAI_COMPAT_PROVIDERS,
 } from "../shared/url-key-map";
+import { readModelsRaw } from "./models";
+import { normalizeModelEndpointUrl } from "../shared/model-endpoint";
 
 // ── Connection Config (local / remote / ssh) ─────────────
 
@@ -756,10 +759,8 @@ export function getModelContextLengthOverride(
  * does. Returns false for providers the runtime does NOT route through the
  * custom path, so their specific-key checks still apply.
  *
- * (The runtime also consults a per-model `CUSTOM_PROVIDER_<name>_KEY` ahead of
- * the generic keys; that lookup needs models.json and is intentionally omitted
- * here to keep config.ts free of a models.ts import — the generic chain covers
- * the reported cases.)
+ * Saved custom providers use the same endpoint identity and per-name keys as
+ * the runtime.
  */
 export function customEndpointKeyResolvable(
   provider: string,
@@ -775,6 +776,25 @@ export function customEndpointKeyResolvable(
     "CUSTOM_API_KEY",
     "OPENAI_API_KEY",
   ]);
+
+  // A custom provider imported from config.yaml owns a dedicated key such as
+  // CUSTOM_PROVIDER_TEST_GATEWAY_KEY. Add keys only for saved custom rows that
+  // represent this exact endpoint identity.
+  try {
+    const endpoint = normalizeModelEndpointUrl(baseUrl);
+    for (const row of readModelsRaw()) {
+      if (
+        row.provider === "custom" &&
+        row.name &&
+        normalizeModelEndpointUrl(row.baseUrl) === endpoint
+      ) {
+        candidates.add(customProviderEnvKey(row.name));
+      }
+    }
+  } catch {
+    // models.json unreadable — the generic fallback chain still applies
+  }
+
   for (const k of candidates) {
     if ((env[k] ?? "").trim()) return true;
   }

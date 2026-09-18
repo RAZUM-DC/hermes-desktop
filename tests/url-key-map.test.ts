@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   URL_KEY_MAP,
+  customProviderEnvKey,
   expectedEnvKeyForUrl,
   isLocalBaseUrl,
   isKnownProviderUrl,
   CUSTOM_API_KEY_ENV,
 } from "../src/shared/url-key-map";
+
+describe("customProviderEnvKey", () => {
+  it("normalizes a display name to the persisted custom-provider key", () => {
+    expect(customProviderEnvKey("My Gateway 2.0")).toBe(
+      "CUSTOM_PROVIDER_MY_GATEWAY_2_0_KEY",
+    );
+  });
+});
 
 /**
  * The shared URL → env-var-name table backs three call sites:

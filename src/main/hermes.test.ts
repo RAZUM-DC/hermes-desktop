@@ -49,6 +49,7 @@ vi.mock("child_process", () => {
 });
 
 import { spawn } from "child_process";
+import { readModels } from "./models";
 import {
   getApiServerKey,
   getConnectionConfig,
@@ -325,6 +326,7 @@ describe("sendMessage session model override routing", () => {
   }
 
   beforeEach(() => {
+    vi.mocked(readModels).mockReset().mockReturnValue([]);
     mockedGetApiServerKey.mockReset();
     mockedGetApiServerKey.mockReturnValue("");
     mockedGetConnectionConfig.mockReset();
@@ -353,6 +355,56 @@ describe("sendMessage session model override routing", () => {
   afterEach(() => {
     stopHealthPolling();
   });
+
+  // @lat: [[provider-setup#Provider setup#Custom provider credential readiness#Runtime parity]]
+  it.each(["env", "vault"])(
+    "passes a saved custom provider's %s key to the CLI for equivalent URLs",
+    async (source) => {
+      const key = "CUSTOM_PROVIDER_TEST_LABEL_KEY";
+      vi.mocked(readModels).mockReturnValue([
+        {
+          id: "first",
+          name: "No key",
+          provider: "custom",
+          model: "test",
+          baseUrl: "https://example.com/Api",
+          createdAt: 1,
+        },
+        {
+          id: "test",
+          name: "Test Label",
+          provider: "custom",
+          model: "test",
+          baseUrl: "https://EXAMPLE.com:443/Api/",
+          createdAt: 1,
+        },
+      ]);
+      if (source === "env") {
+        mockedReadEnv.mockReturnValue({ [key]: "profile-secret" });
+      } else {
+        mockedProviderListSafe.mockReturnValue({ [key]: "profile-secret" });
+      }
+
+      await sendMessage(
+        "hello",
+        noopCallbacks,
+        "default",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          provider: "custom",
+          model: "test",
+          baseUrl: "https://example.com/Api",
+        },
+      );
+
+      const options = mockedSpawn.mock.calls[0][2];
+      expect(options?.env?.OPENAI_API_KEY).toBe("profile-secret");
+      expect(options?.env?.OPENAI_BASE_URL).toBe("https://example.com/Api");
+    },
+  );
 
   // @lat: [[model-selection#Session model override#Text-only legacy fallback routes via CLI]]
   it("routes a cross-provider override through the CLI with its provider + model", async () => {
