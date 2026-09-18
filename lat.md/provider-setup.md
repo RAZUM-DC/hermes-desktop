@@ -89,3 +89,21 @@ Resetting to the main model persists `auto` routing without stale task-level cre
 ### YAML field boundaries
 
 Routing updates and credential removal address direct task children only, preserving nested options, comments, empty task maps, multiline values, and CRLF line endings.
+
+## Custom provider credential readiness
+
+Saved RAZUM custom providers use their model-library name and normalized base URL as the credential identity, without requiring the upstream Hermes One provider registry.
+
+The shared [[src/shared/url-key-map.ts#customProviderEnvKey]] transform maps the saved name to `CUSTOM_PROVIDER_<NAME>_KEY`. Endpoint comparison normalizes scheme and host case, default ports, and trailing slashes while preserving path and query case.
+
+### Readiness and profile isolation
+
+Readiness checks accept a per-name key only when a saved `custom` model matches the active endpoint and the selected profile owns the credential.
+
+The credential may come from the profile environment or its resolved secret provider. A named profile never borrows the default profile's key.
+
+[[src/main/models.ts#readModelsRaw]] resolves the model-store path at call time so the config-to-models import cycle cannot access `HERMES_HOME` before installer initialization finishes.
+
+### Runtime parity
+
+CLI launch applies the same endpoint match, skips matching saved rows whose per-name key is empty, and continues until it finds a usable key in the selected profile environment or enumerated secret provider.

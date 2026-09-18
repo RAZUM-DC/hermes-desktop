@@ -50,6 +50,7 @@ import { getProfilePort } from "./gateway-ports";
 import { promptSudoPassword, promptSecretValue } from "./gatewayPrompt";
 import { getSecret } from "./secrets";
 import { readModels } from "./models";
+import { normalizeModelEndpointUrl } from "../shared/model-endpoint";
 import { providerListSafe } from "./secrets";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
 import { type Attachment, escapeXmlAttr } from "../shared/attachments";
@@ -60,7 +61,10 @@ import {
   type ApprovalChoice,
   type ChatApprovalRequest,
 } from "../shared/chat-approval";
-import { OPENAI_COMPAT_PROVIDERS } from "../shared/url-key-map";
+import {
+  customProviderEnvKey,
+  OPENAI_COMPAT_PROVIDERS,
+} from "../shared/url-key-map";
 import {
   chatToolEventFromPayload,
   chatToolProgressLabel,
@@ -2601,7 +2605,9 @@ function sendMessageViaCli(
     let modelApiMode: string | null = null;
     try {
       const modelEntry = readModels().find(
-        (m) => m.baseUrl === mc.baseUrl && m.model === mc.model,
+        (m) =>
+          normalizeModelEndpointUrl(m.baseUrl) ===
+            normalizeModelEndpointUrl(mc.baseUrl) && m.model === mc.model,
       );
       if (modelEntry) modelApiMode = modelEntry.apiMode || null;
     } catch {
@@ -2645,14 +2651,20 @@ function sendMessageViaCli(
     if (!resolvedKey) {
       // Try custom provider auto-generated key from models.json
       try {
-        const models = readModels();
-        const matching = models.find((m) => m.baseUrl === mc.baseUrl);
-        if (matching) {
-          const envKey2 =
-            "CUSTOM_PROVIDER_" +
-            matching.name.replace(/[^A-Za-z0-9]/g, "_").toUpperCase() +
-            "_KEY";
-          resolvedKey = profileEnv[envKey2] || env[envKey2] || "";
+        const endpoint = normalizeModelEndpointUrl(mc.baseUrl);
+        for (const matching of readModels()) {
+          if (
+            matching.provider !== "custom" ||
+            normalizeModelEndpointUrl(matching.baseUrl) !== endpoint
+          )
+            continue;
+          const envKey2 = customProviderEnvKey(matching.name);
+          resolvedKey =
+            profileEnv[envKey2] ||
+            env[envKey2] ||
+            providerSecrets[envKey2] ||
+            "";
+          if (resolvedKey) break;
         }
       } catch {
         /* ignore */
