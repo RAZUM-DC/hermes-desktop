@@ -16,3 +16,4 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[analytics]] — privacy-first, opt-out usage analytics that POST anonymous events to the in-house Hermes analytics service, keyed by a per-install localStorage UUID; replaces the former PostHog integration.
 - [[wallet-token-balances]] — profile-scoped Base mainnet wallets with encrypted recovery phrases, and on-chain ERC-20 token balance reads via ethers v6.
 - [[dashboard-clarify]] — interactive WebSocket clarification cards and safe answer delivery.
+- [[scheduled-jobs]] — terminal-state normalization for local, Remote API, and named SSH scheduled jobs.

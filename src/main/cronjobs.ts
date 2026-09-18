@@ -41,8 +41,8 @@ function normalizeJob(job: Record<string, unknown>): CronJob | null {
   if (!job.id) return null;
   const enabled = job.enabled !== false;
   let state: CronJob["state"] = "active";
-  if (job.state === "paused" || !enabled) state = "paused";
-  else if (job.state === "completed") state = "completed";
+  if (job.state === "completed") state = "completed";
+  else if (job.state === "paused" || !enabled) state = "paused";
   const schedule = job.schedule as { value?: string } | string | undefined;
   return {
     id: String(job.id),
@@ -163,7 +163,7 @@ export function parseCronListOutput(output: string): CronJob[] {
       schedule: current.fields.Schedule || "?",
       prompt: current.fields.Prompt || "",
       state,
-      enabled: state !== "paused",
+      enabled: state === "active",
       next_run_at: current.fields["Next run"] || null,
       last_run_at: lastRun.last_run_at,
       last_status: lastRun.last_status,
@@ -298,13 +298,16 @@ export async function listCronJobs(
         headers: dashboardCronHeaders(),
       });
       if (!res.ok) {
-        console.error("[CRON] remote(dashboard) list failed:", await dashboardCronError(res));
+        console.error(
+          "[CRON] remote(dashboard) list failed:",
+          await dashboardCronError(res),
+        );
         return [];
       }
       const parsed = (await res.json()) as unknown;
       const raw = Array.isArray(parsed)
         ? (parsed as Record<string, unknown>[])
-        : ((parsed as { jobs?: Record<string, unknown>[] }).jobs || []);
+        : (parsed as { jobs?: Record<string, unknown>[] }).jobs || [];
       const jobs: CronJob[] = [];
       for (const job of raw) {
         const normalized = normalizeJob(job);
@@ -427,7 +430,9 @@ export async function createCronJob(
     if (!base) return { success: false, error: "remoteUrl не задан" };
     try {
       const res = await fetch(
-        base + "/api/cron/jobs?profile=" + encodeURIComponent(profile || "default"),
+        base +
+          "/api/cron/jobs?profile=" +
+          encodeURIComponent(profile || "default"),
         {
           method: "POST",
           headers: dashboardCronHeaders(true),
@@ -439,7 +444,8 @@ export async function createCronJob(
           }),
         },
       );
-      if (!res.ok) return { success: false, error: await dashboardCronError(res) };
+      if (!res.ok)
+        return { success: false, error: await dashboardCronError(res) };
       return { success: true };
     } catch (err) {
       return { success: false, error: (err as Error).message };
@@ -493,7 +499,8 @@ export async function removeCronJob(
         base + `/api/cron/jobs/${encodeURIComponent(jobId)}`,
         { method: "DELETE", headers: dashboardCronHeaders() },
       );
-      if (!res.ok) return { success: false, error: await dashboardCronError(res) };
+      if (!res.ok)
+        return { success: false, error: await dashboardCronError(res) };
       return { success: true };
     } catch (err) {
       return { success: false, error: (err as Error).message };
@@ -535,7 +542,8 @@ async function remoteJobAction(
         base + `/api/cron/jobs/${encodeURIComponent(jobId)}/${dashAction}`,
         { method: "POST", headers: dashboardCronHeaders() },
       );
-      if (!res.ok) return { success: false, error: await dashboardCronError(res) };
+      if (!res.ok)
+        return { success: false, error: await dashboardCronError(res) };
       return { success: true };
     } catch (err) {
       return { success: false, error: (err as Error).message };
