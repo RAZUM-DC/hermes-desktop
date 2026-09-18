@@ -47,3 +47,25 @@ Wallet and token-balance handlers sit in the same registry: `list-wallets`, `cre
 Speech-to-text IPC sends recorded desktop audio through the Hermes API server, not through the active chat model endpoint.
 
 [[src/main/ipc/register.ts#registerIpcHandlers]] exposes `transcribe-audio` for the preload bridge, and [[src/main/hermes.ts#transcribeAudio]] posts a base64 data URL to `/api/audio/transcribe`. If the local gateway lacks that desktop route, it falls back to the Python `tools.transcription_tools.transcribe_audio` dispatcher, so local Whisper, Groq, OpenAI, ElevenLabs, and command/plugin STT providers remain independent from the selected chat model.
+
+## SSH credential persistence
+
+Every RAZUM Desktop SSH `.env` update runs as a remote locked transaction, so overlapping provider and messaging writes preserve unrelated credentials.
+
+[[src/main/ssh-remote.ts#sshSetEnvValue]] sends all mutations through [[src/main/ssh-env-update.ts#REMOTE_ENV_UPDATE_SCRIPT]]. The remote helper locks a stable sibling `.env.lock`, reads the latest file only after acquiring the lock, and replaces it atomically through a same-directory temporary file.
+
+Paths, keys, and values travel as JSON on standard input rather than credential-bearing shell arguments. Existing line endings, unrelated lines, ownership, permissions, ACLs, extended attributes, security labels, and symlink targets are preserved. A new `.env` is created with mode `0600`; unsafe metadata or filesystem failures abort the replacement.
+
+This lock coordinates Desktop writers across processes and connections. Manual tools and Hermes Agent do not use the Desktop lock, so they should not edit the same `.env` concurrently with a Desktop save.
+
+### Concurrent writers
+
+Independent Desktop updates wait for the same remote lock and each read the newest committed file before modifying one key.
+
+### Profile routing and secret transport
+
+The default and named profiles resolve to separate `.env` paths, while every secret stays in the SSH process's standard input and out of its command arguments.
+
+### Failure preservation
+
+Read, validation, fsync, metadata, and replacement failures leave the original credential file unchanged, clean temporary files, and propagate an error to the caller.
