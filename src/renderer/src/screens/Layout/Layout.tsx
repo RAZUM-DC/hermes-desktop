@@ -32,7 +32,7 @@ import Kanban from "../Kanban/Kanban";
 import RemoteNotice from "../../components/RemoteNotice";
 import VerifyWarningBanner from "../../components/VerifyWarningBanner";
 import { useSettingsModal } from "../../components/settings/SettingsModalContext";
-import hermeslogo from "../../assets/hermes-one.svg";
+import SidebarBrand from "../../components/common/SidebarBrand";
 import {
   Compass,
   Settings as SettingsIcon,
@@ -663,15 +663,7 @@ function Layout({
     <div className={`layout ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span
-            className="sidebar-logo"
-            role="img"
-            aria-label="Hermes"
-            style={{
-              maskImage: `url(${hermeslogo})`,
-              WebkitMaskImage: `url(${hermeslogo})`,
-            }}
-          />
+          <SidebarBrand />
           <button
             className="sidebar-collapse-toggle"
             type="button"

@@ -39,7 +39,7 @@ function SplashScreen({
         preload="auto"
         style={{ display: "block", objectFit: "cover" }}
       />
-      <img className="splash-logo" src={splashLogo} alt="Hermes One" />
+      <img className="splash-logo" src={splashLogo} alt="RAZUM" />
       {status && <div className="splash-status">{status}</div>}
     </div>
   );
