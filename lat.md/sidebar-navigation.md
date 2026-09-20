@@ -8,7 +8,13 @@ The sidebar starts with New Chat, keeps app destinations pinned, then gives conv
 
 The sidebar header's collapse control doubles as the brand mark: collapsed it shows a circular dot that swaps to the expand icon on hover; expanded it shows the full wordmark beside the collapse icon.
 
-[[src/renderer/src/screens/Layout/Layout.tsx#Layout]] renders `.sidebar-collapse-toggle`. Collapsed, it holds a fixed-size `.sidebar-collapse-swap` box stacking a `.sidebar-collapse-mark` circle (filled with `--text-primary`, so white on dark themes and dark on light) over the `PanelLeftOpen` icon; only opacity toggles on hover/focus, so the button never reflows. Expanded, the maskable `.sidebar-logo` wordmark shows next to the `PanelLeftClose` icon.
+[[src/renderer/src/screens/Layout/Layout.tsx#Layout]] renders `.sidebar-collapse-toggle`. Collapsed, it holds a fixed-size `.sidebar-collapse-swap` box stacking a `.sidebar-collapse-mark` circle (filled with `--text-primary`, so white on dark themes and dark on light) over the `PanelLeftOpen` icon; only opacity toggles on hover/focus, so the button never reflows. Expanded, the `.sidebar-logo` wordmark shows next to the `PanelLeftClose` icon.
+
+### Reliable RAZUM wordmark
+
+The expanded sidebar renders the RAZUM SVG as a real image, preventing a failed CSS mask from appearing as a solid white rectangle.
+
+[[src/renderer/src/components/common/SidebarBrand.tsx#SidebarBrand]] owns the accessible image. CSS filters the black source to white on dark themes and black on light themes without placing a coloured rectangle behind it.
 
 ## Infinite sidebar list
 

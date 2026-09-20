@@ -1431,17 +1431,22 @@ body {
 }
 
 .sidebar-logo {
+  display: block;
   height: 30px;
   width: 150px;
-  /* Follow the foreground colour (white on dark themes, black on light) rather
-     than a fixed brand yellow, so the wordmark always reads against the bg. */
-  background-color: var(--text-primary);
-  mask-repeat: no-repeat;
-  mask-position: center;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  -webkit-mask-size: contain;
+  flex-shrink: 0;
+  object-fit: contain;
+  object-position: left center;
+  /* The source wordmark is black. Make it white on dark themes without using
+     a CSS mask: if the image fails, no coloured rectangle remains behind. */
+  filter: brightness(0) invert(1);
+  user-select: none;
+}
+
+[data-theme="light"] .sidebar-logo,
+[data-theme="github-light"] .sidebar-logo,
+[data-theme="solarized-light"] .sidebar-logo {
+  filter: brightness(0);
 }
 
 .sidebar-collapse-toggle {
