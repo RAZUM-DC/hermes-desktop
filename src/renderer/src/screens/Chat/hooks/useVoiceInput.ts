@@ -156,8 +156,16 @@ export function useVoiceInput(
       }, LIVE_INTERVAL_MS);
       setRecording(true);
       setError(null);
-    } catch {
-      setError("Microphone access was denied or is unavailable.");
+    } catch (e) {
+      // Surface the real DOMException (NotAllowedError / NotFoundError /
+      // NotReadableError / ...) instead of a single generic string — the
+      // name alone tells you whether this is an OS/browser permission
+      // block, a missing device, or the mic being held by another app.
+      const err = e as { name?: string; message?: string } | undefined;
+      const detail = err?.name
+        ? `${err.name}${err.message ? `: ${err.message}` : ""}`
+        : String(e);
+      setError(`Microphone access was denied or is unavailable. (${detail})`);
       setRecording(false);
     }
   }, [canRecord, stopStream, transcribeAccumulated]);
