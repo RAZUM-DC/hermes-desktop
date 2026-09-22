@@ -416,6 +416,18 @@ const hermesAPI = {
   isVoiceSidecarAvailable: (): Promise<boolean> =>
     ipcRenderer.invoke("is-voice-sidecar-available"),
 
+  startVoiceRecording: (language?: string): Promise<void> =>
+    ipcRenderer.invoke("voice-record-start", language),
+
+  partialVoiceTranscript: (): Promise<string> =>
+    ipcRenderer.invoke("voice-record-partial"),
+
+  stopVoiceRecording: (): Promise<string> =>
+    ipcRenderer.invoke("voice-record-stop"),
+
+  cancelVoiceRecording: (): Promise<void> =>
+    ipcRenderer.invoke("voice-record-cancel"),
+
   getApiServerKeyStatus: (
     profile?: string,
   ): Promise<{ hasKey: boolean; providerId?: string; checkedAt?: number }> =>

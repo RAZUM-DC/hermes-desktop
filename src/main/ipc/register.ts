@@ -103,7 +103,14 @@ import {
   resolvePendingClarify,
   resolvePendingApproval,
 } from "../hermes";
-import { isVoiceSidecarAvailable, transcribeAudioLocally } from "../voice-sidecar";
+import {
+  cancelLocalRecording,
+  isVoiceSidecarAvailable,
+  partialLocalTranscript,
+  startLocalRecording,
+  stopLocalRecording,
+  transcribeAudioLocally,
+} from "../voice-sidecar";
 import {
   getDashboardStatus,
   startDashboard,
@@ -1167,6 +1174,30 @@ export function registerIpcHandlers(context: IpcContext): void {
     "is-voice-sidecar-available",
     async (): Promise<boolean> => isVoiceSidecarAvailable(),
   );
+
+  // Запись с микрофона силами сайдкара (cpal → WASAPI shared mode) вместо
+  // getUserMedia: на массивах Intel Smart Sound Chromium открывает устройство
+  // в raw-режиме и получает от драйвера E_INVALIDARG. Подробности —
+  // в комментарии к режиму --record в voice-sidecar.ts.
+  ipcMain.handle(
+    "voice-record-start",
+    async (_event, language?: string): Promise<void> =>
+      startLocalRecording(language),
+  );
+
+  ipcMain.handle(
+    "voice-record-partial",
+    async (): Promise<string> => partialLocalTranscript(),
+  );
+
+  ipcMain.handle(
+    "voice-record-stop",
+    async (): Promise<string> => stopLocalRecording(),
+  );
+
+  ipcMain.handle("voice-record-cancel", async (): Promise<void> => {
+    cancelLocalRecording();
+  });
 
   ipcMain.handle(
     "send-message",

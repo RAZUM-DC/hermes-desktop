@@ -78,6 +78,13 @@ export default {
   voiceInput: "Voice input",
   voiceStop: "Stop recording",
   voiceTranscribing: "Transcribing…",
+  voiceBlocked:
+    "Could not open the microphone: the system refused to hand the recording device to this app. That is usually an antivirus or a corporate security policy — Kaspersky's Host Intrusion Prevention, for one. Ask your administrator to allow this app access to sound recording devices.",
+  voiceDenied:
+    "Microphone access is denied. Allow it in Windows: Settings → Privacy & security → Microphone.",
+  voiceNoDevice:
+    "No microphone found. Check that a recording device is connected.",
+  voiceFailed: "Could not start recording from the microphone. {{detail}}",
   contextWindow: "Context window",
   contextUsed: "{{pct}}% used ({{left}}% left)",
   contextTokens: "{{used}} / {{total}} tokens used",
