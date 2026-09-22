@@ -407,6 +407,15 @@ const hermesAPI = {
   ): Promise<string> =>
     ipcRenderer.invoke("transcribe-audio", audio, mimeType, profile),
 
+  transcribeAudioLocal: (
+    audio: Uint8Array,
+    language?: string,
+  ): Promise<string> =>
+    ipcRenderer.invoke("transcribe-audio-local", audio, language),
+
+  isVoiceSidecarAvailable: (): Promise<boolean> =>
+    ipcRenderer.invoke("is-voice-sidecar-available"),
+
   getApiServerKeyStatus: (
     profile?: string,
   ): Promise<{ hasKey: boolean; providerId?: string; checkedAt?: number }> =>
