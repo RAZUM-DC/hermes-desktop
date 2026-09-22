@@ -391,8 +391,15 @@ interface HermesAPI {
     mimeType: string,
     profile?: string,
   ) => Promise<string>;
-  transcribeAudioLocal: (audio: Uint8Array, language?: string) => Promise<string>;
+  transcribeAudioLocal: (
+    audio: Uint8Array,
+    language?: string,
+  ) => Promise<string>;
   isVoiceSidecarAvailable: () => Promise<boolean>;
+  startVoiceRecording: (language?: string) => Promise<void>;
+  partialVoiceTranscript: () => Promise<string>;
+  stopVoiceRecording: () => Promise<string>;
+  cancelVoiceRecording: () => Promise<void>;
   getApiServerKeyStatus: (
     profile?: string,
   ) => Promise<{ hasKey: boolean; providerId?: string; checkedAt?: number }>;

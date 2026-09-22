@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useI18n } from "../../../components/useI18n";
 
 /**
  * Voice input for the chat box.
@@ -77,7 +78,8 @@ function encodeWavPcm16(samples: Float32Array, sampleRate: number): Uint8Array {
   const buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
   const view = new DataView(buffer);
   const writeString = (offset: number, s: string): void => {
-    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+    for (let i = 0; i < s.length; i++)
+      view.setUint8(offset + i, s.charCodeAt(i));
   };
   writeString(0, "RIFF");
   view.setUint32(4, 36 + samples.length * bytesPerSample, true);
@@ -141,6 +143,7 @@ export function useVoiceInput(
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -158,6 +161,12 @@ export function useVoiceInput(
   // stop trying it for the rest of the component's lifetime instead of
   // paying a failed-spawn round trip on every tick.
   const localSidecarRef = useRef<boolean | null>(null);
+  // True while the *sidecar* owns the microphone (as opposed to
+  // MediaRecorder), so toggle()/cleanup know which one to shut down.
+  const sidecarRecordingRef = useRef(false);
+  // Why the sidecar declined, kept for the console so a failure there is
+  // never silently reported as a getUserMedia problem.
+  const sidecarErrorRef = useRef<string | null>(null);
   // Keep the latest onResult without re-creating callbacks each render.
   const onResultRef = useRef(onResult);
   onResultRef.current = onResult;
@@ -232,13 +241,40 @@ export function useVoiceInput(
     [profile],
   );
 
+  /**
+   * Opens the microphone. Some devices — notably laptops using Intel Smart
+   * Sound Technology for their digital mic array — fail Chromium's default
+   * getUserMedia call with NotReadableError ("Could not start audio
+   * source"), because Chromium's built-in audio processing (echo
+   * cancellation / noise suppression / auto gain control) can't negotiate
+   * with that driver's own DSP pipeline, even though the OS and every
+   * non-Chromium app can open the same device fine. Retrying once with that
+   * processing explicitly turned off falls back to a plain, unprocessed
+   * capture path that those drivers do support.
+   */
+  async function getMicStream(): Promise<MediaStream> {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      const name = (e as { name?: string } | undefined)?.name;
+      if (name !== "NotReadableError") throw e;
+      return navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+    }
+  }
+
   const startMediaRecorder = useCallback(async () => {
     if (!canRecord) {
       setError("Voice input isn't available here.");
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await getMicStream();
       streamRef.current = stream;
       chunksRef.current = [];
       finalizingRef.current = false;
@@ -270,18 +306,37 @@ export function useVoiceInput(
       setRecording(true);
       setError(null);
     } catch (e) {
-      // Surface the real DOMException (NotAllowedError / NotFoundError /
-      // NotReadableError / ...) instead of a single generic string — the
-      // name alone tells you whether this is an OS/browser permission
-      // block, a missing device, or the mic being held by another app.
+      // Say what actually went wrong. The DOMException name is the only
+      // signal the browser gives, and each one means something different:
+      //
+      // NotReadableError — the device exists and permission was granted, but
+      // the OS still refused to open it. On Windows that is almost always an
+      // endpoint-protection product denying the application access to sound
+      // recording devices (Kaspersky's Host Intrusion Prevention does exactly
+      // this to unsigned or unknown applications). No retry, no other capture
+      // API and no audio format can get around it — only a policy change can
+      // — so the message has to point at that instead of leaving the user to
+      // debug an opaque "could not start audio source".
       const err = e as { name?: string; message?: string } | undefined;
-      const detail = err?.name
-        ? `${err.name}${err.message ? `: ${err.message}` : ""}`
+      const name = err?.name;
+      const detail = name
+        ? `${name}${err?.message ? `: ${err.message}` : ""}`
         : String(e);
-      setError(`Microphone access was denied or is unavailable. (${detail})`);
+      if (sidecarErrorRef.current) {
+        console.warn(
+          "[voice] both capture paths failed; sidecar said:",
+          sidecarErrorRef.current,
+        );
+      }
+      if (name === "NotReadableError") setError(t("chat.voiceBlocked"));
+      else if (name === "NotAllowedError" || name === "SecurityError")
+        setError(t("chat.voiceDenied"));
+      else if (name === "NotFoundError" || name === "OverconstrainedError")
+        setError(t("chat.voiceNoDevice"));
+      else setError(t("chat.voiceFailed", { detail }));
       setRecording(false);
     }
-  }, [canRecord, stopStream, transcribeAccumulated]);
+  }, [canRecord, stopStream, transcribeAccumulated, t]);
 
   const startSpeechRecognition = useCallback(() => {
     if (!SpeechCtor) {
@@ -334,8 +389,90 @@ export function useVoiceInput(
     }
   }, [SpeechCtor, startMediaRecorder]);
 
+  /**
+   * Preferred capture path: the microphone is opened by the bundled Rust
+   * sidecar (cpal → WASAPI shared mode), not by Chromium.
+   *
+   * Chromium opens Windows capture devices in *raw* mode whenever it decides
+   * no audio processing is needed, which Intel Smart Sound microphone arrays
+   * reject outright (IAudioClient::Initialize → E_INVALIDARG), surfacing here
+   * as "NotReadableError: Could not start audio source" even though the OS
+   * and its own Voice Recorder can use the very same device. The sidecar asks
+   * for the device the ordinary way, so that whole failure mode disappears —
+   * and since it also runs Whisper locally, nothing leaves the machine.
+   *
+   * Returns false when the sidecar isn't usable (not bundled, no device, or
+   * it failed to start) so the caller can fall back to the browser paths.
+   */
+  const startSidecarRecording = useCallback(async (): Promise<boolean> => {
+    if (localSidecarRef.current === false) return false;
+    if (!window.hermesAPI?.startVoiceRecording) return false;
+    const language = (navigator.language || "ru").split("-")[0];
+    try {
+      await window.hermesAPI.startVoiceRecording(language);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (/isn't bundled for this platform/.test(message)) {
+        // Known-permanent: stop paying a failed spawn on every press.
+        localSidecarRef.current = false;
+      } else {
+        sidecarErrorRef.current = message;
+        console.warn("[voice] local sidecar could not record:", message);
+      }
+      return false;
+    }
+    localSidecarRef.current = true;
+    sidecarRecordingRef.current = true;
+    finalizingRef.current = false;
+    inFlightRef.current = false;
+    setRecording(true);
+    setError(null);
+    // Live interim transcripts: the sidecar re-runs Whisper over everything
+    // captured so far without interrupting the recording.
+    liveTimerRef.current = setInterval(() => {
+      if (finalizingRef.current || inFlightRef.current) return;
+      inFlightRef.current = true;
+      void window.hermesAPI
+        .partialVoiceTranscript()
+        .then((text) => {
+          if (finalizingRef.current) return;
+          if (text) onResultRef.current(text, false);
+        })
+        .catch(() => undefined) // interim failures are transient
+        .finally(() => {
+          inFlightRef.current = false;
+        });
+    }, LIVE_INTERVAL_MS);
+    return true;
+  }, []);
+
+  /** Stops the sidecar recording and commits its final transcript. */
+  const finishSidecarRecording = useCallback(async (): Promise<void> => {
+    sidecarRecordingRef.current = false;
+    finalizingRef.current = true;
+    if (liveTimerRef.current) {
+      clearInterval(liveTimerRef.current);
+      liveTimerRef.current = null;
+    }
+    setRecording(false);
+    setTranscribing(true);
+    try {
+      const text = await window.hermesAPI.stopVoiceRecording();
+      if (text) onResultRef.current(text, true);
+      else setError("No speech detected.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Transcription failed.");
+    } finally {
+      setTranscribing(false);
+    }
+  }, []);
+
   const toggle = useCallback(() => {
     if (recording) {
+      if (sidecarRecordingRef.current) {
+        void finishSidecarRecording();
+        return;
+      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -353,14 +490,19 @@ export function useVoiceInput(
     }
     if (transcribing) return;
     setError(null);
-    if (SpeechCtor) startSpeechRecognition();
-    else void startMediaRecorder();
+    void (async () => {
+      if (await startSidecarRecording()) return;
+      if (SpeechCtor) startSpeechRecognition();
+      else void startMediaRecorder();
+    })();
   }, [
     recording,
     transcribing,
     SpeechCtor,
     startSpeechRecognition,
     startMediaRecorder,
+    startSidecarRecording,
+    finishSidecarRecording,
   ]);
 
   // Tear down any live capture on unmount.
@@ -372,6 +514,10 @@ export function useVoiceInput(
         /* ignore */
       }
       if (liveTimerRef.current) clearInterval(liveTimerRef.current);
+      if (sidecarRecordingRef.current) {
+        sidecarRecordingRef.current = false;
+        void window.hermesAPI?.cancelVoiceRecording?.().catch(() => undefined);
+      }
       if (recorderRef.current && recorderRef.current.state !== "inactive") {
         try {
           recorderRef.current.stop();
