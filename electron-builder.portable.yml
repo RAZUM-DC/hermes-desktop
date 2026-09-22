@@ -5,7 +5,16 @@ extends: ./electron-builder.yml
 # macOS symlinks cannot be extracted without Developer Mode or admin rights.
 # Release/installer builds keep the normal signed configuration in the base
 # file; only this explicit portable profile disables that step.
+#
+# Mind what that costs: a build made with this profile is unsigned, and
+# corporate endpoint protection can deny an unsigned application access to
+# the microphone and other devices (Kaspersky Endpoint Security does exactly
+# that, and the app sees it as NotReadableError from getUserMedia). Voice
+# input therefore cannot be verified with a build from this profile — use a
+# signed build, see the signing notes in electron-builder.yml.
 win:
   signAndEditExecutable: false
+  signExts:
+    - "!.exe"
   target:
     - portable
