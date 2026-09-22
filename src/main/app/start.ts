@@ -29,6 +29,7 @@ import { showChatContextMenu } from "./context-menu";
 import { buildMenu } from "./menu";
 import { setupUpdater } from "./updater";
 import { startCompanion, stopCompanion } from "../companion";
+import { warmVoiceSidecar } from "../voice-sidecar";
 import { startStaffWatcher, stopStaffWatcher } from "../staff-watcher";
 
 const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "РАЗУМ Ассистент";
@@ -93,6 +94,9 @@ export function startMainProcess(): void {
     // Передаём доступ к mainWindow, чтобы in-app OAuth-окно открывалось как
     // дочернее (parent) при state=enrolling.
     startCompanion(() => mainWindow);
+    // Прогрев кэша локальной Whisper-модели для офлайн-распознавания речи
+    // (кнопка микрофона) — best-effort, не блокирует запуск приложения.
+    warmVoiceSidecar();
 
     app.on("browser-window-created", (_, window) => {
       optimizer.watchWindowShortcuts(window);

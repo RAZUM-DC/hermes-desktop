@@ -22,6 +22,84 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const LIVE_INTERVAL_MS = 2500;
 const RECORDER_TIMESLICE_MS = 1000;
 
+/**
+ * Decode a recorded clip (webm/opus from MediaRecorder, or anything else the
+ * browser's decoder understands) into 16 kHz mono PCM WAV bytes, ready to
+ * feed to the local Whisper sidecar over stdin.
+ *
+ * Uses the Web Audio API (native to Chromium/Electron, no extra dependency):
+ * decodeAudioData does the container/codec decode, then an OfflineAudioContext
+ * resamples to 16 kHz mono in one pass. The sidecar itself never has to deal
+ * with WebM/Opus — see voice-sidecar.ts on the main-process side.
+ */
+async function decodeToWav16kMono(blob: Blob): Promise<Uint8Array> {
+  const TARGET_SAMPLE_RATE = 16000;
+  const AudioCtxCtor =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext })
+      .webkitAudioContext;
+  if (!AudioCtxCtor) {
+    throw new Error("Web Audio API is unavailable in this environment.");
+  }
+  const arrayBuffer = await blob.arrayBuffer();
+  const decodeCtx = new AudioCtxCtor();
+  let decoded: AudioBuffer;
+  try {
+    decoded = await decodeCtx.decodeAudioData(arrayBuffer.slice(0));
+  } finally {
+    void decodeCtx.close().catch(() => undefined);
+  }
+
+  const frameCount = Math.max(
+    1,
+    Math.ceil(decoded.duration * TARGET_SAMPLE_RATE),
+  );
+  const OfflineCtxCtor =
+    window.OfflineAudioContext ||
+    (
+      window as unknown as {
+        webkitOfflineAudioContext?: typeof OfflineAudioContext;
+      }
+    ).webkitOfflineAudioContext;
+  const offlineCtx = new OfflineCtxCtor(1, frameCount, TARGET_SAMPLE_RATE);
+  const source = offlineCtx.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offlineCtx.destination);
+  source.start();
+  const rendered = await offlineCtx.startRendering();
+  const samples = rendered.getChannelData(0);
+  return encodeWavPcm16(samples, TARGET_SAMPLE_RATE);
+}
+
+/** Encode mono float32 samples in [-1, 1] as a 16-bit PCM WAV file. */
+function encodeWavPcm16(samples: Float32Array, sampleRate: number): Uint8Array {
+  const bytesPerSample = 2;
+  const buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
+  const view = new DataView(buffer);
+  const writeString = (offset: number, s: string): void => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * bytesPerSample, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true); // PCM fmt chunk size
+  view.setUint16(20, 1, true); // format = PCM
+  view.setUint16(22, 1, true); // channels = mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerSample, true); // byte rate
+  view.setUint16(32, bytesPerSample, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeString(36, "data");
+  view.setUint32(40, samples.length * bytesPerSample, true);
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++, offset += bytesPerSample) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Uint8Array(buffer);
+}
+
 export interface UseVoiceInput {
   supported: boolean;
   recording: boolean;
@@ -74,6 +152,12 @@ export function useVoiceInput(
   // the final, more-complete transcript).
   const inFlightRef = useRef(false);
   const finalizingRef = useRef(false);
+  // Tri-state cache for whether the local (offline, Rust/candle Whisper)
+  // sidecar is usable: null = not yet determined, true = known available,
+  // false = known unavailable (not bundled on this platform) — once false we
+  // stop trying it for the rest of the component's lifetime instead of
+  // paying a failed-spawn round trip on every tick.
+  const localSidecarRef = useRef<boolean | null>(null);
   // Keep the latest onResult without re-creating callbacks each render.
   const onResultRef = useRef(onResult);
   onResultRef.current = onResult;
@@ -99,12 +183,41 @@ export function useVoiceInput(
         const type = recorderRef.current?.mimeType || "audio/webm";
         const blob = new Blob(chunksRef.current, { type });
         if (blob.size === 0) return;
-        const bytes = new Uint8Array(await blob.arrayBuffer());
-        const text = await window.hermesAPI.transcribeAudio(
-          bytes,
-          blob.type,
-          profile,
-        );
+
+        let text: string | null = null;
+
+        // Local, fully offline path first — a bundled Rust/candle Whisper
+        // sidecar that needs neither the network nor a running Hermes API
+        // server. Falls through to the existing cloud transcription below
+        // when the sidecar isn't bundled for this platform, or a given
+        // attempt fails for any other reason (e.g. first-run model
+        // download still in progress).
+        if (localSidecarRef.current !== false) {
+          try {
+            const wav = await decodeToWav16kMono(blob);
+            const language = (navigator.language || "ru").split("-")[0];
+            text = await window.hermesAPI.transcribeAudioLocal(wav, language);
+            localSidecarRef.current = true;
+          } catch (localErr) {
+            const message =
+              localErr instanceof Error ? localErr.message : String(localErr);
+            if (/isn't bundled for this platform/.test(message)) {
+              // Known-permanent: don't retry the sidecar again this session.
+              localSidecarRef.current = false;
+            }
+            text = null;
+          }
+        }
+
+        if (text === null) {
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          text = await window.hermesAPI.transcribeAudio(
+            bytes,
+            blob.type,
+            profile,
+          );
+        }
+
         // A late interim must not overwrite the final transcript.
         if (!isFinal && finalizingRef.current) return;
         if (text) onResultRef.current(text, isFinal);

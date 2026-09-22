@@ -103,6 +103,7 @@ import {
   resolvePendingClarify,
   resolvePendingApproval,
 } from "../hermes";
+import { isVoiceSidecarAvailable, transcribeAudioLocally } from "../voice-sidecar";
 import {
   getDashboardStatus,
   startDashboard,
@@ -1150,6 +1151,21 @@ export function registerIpcHandlers(context: IpcContext): void {
       mimeType: string,
       profile?: string,
     ): Promise<string> => transcribeAudio(audio, mimeType, profile),
+  );
+
+  // Локальное, полностью офлайн распознавание речи через сайдкар на Rust
+  // (candle + Whisper tiny, GGUF) — не требует запущенного Hermes API
+  // server и не уходит в сеть после первой загрузки модели. `wav` — уже
+  // декодированный в рендерере 16 kHz mono PCM WAV (см. useVoiceInput.ts).
+  ipcMain.handle(
+    "transcribe-audio-local",
+    async (_event, wav: Uint8Array, language?: string): Promise<string> =>
+      transcribeAudioLocally(wav, language),
+  );
+
+  ipcMain.handle(
+    "is-voice-sidecar-available",
+    async (): Promise<boolean> => isVoiceSidecarAvailable(),
   );
 
   ipcMain.handle(

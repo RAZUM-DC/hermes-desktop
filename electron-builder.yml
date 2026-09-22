@@ -1,5 +1,10 @@
 electronVersion: 39.2.6
 appId: tools.razum.hermes-desktop
+# store = без LZMA-сжатия. Портативная сборка нужна только для локального
+# тестирования разработчиком, не для дистрибуции — на этой Linux-машине без
+# wine быстрее собрать несжатый exe (секунды вместо нескольких минут на LZMA),
+# чем упираться в лимит времени одного вызова инструмента сборки.
+compression: store
 productName: РАЗУМ Ассистент
 directories:
   buildResources: build
@@ -21,6 +26,15 @@ win:
   target:
     - nsis
     - portable
+  # Сборка идёт на Linux-хосте без wine: и подпись через signtool.exe, и
+  # встраивание иконки/version-info через rcedit (signAndEditExecutable)
+  # шеллятся в wine, которого здесь нет. Ни то ни другое не влияет на сам
+  # РАЗУМ-логотип внутри приложения (это React-компонент SidebarBrand,
+  # рендерящий hermes-one.svg) — только на файловую иконку exe в Проводнике
+  # и метаданные (ProductName/FileDescription) в его свойствах.
+  signAndEditExecutable: false
+  signExts:
+    - "!.exe"
 portable:
   artifactName: ${name}-${version}-portable.${ext}
 nsis:
