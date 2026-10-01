@@ -1261,9 +1261,32 @@ export function buildUserContent(
  */
 export function contextFolderSystemMessage(
   contextFolder?: string,
+  mode: "local" | "remote" | "ssh" = "local",
 ): { role: "system"; content: string } | null {
   const folder = contextFolder?.trim();
   if (!folder) return null;
+
+  // В гибриде рабочая папка — на компьютере человека, а агент живёт на
+  // сервере. Прежний текст велел ему брать файловые, терминальные и
+  // исполняющие инструменты, и для серверной папки это верно, а для
+  // локальной — прямо противоположно тому, что требует системный промпт
+  // сервера: файлы пользователя только через local.*, ни в коем случае не
+  // через execute_code, shell и серверные файловые инструменты. Агент,
+  // получив windows-путь и указание работать серверными руками, будет
+  // честно пытаться и честно падать, а человек — не понимать, почему.
+  if (mode === "remote") {
+    return {
+      role: "system",
+      content:
+        `The working folder for this conversation is ${folder}, and it is ` +
+        `on the user's own computer, not on the server. Reach it only with ` +
+        `the local.* tools (local.fs_list, local.fs_read, local.fs_write), ` +
+        `using absolute paths under this folder. Do not use execute_code, ` +
+        `shell, or server-side file tools for it: they see the server ` +
+        `container, not the user's machine.`,
+    };
+  }
+
   return {
     role: "system",
     content:
@@ -1323,7 +1346,10 @@ function sendMessageViaApi(
   // there. Injected only at the request-build step — the renderer's visible
   // transcript stays clean, and getSessionMessages filters non-user/assistant
   // roles, so reloaded sessions stay clean too.
-  const ctxSystem = contextFolderSystemMessage(contextFolder);
+  const ctxSystem = contextFolderSystemMessage(
+    contextFolder,
+    getConnectionConfig().mode,
+  );
   if (ctxSystem) messages.unshift(ctxSystem);
 
   const reasoningEffort = reasoningEffortForProfile(profile);
@@ -1718,7 +1744,10 @@ function sendMessageViaRuns(
   const sessionId =
     resumeSessionId ||
     (headersForAuth.Authorization ? `desk-${Date.now()}-${randomUUID()}` : "");
-  const ctxSystem = contextFolderSystemMessage(contextFolder);
+  const ctxSystem = contextFolderSystemMessage(
+    contextFolder,
+    getConnectionConfig().mode,
+  );
   const bodyObj: Record<string, unknown> = {
     model: mc.model || "hermes-agent",
     input: message,

@@ -2851,6 +2851,9 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  /* Карточка со снимками позиционируется от области контента, а не от окна:
+     она не должна наезжать на сайдбар. */
+  position: relative;
 }
 
 /* ========================================================================
@@ -4767,6 +4770,35 @@ body {
   color: var(--text-muted);
 }
 
+/* Пока идёт распознавание надиктованного, подсказка в поле ввода заменяется
+   на «Распознаю…». Серый placeholder цвета остального интерфейса легко
+   принять за обычную надпись «Спросите что угодно» и не заметить подмены,
+   поэтому на это время он пульсирует — ровно настолько, чтобы поймать взгляд,
+   и не настолько, чтобы мешать. */
+.chat-input.is-dictating::placeholder {
+  color: var(--text-secondary, var(--text-muted));
+  animation: chat-input-dictating 1.4s ease-in-out infinite;
+}
+
+@keyframes chat-input-dictating {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Уважение к системной настройке «уменьшить движение»: подсказка остаётся
+   читаемой, просто перестаёт мигать. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-input.is-dictating::placeholder {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 .chat-send-btn {
   width: 34px;
   height: 34px;
@@ -5292,6 +5324,82 @@ body {
   border-color: var(--error);
 }
 
+/* Screenshot control — a split button: the main action (select an area) plus
+   a caret that opens the alternatives. Deliberately not a hover-reveal: a
+   control that exists only while the pointer is over it is invisible to anyone
+   who does not happen to hover there, and it swaps targets under the cursor,
+   which is how you aim at one thing and press another. */
+.chat-screenshot-group {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Narrower than a standalone button, since the caret sits right beside it. */
+.chat-screenshot-main {
+  width: 28px;
+}
+
+.chat-screenshot-caret {
+  width: 16px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition:
+    background var(--transition),
+    color var(--transition);
+}
+
+.chat-screenshot-caret:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat-screenshot-caret:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chat-screenshot-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 190px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+}
+
+.chat-screenshot-menu button {
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chat-screenshot-menu button:hover {
+  background: var(--bg-hover);
+}
+
 .chat-message-attachments {
   display: flex;
   flex-wrap: wrap;
@@ -5322,32 +5430,51 @@ body {
   background: rgba(0, 0, 0, 0.35);
 }
 
+/* The overlay is a column: a row of actions on top, the picture in whatever
+   space is left. Stacking the two rather than floating the buttons over the
+   image is what keeps them from colliding — a large screenshot used to sit
+   under (and visually swallow) the save and close buttons, and no z-index
+   fixes that, because the problem is that they share the same space. */
 .chat-image-preview-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.85);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 200;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  /* Above the window's title-bar/tabs strip (.active-sessions-bar, z 1001),
+     which otherwise paints over the top of this overlay and swallows the row
+     of action buttons. Same band as the other full-window overlays such as
+     .folder-picker-overlay. */
+  z-index: 1200;
   cursor: zoom-out;
 }
 
+.chat-image-preview-stage {
+  flex: 1 1 auto;
+  /* Without this the flex item refuses to shrink below the image's intrinsic
+     height and the picture spills past the bottom of the window. */
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .chat-image-preview-image {
-  max-width: 90vw;
-  max-height: 90vh;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
   border-radius: var(--radius-md);
   cursor: default;
 }
 
 .chat-image-preview-actions {
-  position: fixed;
-  top: 16px;
-  right: 16px;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: row;
+  justify-content: flex-end;
   gap: 8px;
-  z-index: 201;
 }
 
 /* Lightbox action buttons — light-on-dark so they read on the backdrop. */
@@ -14055,4 +14182,820 @@ body {
 .overview-empty-action {
   padding: 9px 14px;
   font-size: 13px;
+}
+
+/* --- Окошко быстрой диктовки (отдельное окно, маршрут #voice-overlay) ----- */
+
+/* Окно прозрачное и без рамки: фон рисует только сама «пилюля». */
+.dictation-overlay-body {
+  background: transparent;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.dictation-overlay {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100vh;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: var(--bg-elevated, #1e1e22);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary, #f2f2f3);
+  font-size: 14px;
+}
+
+.dictation-overlay-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dictation-overlay-mic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger, #ef4444);
+  flex-shrink: 0;
+}
+
+.dictation-overlay--recording .dictation-overlay-mic {
+  animation: chatMicPulse 1.2s ease-in-out infinite;
+}
+
+.dictation-overlay--transcribing .dictation-overlay-mic {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted, #9a9aa2);
+  animation: none;
+}
+
+.dictation-overlay--error .dictation-overlay-mic {
+  background: rgba(239, 68, 68, 0.2);
+  animation: none;
+}
+
+.dictation-overlay-title {
+  font-weight: 600;
+}
+
+/* Промежуточный текст растёт по мере речи — прячем переполнение, чтобы окно
+   фиксированной высоты не разъезжалось. */
+.dictation-overlay-text {
+  flex: 1;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  color: var(--text-muted, #9a9aa2);
+  line-height: 1.35;
+}
+
+/* Пока идёт распознавание надиктованного, поверх пустого поля ввода висит
+   пульсирующая белая надпись. Отдельный элемент, а не ::placeholder: анимации
+   на этом псевдоэлементе Chromium не применяет. Клики сквозь неё проходят,
+   так что по полю можно щёлкнуть и начать печатать. */
+.chat-input-wrapper {
+  position: relative;
+}
+
+.chat-input-dictating {
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  right: 16px;
+  font-size: 14px;
+  font-family: var(--font-sans);
+  line-height: 1.4;
+  padding: 4px 0;
+  color: var(--text-primary, #f2f2f3);
+  pointer-events: none;
+  animation: chatDictationPulse 0.7s ease-in-out infinite;
+}
+
+@keyframes chatDictationPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* Поле записи горячей клавиши: выглядит как поле ввода, но набирать в нём
+   нечего — оно запоминает нажатие целиком. */
+.settings-hotkey-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+  align-self: flex-start;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-bright);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition:
+    border-color var(--transition),
+    background var(--transition);
+}
+
+.settings-hotkey-field:hover {
+  border-color: var(--border-focus);
+}
+
+.settings-hotkey-field.recording {
+  border-color: var(--border-focus);
+  color: var(--text-muted);
+}
+
+.settings-hotkey-message {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.settings-hotkey-message.ok {
+  color: var(--success, #22c55e);
+}
+
+.settings-hotkey-message.error {
+  color: var(--danger, #ef4444);
+}
+
+/* Панель переключения чатов (внутренний Alt+Tab). Наложение внутри окна:
+   фокус остаётся в поле ввода, поэтому после отпускания клавиш можно сразу
+   продолжать печатать. */
+.run-switcher-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 1300;
+  pointer-events: none;
+}
+
+.run-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 320px;
+  max-width: 520px;
+  padding: 8px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated, #1e1e22);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.run-switcher-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted, #9a9aa2);
+  font-size: 14px;
+}
+
+.run-switcher-item.active {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary, #f2f2f3);
+}
+
+/* Названия чатов бывают длинными — панель не должна из-за этого расти. */
+.run-switcher-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Настройки горячих клавиш: глобальные и внутриоконные разделены, потому что
+   у них разные правила — первые занимает система, вторые работают только при
+   активном окне. */
+.settings-hotkey-group + .settings-hotkey-group {
+  margin-top: 24px;
+}
+
+.settings-hotkey-group-label {
+  margin-bottom: 10px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, #9a9aa2);
+}
+
+/* Карточка черновиков — снимков и голосовых заметок, ожидающих диалога.
+   Висит над полем ввода в правом нижнем углу области контента: не перекрывает
+   ни верхнюю строку вкладок, ни сайдбар — по ним человек и выбирает диалог,
+   пока черновик ждёт. */
+.draft-tray {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  width: 310px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated, #1e1e22);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.draft-tray-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted, #9a9aa2);
+  font-size: 12px;
+}
+
+.draft-tray-title {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.draft-tray-count {
+  margin-right: auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  font-variant-numeric: tabular-nums;
+}
+
+.draft-tray-clear,
+.draft-tray-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted, #9a9aa2);
+  cursor: pointer;
+}
+
+.draft-tray-clear:hover,
+.draft-tray-remove:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--danger, #ef4444);
+}
+
+.draft-tray-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* Пять строк влезают целиком; ограничение — страховка от разрастания,
+     когда заметку раскрыли на всю длину. */
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.draft-tray-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.draft-tray-item:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+}
+
+.draft-tray-thumb {
+  flex-shrink: 0;
+  width: 44px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-base, #141416);
+  cursor: zoom-in;
+}
+
+.draft-tray-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.draft-tray-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-muted, #9a9aa2);
+}
+
+.draft-tray-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Текст заметки — это и есть её превью: по списку из трёх записей иначе не
+   понять, какая из них какая. */
+.draft-tray-note {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary, #f2f2f3);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.draft-tray-note--muted {
+  color: var(--text-muted, #9a9aa2);
+  font-style: italic;
+  cursor: default;
+}
+
+.draft-tray-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.draft-tray-shot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-primary, #f2f2f3);
+  font-size: 12px;
+}
+
+.draft-tray-time {
+  color: var(--text-muted, #9a9aa2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.draft-tray-insert {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary, #f2f2f3);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.draft-tray-insert:hover:not(:disabled) {
+  border-color: var(--accent, #6b8afd);
+}
+
+.draft-tray-insert:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.draft-tray-spinner {
+  animation: spin 1s linear infinite;
+}
+
+.draft-tray-error {
+  color: var(--danger, #ef4444);
+  font-size: 11px;
+}
+
+.draft-tray-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted, #9a9aa2);
+  font-size: 11px;
+}
+
+/* Личный банк памяти: список фактов и строка добавления. */
+.memory-bank-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.memory-bank-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memory-bank-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated, transparent);
+}
+
+.memory-bank-text {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Дата и метки — служебное, поэтому тише основного текста. */
+.memory-bank-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* ========================================================================
+   NOTES
+   ======================================================================== */
+
+/* Плитки, а не список: у заметки есть заголовок и тело, и в две строки на
+   всю ширину экрана они читаются хуже, чем рядом друг с другом. Колонка
+   подбирается сама — на узком окне их станет две, на широком четыре, и
+   отдельных правил под размеры окна не требуется. */
+.notes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+  align-content: start;
+}
+
+.notes-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 132px;
+  padding: 12px 14px;
+  text-align: left;
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-elevated, transparent);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.notes-tile:hover {
+  border-color: var(--accent, var(--text-muted));
+  transform: translateY(-1px);
+}
+
+.notes-tile-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  /* Длинный заголовок обрывается одной строкой: иначе он вытолкнул бы текст
+     из плитки и та перестала бы что-либо показывать. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-tile-text {
+  flex: 1;
+  color: var(--text-secondary, var(--text-muted));
+  font-size: 12px;
+  line-height: 1.45;
+  /* Многоточие ставит и CSS, и noteExcerpt. Дублируется намеренно: обрезка по
+     словам живёт в коде и покрыта тестами, а эта строчка ловит случай, когда
+     текст всё равно не влез — скажем, из-за крупного шрифта системы. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notes-tile-text-empty {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+.notes-tile-date {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.notes-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notes-editor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notes-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Поля без рамок: открытая заметка должна выглядеть листом бумаги, а не
+   формой, которую нужно заполнить и отправить. Кнопки «Сохранить» здесь тоже
+   нет — правки уходят на диск сами. */
+.notes-title-input {
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 600;
+  font-family: inherit;
+  outline: none;
+}
+
+.notes-title-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.notes-text-input {
+  flex: 1;
+  min-height: 280px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+}
+
+/* Вложения заметки */
+.notes-attach-btn {
+  margin-left: 8px;
+}
+
+.notes-tile-clip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.notes-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.notes-attachment {
+  position: relative;
+  display: flex;
+  max-width: 220px;
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-elevated, transparent);
+}
+
+.notes-attachment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notes-attachment-image {
+  width: 200px;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+/* Место под картинку, пока она едет из main. Без него плашка схлопывается в
+   строку, а потом прыгает на полтораста пикселей вниз, когда файл приехал. */
+.notes-attachment-loading {
+  width: 200px;
+  height: 100px;
+  border-radius: var(--radius-sm);
+  background: var(--border-bright);
+  opacity: 0.35;
+}
+
+.notes-attachment-icon {
+  color: var(--text-muted);
+}
+
+.notes-attachment-name {
+  color: var(--text-primary);
+  font-size: 12px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-attachment-size {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* Крестик поверх вложения. Показывается по наведению: у заметки с десятком
+   снимков постоянные крестики читались бы как сетка ошибок. */
+.notes-attachment-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-base, rgba(0, 0, 0, 0.6));
+  color: var(--text-primary);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.notes-attachment:hover .notes-attachment-remove,
+.notes-attachment-remove:focus-visible {
+  opacity: 1;
+}
+
+/* Вкладка раздела в верхней полосе — «Заметки», «Канбан» и прочее. Выглядит
+   так же, как диалог, но вместо лица профиля у неё значок раздела: это не
+   чей-то разговор, а место. */
+.section-chip-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.section-chip.active .section-chip-icon {
+  color: var(--text-primary);
+}
+
+/* ========================================================================
+   ШТАТНЫЕ ИИ-СОТРУДНИКИ
+   ======================================================================== */
+.staff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.staff-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  text-align: left;
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-elevated, transparent);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.staff-card:hover {
+  border-color: var(--accent, var(--text-muted));
+  transform: translateY(-1px);
+}
+
+.staff-card-name {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.staff-card-role {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.staff-bar {
+  display: flex;
+  margin-bottom: 12px;
+}
+
+.staff-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.staff-task {
+  padding: 12px 14px;
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated, transparent);
+}
+
+.staff-task-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.staff-task-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.staff-task-status {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.staff-task-summary {
+  margin-top: 6px;
+  color: var(--text-secondary, var(--text-muted));
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.staff-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Многострочное поле на базе .input: textarea по умолчанию строчный элемент и
+   тянется мышью в обе стороны — рядом с обычным полем это ставило их в одну
+   строку и позволяло утащить край за пределы колонки. */
+textarea.input {
+  display: block;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* Строка ошибки под формой. Класс использовался в трёх экранах, но правила для
+   него не существовало — текст выводился обычным абзацем и терялся. */
+.settings-error {
+  padding: 10px 12px;
+  margin: 8px 0;
+  border: 1px solid var(--error);
+  border-radius: var(--radius-sm);
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 13px;
+  line-height: 1.45;
+  /* Ответ сервера приходит одной длинной строкой и может не иметь пробелов. */
+  overflow-wrap: anywhere;
 }

@@ -58,6 +58,8 @@ export { Shield as ApprovalIcon } from "lucide-react";
 export { Folder as CuratorIcon } from "lucide-react";
 export { User as ProfileIcon } from "lucide-react";
 export { MoreHorizontal } from "lucide-react";
+export { StickyNote as NotesIcon } from "lucide-react";
+export { Paperclip } from "lucide-react";
 export { Pin } from "lucide-react";
 export { PinOff } from "lucide-react";
 export { FolderInput } from "lucide-react";

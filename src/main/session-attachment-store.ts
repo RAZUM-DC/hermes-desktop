@@ -1,11 +1,26 @@
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
 import { basename, extname } from "path";
-import { existsSync, readFileSync, statSync } from "fs";
-import { activeStateDbPath } from "./utils";
+import { readFileSync, statSync } from "fs";
+import { getDesktopDb } from "./desktop-db";
 import type { Attachment } from "../shared/attachments";
 import { isImageMime, MAX_IMAGE_BYTES } from "../shared/attachments";
 
+/** Legacy table inside the agent's state.db — read only, never written. */
 const TABLE = "desktop_message_attachments";
+
+/**
+ * Where prompt images live now.
+ *
+ * The original table hangs off the agent's own `messages.id`, which means it
+ * can only be written when the agent's state.db is on this machine. In remote
+ * mode there is no such database, so nothing was ever stored and every picture
+ * vanished on restart. This table lives in the desktop's own database and is
+ * keyed by what the desktop actually knows in every mode: the session, the
+ * normalized prompt text, and which repetition of that text this is (people do
+ * send "look" twice). The old table is still read as a fallback so images
+ * saved before the move keep showing up.
+ */
+const PROMPT_TABLE = "desktop_prompt_attachments";
 
 interface StoredAttachmentRow {
   message_id: number;
@@ -16,32 +31,10 @@ interface StoredAttachmentRow {
   data: Buffer;
 }
 
-function ensureTable(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ${TABLE} (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      message_id INTEGER NOT NULL,
-      session_id TEXT NOT NULL,
-      ordinal INTEGER NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'image',
-      name TEXT NOT NULL,
-      mime TEXT NOT NULL,
-      size INTEGER NOT NULL DEFAULT 0,
-      data BLOB NOT NULL,
-      created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
-      UNIQUE(message_id, ordinal)
-    );
-    CREATE INDEX IF NOT EXISTS idx_${TABLE}_session
-      ON ${TABLE}(session_id);
-    CREATE INDEX IF NOT EXISTS idx_${TABLE}_message
-      ON ${TABLE}(message_id);
-  `);
-}
-
-function tableExists(db: Database.Database): boolean {
+function tableExists(db: Database.Database, table: string = TABLE): boolean {
   const row = db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
-    .get(TABLE) as { name: string } | undefined;
+    .get(table) as { name: string } | undefined;
   return !!row;
 }
 
@@ -141,10 +134,6 @@ function normalizedPromptText(text: string): string {
     .trim();
 }
 
-function hasTrailingImagePlaceholder(text: string): boolean {
-  return /\[(?:screenshot|image)\]\s*$/i.test(text || "");
-}
-
 function parseImageDataUrl(
   dataUrl: string,
 ): { mime: string; data: Buffer } | null {
@@ -163,39 +152,97 @@ function imageAttachments(attachments?: Attachment[]): Attachment[] {
   );
 }
 
-function findMatchingUserMessageId(
-  db: Database.Database,
+function ensurePromptTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ${PROMPT_TABLE} (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      prompt_key TEXT NOT NULL,
+      occurrence INTEGER NOT NULL,
+      ordinal INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      mime TEXT NOT NULL,
+      size INTEGER NOT NULL DEFAULT 0,
+      data BLOB NOT NULL,
+      created_at REAL NOT NULL DEFAULT (strftime('%s', 'now')),
+      UNIQUE(session_id, prompt_key, occurrence, ordinal)
+    );
+    CREATE INDEX IF NOT EXISTS idx_${PROMPT_TABLE}_session
+      ON ${PROMPT_TABLE}(session_id);
+  `);
+}
+
+interface StoredPromptRow {
+  prompt_key: string;
+  occurrence: number;
+  ordinal: number;
+  name: string;
+  mime: string;
+  size: number;
+  data: Buffer;
+}
+
+/**
+ * The key a stored image is filed under: the prompt text with the agent's
+ * `[screenshot]` / `[image]` markers and vision fallbacks stripped, whitespace
+ * collapsed. Exported because the merge step has to compute the same key from
+ * a transcript that came back from the agent.
+ */
+export function promptAttachmentKey(text: string): string {
+  return normalizedPromptText(text || "");
+}
+
+/**
+ * Images for one session, as `prompt key -> occurrence -> attachments`.
+ */
+export function loadPromptAttachmentsBySession(
   sessionId: string,
-  promptText: string,
-): number | null {
-  const target = normalizedPromptText(promptText);
+): Map<string, Attachment[][]> {
+  const byPrompt = new Map<string, Attachment[][]>();
+  if (!sessionId) return byPrompt;
+  const db = getDesktopDb();
+  if (!db || !tableExists(db, PROMPT_TABLE)) return byPrompt;
 
   const rows = db
     .prepare(
-      `SELECT id, content
-       FROM messages
-       WHERE session_id = ? AND role = 'user'
-       ORDER BY id DESC
-       LIMIT 50`,
+      `SELECT prompt_key, occurrence, ordinal, name, mime, size, data
+       FROM ${PROMPT_TABLE}
+       WHERE session_id = ?
+       ORDER BY occurrence, ordinal`,
     )
-    .all(sessionId) as Array<{ id: number; content: string | null }>;
-
-  const hasAttachments = db.prepare(
-    `SELECT 1 FROM ${TABLE} WHERE message_id = ? LIMIT 1`,
-  );
+    .all(sessionId) as StoredPromptRow[];
 
   for (const row of rows) {
-    const content = row.content || "";
-    if (content.startsWith("\x00json:")) continue;
-    if (normalizedPromptText(content) !== target) continue;
-    if (!target && !hasTrailingImagePlaceholder(content)) continue;
-    if (hasAttachments.get(row.id)) continue;
-    return row.id;
+    if (!isImageMime(row.mime)) continue;
+    const occurrences = byPrompt.get(row.prompt_key) || [];
+    const bucket = occurrences[row.occurrence] || [];
+    bucket.push({
+      id: `prompt-att-${row.prompt_key}-${row.occurrence}-${row.ordinal}`,
+      kind: "image",
+      name: row.name,
+      mime: row.mime,
+      size: row.size,
+      dataUrl: `data:${row.mime};base64,${Buffer.from(row.data).toString("base64")}`,
+    });
+    occurrences[row.occurrence] = bucket;
+    byPrompt.set(row.prompt_key, occurrences);
   }
 
-  return null;
+  return byPrompt;
 }
 
+export function deletePromptAttachmentsForSession(sessionId: string): void {
+  const db = getDesktopDb();
+  if (!db || !tableExists(db, PROMPT_TABLE)) return;
+  db.prepare(`DELETE FROM ${PROMPT_TABLE} WHERE session_id = ?`).run(sessionId);
+}
+
+/**
+ * Store the images that went out with a prompt, so re-opening the conversation
+ * can put them back. The agent's transcript keeps only text (with a
+ * `[screenshot]` marker where the picture was), so without this the pictures
+ * are gone the moment the app restarts.
+ */
 export function persistPromptImageAttachments(
   sessionId: string | undefined,
   promptText: string,
@@ -205,40 +252,46 @@ export function persistPromptImageAttachments(
   const images = imageAttachments(attachments);
   if (images.length === 0) return;
 
-  const dbPath = activeStateDbPath();
-  if (!existsSync(dbPath)) return;
+  const db = getDesktopDb();
+  if (!db) return;
 
-  const db = new Database(dbPath);
-  try {
-    ensureTable(db);
-    const messageId = findMatchingUserMessageId(db, sessionId, promptText);
-    if (!messageId) return;
+  ensurePromptTable(db);
+  const key = promptAttachmentKey(promptText);
 
-    const insert = db.prepare(
-      `INSERT OR REPLACE INTO ${TABLE}
-       (message_id, session_id, ordinal, kind, name, mime, size, data)
-       VALUES (?, ?, ?, 'image', ?, ?, ?, ?)`,
-    );
+  // The same prompt text can be sent more than once in a session ("look at
+  // this" twice, or an empty prompt with just a picture), so each send gets
+  // the next free slot under that key.
+  const seen = db
+    .prepare(
+      `SELECT COALESCE(MAX(occurrence), -1) AS last
+       FROM ${PROMPT_TABLE} WHERE session_id = ? AND prompt_key = ?`,
+    )
+    .get(sessionId, key) as { last: number } | undefined;
+  const occurrence = (seen?.last ?? -1) + 1;
 
-    const tx = db.transaction(() => {
-      images.forEach((attachment, index) => {
-        const parsed = parseImageDataUrl(attachment.dataUrl || "");
-        if (!parsed) return;
-        insert.run(
-          messageId,
-          sessionId,
-          index,
-          attachment.name || `image-${index + 1}`,
-          parsed.mime,
-          attachment.size || parsed.data.length,
-          parsed.data,
-        );
-      });
+  const insert = db.prepare(
+    `INSERT OR REPLACE INTO ${PROMPT_TABLE}
+     (session_id, prompt_key, occurrence, ordinal, name, mime, size, data)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+
+  const tx = db.transaction(() => {
+    images.forEach((attachment, index) => {
+      const parsed = parseImageDataUrl(attachment.dataUrl || "");
+      if (!parsed) return;
+      insert.run(
+        sessionId,
+        key,
+        occurrence,
+        index,
+        attachment.name || `image-${index + 1}`,
+        parsed.mime,
+        attachment.size || parsed.data.length,
+        parsed.data,
+      );
     });
-    tx();
-  } finally {
-    db.close();
-  }
+  });
+  tx();
 }
 
 export function loadPromptImageAttachments(

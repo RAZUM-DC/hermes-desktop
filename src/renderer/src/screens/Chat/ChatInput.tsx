@@ -8,7 +8,15 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { Square as Stop, Search, Paperclip, Mic, ArrowUp } from "lucide-react";
+import {
+  Square as Stop,
+  Search,
+  Paperclip,
+  Mic,
+  Camera,
+  ChevronDown,
+  ArrowUp,
+} from "lucide-react";
 import { isImeComposing } from "./keyboard";
 import { useI18n } from "../../components/useI18n";
 import { SLASH_COMMANDS, type SlashCommand } from "./slashCommands";
@@ -54,6 +62,9 @@ interface ChatInputProps {
   remoteMode?: boolean;
   /** Active profile — used to resolve the provider for voice transcription. */
   profile?: string;
+  /** Диктовка закончилась, но текст ещё распознаётся — поле ввода должно это
+   *  показывать, иначе пустая строка выглядит как «ничего не записалось». */
+  dictationPending?: boolean;
   /** Context-window occupancy for the gauge; null until the first response. */
   contextUsage?: ContextUsage | null;
   /** Pre-send validation state. When `ok` is false, Send is disabled
@@ -76,6 +87,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       sessionId,
       remoteMode,
       profile,
+      dictationPending = false,
       contextUsage,
       readiness,
       toolbarExtras,
@@ -87,6 +99,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     ref,
   ): React.JSX.Element {
     const { t } = useI18n();
+    // Кнопка скриншота: составная. Основное действие — вырезать область
+    // (нужно чаще всего), остальное в меню под стрелкой. Кнопка заблокирована
+    // ровно столько, сколько идёт съёмка.
+    const [screenshotPending, setScreenshotPending] = useState(false);
+    const [screenshotMenuOpen, setScreenshotMenuOpen] = useState(false);
+    const screenshotGroupRef = useRef<HTMLDivElement | null>(null);
     const [input, setInput] = useState("");
     const [slashMenuOpen, setSlashMenuOpen] = useState(false);
     const [slashFilter, setSlashFilter] = useState("");
@@ -199,6 +217,61 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       },
       [attachments.length, formatError, sessionId, remoteMode],
     );
+
+    const handleScreenshot = useCallback(
+      async (mode: "region" | "screen"): Promise<void> => {
+        setScreenshotMenuOpen(false);
+        setScreenshotPending(true);
+        setAttachmentError(null);
+        try {
+          const shot =
+            mode === "region"
+              ? await window.hermesAPI.takeScreenshotRegion()
+              : await window.hermesAPI.takeScreenshot();
+          if (!shot.ok) {
+            // Отказ от выделения — это не ошибка, молчим.
+            if (shot.reason === "cancelled") return;
+            // "no-screen" — система не отдала ни одного экрана. На Windows это
+            // чаще всего запрет средства защиты, а не поломка: такой же запрет
+            // мы уже видели на микрофоне.
+            setAttachmentError(
+              shot.reason === "no-screen"
+                ? t("chat.screenshotBlocked")
+                : t("chat.screenshotFailed", { detail: shot.detail }),
+            );
+            return;
+          }
+          const file = new File([shot.png], shot.name, { type: "image/png" });
+          await ingestFiles([file]);
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e);
+          console.warn("[screenshot] capture failed:", detail);
+          setAttachmentError(t("chat.screenshotFailed", { detail }));
+        } finally {
+          setScreenshotPending(false);
+        }
+      },
+      [ingestFiles, t],
+    );
+
+    // Меню закрывается по клику мимо и по Escape — как любое меню.
+    useEffect(() => {
+      if (!screenshotMenuOpen) return;
+      const onPointerDown = (event: PointerEvent): void => {
+        if (!screenshotGroupRef.current?.contains(event.target as Node)) {
+          setScreenshotMenuOpen(false);
+        }
+      };
+      const onKeyDown = (event: KeyboardEvent): void => {
+        if (event.key === "Escape") setScreenshotMenuOpen(false);
+      };
+      document.addEventListener("pointerdown", onPointerDown);
+      document.addEventListener("keydown", onKeyDown);
+      return () => {
+        document.removeEventListener("pointerdown", onPointerDown);
+        document.removeEventListener("keydown", onKeyDown);
+      };
+    }, [screenshotMenuOpen]);
 
     useImperativeHandle(
       ref,
@@ -363,6 +436,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       if (!hasPayload) return;
       setSlashMenuOpen(false);
       const sendAttachments = attachments;
+      console.log("[ATT] submit:", sendAttachments.length, "attachment(s)");
       clearAfterSend(text);
       onSubmit(text, sendAttachments);
     }
@@ -659,8 +733,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           />
           <textarea
             ref={inputRef}
-            className="chat-input"
-            placeholder={t("chat.typeMessage")}
+            className={`chat-input${dictationPending ? " is-dictating" : ""}`}
+            // Подсказку подменяем, а не пишем текст в само поле: значение
+            // можно случайно отправить, и его пришлось бы отличать от
+            // набранного руками. Пока человек ничего не набрал, подсказка —
+            // ровно то место, где он ждёт объяснения, что происходит.
+            placeholder={
+              dictationPending
+                ? t("chat.dictationPending")
+                : t("chat.typeMessage")
+            }
+            // Подмена placeholder'а экранному диктору не слышна: aria-busy —
+            // единственное, чем мы сообщаем ему то же самое.
+            aria-busy={dictationPending}
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
@@ -714,6 +799,52 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 <Mic size={16} />
               </button>
             )}
+            <div className="chat-screenshot-group" ref={screenshotGroupRef}>
+              <button
+                className="chat-attach-btn chat-screenshot-main"
+                onClick={() => void handleScreenshot("region")}
+                disabled={isLoading || screenshotPending}
+                title={
+                  screenshotPending
+                    ? t("chat.screenshotHiding")
+                    : t("chat.screenshotRegion")
+                }
+                aria-label={t("chat.screenshotRegion")}
+                type="button"
+              >
+                <Camera size={16} />
+              </button>
+              <button
+                className="chat-screenshot-caret"
+                onClick={() => setScreenshotMenuOpen((open) => !open)}
+                disabled={isLoading || screenshotPending}
+                title={t("chat.screenshotOptions")}
+                aria-label={t("chat.screenshotOptions")}
+                aria-haspopup="menu"
+                aria-expanded={screenshotMenuOpen}
+                type="button"
+              >
+                <ChevronDown size={12} />
+              </button>
+              {screenshotMenuOpen && (
+                <div className="chat-screenshot-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void handleScreenshot("region")}
+                  >
+                    {t("chat.screenshotRegion")}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void handleScreenshot("screen")}
+                  >
+                    {t("chat.screenshotFullScreen")}
+                  </button>
+                </div>
+              )}
+            </div>
             {toolbarExtras && (
               <>
                 <span className="chat-input-toolbar-divider" aria-hidden />

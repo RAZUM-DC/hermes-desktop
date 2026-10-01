@@ -93,6 +93,34 @@ function renderList(messages: ChatMessage[]): ReturnType<typeof render> {
   );
 }
 
+describe("пустые пузыри", () => {
+  it("прячет сообщение без текста и без вложений", () => {
+    renderList([{ id: "empty", role: "user", content: "  " } as ChatMessage]);
+    expect(screen.queryAllByTestId("bubble")).toHaveLength(0);
+  });
+
+  it("показывает сообщение из одной картинки без подписи", () => {
+    renderList([
+      {
+        id: "shot",
+        role: "user",
+        content: "",
+        attachments: [
+          {
+            id: "att-1",
+            kind: "image",
+            name: "screenshot.png",
+            mime: "image/png",
+            size: 10,
+            dataUrl: "data:image/png;base64,AAA",
+          },
+        ],
+      } as ChatMessage,
+    ]);
+    expect(screen.getAllByTestId("bubble")).toHaveLength(1);
+  });
+});
+
 describe("MessageList transcript windowing", () => {
   it("renders every row when the transcript is short", () => {
     renderList(Array.from({ length: 20 }, (_, i) => bubble(`m${i}`)));

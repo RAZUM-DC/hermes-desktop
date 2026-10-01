@@ -1,0 +1,16 @@
+extends: ./electron-builder.yml
+
+# Installer build made on Linux, where resource editing and signing would
+# need wine. Same trade-off as the portable profile: the produced installer
+# is unsigned, so corporate endpoint protection still treats the app as an
+# unknown publisher. It exists for one reason — an installed app lives at a
+# fixed path (%LOCALAPPDATA%\Programs\hermes-desktop), and a Kaspersky
+# "Предотвращение вторжений" rule can be written against that path instead
+# of a file hash, which a portable build (fresh %TEMP% folder every launch)
+# can never have.
+win:
+  signAndEditExecutable: false
+  signExts:
+    - "!.exe"
+  target:
+    - nsis

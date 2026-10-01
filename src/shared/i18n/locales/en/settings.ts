@@ -13,6 +13,7 @@ export default {
     },
     appearance: "Appearance",
     language: "Language",
+    hotkeys: "Hotkeys",
     privacy: "Privacy",
     connection: "Connection",
     network: "Network",
@@ -221,4 +222,59 @@ export default {
   remoteErrorRequiredSimple: "Please enter a URL",
   remoteErrorFailedSimple: "Could not reach server",
   apiGenerated: "API key generated — gateway restarting…",
+  chatTransport: {
+    label: "Chat transport",
+    options: {
+      auto: "Auto",
+      dashboard: "Dashboard",
+      legacy: "Legacy",
+    },
+    remoteHint:
+      "Auto tries the Hermes dashboard WebSocket first, then falls back to the legacy remote API. Dashboard requires the remote Hermes dashboard URL and a valid dashboard session token.",
+    sshHint:
+      "Auto tries the Hermes dashboard WebSocket through the SSH tunnel first, then falls back to legacy SSH chat. Dashboard forces the upstream dashboard path; Legacy keeps the older SSH transport.",
+    checking: "Checking…",
+  },
+  hotkeys: {
+    voiceDictation: "Voice dictation",
+    voiceDictationHint:
+      "Hold this combination anywhere to dictate; the text lands in the current chat.",
+    voiceDictationQuiet: "Voice dictation (quiet)",
+    voiceDictationQuietHint:
+      "Same recording, but the app window stays where it is — the note waits in the card until you come back to it.",
+    screenshot: "Screenshot",
+    screenshotHint:
+      "Press this combination anywhere to capture the screen; the image is attached to the current chat.",
+    region: "Region capture",
+    regionHint:
+      "Press this combination anywhere, drag a rectangle, and only that area is attached to the current chat.",
+    groups: {
+      global: "Global",
+      inApp: "Inside the app",
+    },
+    switchChat: "Recent conversations",
+    switchChatHint:
+      "Hold this combination and tap to walk the last 10 conversations from the sidebar; release to open the highlighted one. Add Shift to go back.",
+    nextChat: "Next tab",
+    nextChatHint:
+      "Moves to the next tab in the top row, wrapping around at the end.",
+    prevChat: "Previous tab",
+    prevChatHint:
+      "Moves to the previous tab in the top row, wrapping around at the start.",
+    insertDraft: "Insert draft",
+    insertDraftHint:
+      "Inserts the newest waiting screenshot or voice note into the open conversation, so you don\u2019t have to reach for the card.",
+    positionsHint:
+      "Ctrl + 1…9 jumps straight to the tab with that number in the top row. Tabs beyond the ninth are reachable with the arrows only.",
+    press: "Press the combination…",
+    saved: "Saved: {{hotkey}}",
+    problem: {
+      "modifier-only": "Add a key to the modifiers.",
+      "needs-modifier":
+        "Use Ctrl, Alt or Win — otherwise the combination would swallow ordinary typing.",
+      unsupported: "This key cannot be used in a global shortcut.",
+      reserved: "This combination is already used by Hermes One itself.",
+      taken: "Another application already holds this combination.",
+    },
+  },
 } as const;

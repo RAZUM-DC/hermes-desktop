@@ -2,7 +2,11 @@ export default {
   title: "Настройка ИИ-провайдера",
   subtitle: "Выберите провайдера и настройте его, чтобы начать",
   providerCards: {
-    openrouter: { name: "OpenRouter", desc: "200+ моделей", tag: "Рекомендуется" },
+    openrouter: {
+      name: "OpenRouter",
+      desc: "200+ моделей",
+      tag: "Рекомендуется",
+    },
     anthropic: { name: "Anthropic", desc: "Модели Claude", tag: "" },
     openai: { name: "OpenAI", desc: "Модели GPT", tag: "" },
     local: {
@@ -32,8 +36,10 @@ export default {
   remoteGroupLabel: "Удалённые OpenAI-совместимые API",
   serverUrl: "Базовый URL",
   modelName: "Название модели",
-  localServerHint: "Убедитесь, что локальный сервер запущен, прежде чем продолжить",
-  customServerHint: "Выберите пресет или вставьте любой OpenAI-совместимый базовый URL",
+  localServerHint:
+    "Убедитесь, что локальный сервер запущен, прежде чем продолжить",
+  customServerHint:
+    "Выберите пресет или вставьте любой OpenAI-совместимый базовый URL",
   customApiKeyLabel: "API-ключ",
   customApiKeyHint: "Нужен для удалённых API. Для localhost оставьте пустым.",
   defaultModelHint: "Оставьте пустым, чтобы использовать модель по умолчанию",

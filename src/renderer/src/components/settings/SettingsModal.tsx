@@ -3,6 +3,7 @@ import {
   Database,
   FileText,
   Info,
+  Keyboard,
   Languages,
   Palette,
   Plug,
@@ -22,10 +23,12 @@ import DataPane from "./DataPane";
 import AboutPane from "./AboutPane";
 import CommunityPane from "./CommunityPane";
 import LogsPane from "./LogsPane";
+import HotkeysPane from "./HotkeysPane";
 
 export type SettingsSection =
   | "appearance"
   | "language"
+  | "hotkeys"
   | "privacy"
   | "connection"
   | "data"
@@ -53,6 +56,12 @@ const SETTINGS_NAV: ReadonlyArray<{
     id: "language",
     labelKey: "settings.nav.language",
     Icon: Languages,
+  },
+  {
+    group: "general",
+    id: "hotkeys",
+    labelKey: "settings.nav.hotkeys",
+    Icon: Keyboard,
   },
   {
     group: "general",
@@ -190,6 +199,7 @@ export default function SettingsModal({
           <SettingsDataContext.Provider value={data}>
             {section === "appearance" && <AppearancePane />}
             {section === "language" && <LanguagePane />}
+            {section === "hotkeys" && <HotkeysPane />}
             {section === "privacy" && <PrivacyPane />}
             {section === "connection" && <ConnectionPane />}
             {section === "data" && <DataPane />}

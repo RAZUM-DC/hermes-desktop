@@ -948,3 +948,22 @@ function repositionInteractiveCards(
 
   return out;
 }
+
+/**
+ * Сколько картинок сейчас висит на пользовательских пузырях.
+ *
+ * Диагностика для одного конкретного класса поломок: вложение уходит агенту,
+ * тот его видит, а в переписке картинки нет. Считаем до и после слияния с
+ * базой — если число упало, слияние и виновато.
+ */
+export function countUserAttachments(
+  messages: ReadonlyArray<ChatMessage>,
+): number {
+  let total = 0;
+  for (const m of messages) {
+    if ("kind" in m) continue;
+    if (m.role !== "user") continue;
+    total += m.attachments?.length ?? 0;
+  }
+  return total;
+}

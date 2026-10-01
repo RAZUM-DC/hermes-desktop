@@ -21,6 +21,7 @@ import sessionsEn from "./locales/en/sessions";
 import modelsEn from "./locales/en/models";
 import providersEn from "./locales/en/providers";
 import officeEn from "./locales/en/office";
+import staffEn from "./locales/en/staff";
 import errorsEn from "./locales/en/errors";
 import schedulesEn from "./locales/en/schedules";
 import skillsEn from "./locales/en/skills";
@@ -28,6 +29,7 @@ import gatewayEn from "./locales/en/gateway";
 import agentsEn from "./locales/en/agents";
 import soulEn from "./locales/en/soul";
 import memoryEn from "./locales/en/memory";
+import notesEn from "./locales/en/notes";
 import installEn from "./locales/en/install";
 import constantsEn from "./locales/en/constants";
 import kanbanEn from "./locales/en/kanban";
@@ -50,7 +52,9 @@ import discoverRu from "./locales/ru/discover";
 import providersRu from "./locales/ru/providers";
 import gatewayRu from "./locales/ru/gateway";
 import memoryRu from "./locales/ru/memory";
+import notesRu from "./locales/ru/notes";
 import officeRu from "./locales/ru/office";
+import staffRu from "./locales/ru/staff";
 import soulRu from "./locales/ru/soul";
 import agentsRu from "./locales/ru/agents";
 import installRu from "./locales/ru/install";
@@ -67,6 +71,7 @@ import sessionsHe from "./locales/he/sessions";
 import modelsHe from "./locales/he/models";
 import providersHe from "./locales/he/providers";
 import officeHe from "./locales/he/office";
+import staffHe from "./locales/he/staff";
 import errorsHe from "./locales/he/errors";
 import schedulesHe from "./locales/he/schedules";
 import skillsHe from "./locales/he/skills";
@@ -74,6 +79,7 @@ import gatewayHe from "./locales/he/gateway";
 import agentsHe from "./locales/he/agents";
 import soulHe from "./locales/he/soul";
 import memoryHe from "./locales/he/memory";
+import notesHe from "./locales/he/notes";
 import installHe from "./locales/he/install";
 import constantsHe from "./locales/he/constants";
 import kanbanHe from "./locales/he/kanban";
@@ -89,6 +95,7 @@ import sessionsPl from "./locales/pl/sessions";
 import modelsPl from "./locales/pl/models";
 import providersPl from "./locales/pl/providers";
 import officePl from "./locales/pl/office";
+import staffPl from "./locales/pl/staff";
 import errorsPl from "./locales/pl/errors";
 import schedulesPl from "./locales/pl/schedules";
 import skillsPl from "./locales/pl/skills";
@@ -96,6 +103,7 @@ import gatewayPl from "./locales/pl/gateway";
 import agentsPl from "./locales/pl/agents";
 import soulPl from "./locales/pl/soul";
 import memoryPl from "./locales/pl/memory";
+import notesPl from "./locales/pl/notes";
 import installPl from "./locales/pl/install";
 import constantsPl from "./locales/pl/constants";
 import kanbanPl from "./locales/pl/kanban";
@@ -110,6 +118,7 @@ import sessionsEs from "./locales/es/sessions";
 import modelsEs from "./locales/es/models";
 import providersEs from "./locales/es/providers";
 import officeEs from "./locales/es/office";
+import staffEs from "./locales/es/staff";
 import errorsEs from "./locales/es/errors";
 import schedulesEs from "./locales/es/schedules";
 import skillsEs from "./locales/es/skills";
@@ -117,6 +126,7 @@ import gatewayEs from "./locales/es/gateway";
 import agentsEs from "./locales/es/agents";
 import soulEs from "./locales/es/soul";
 import memoryEs from "./locales/es/memory";
+import notesEs from "./locales/es/notes";
 import installEs from "./locales/es/install";
 import constantsEs from "./locales/es/constants";
 import kanbanEs from "./locales/es/kanban";
@@ -132,6 +142,7 @@ import sessionsId from "./locales/id/sessions";
 import modelsId from "./locales/id/models";
 import providersId from "./locales/id/providers";
 import officeId from "./locales/id/office";
+import staffId from "./locales/id/staff";
 import errorsId from "./locales/id/errors";
 import schedulesId from "./locales/id/schedules";
 import skillsId from "./locales/id/skills";
@@ -139,6 +150,7 @@ import gatewayId from "./locales/id/gateway";
 import agentsId from "./locales/id/agents";
 import soulId from "./locales/id/soul";
 import memoryId from "./locales/id/memory";
+import notesId from "./locales/id/notes";
 import installId from "./locales/id/install";
 import constantsId from "./locales/id/constants";
 import commonZh from "./locales/zh-CN/common";
@@ -152,6 +164,7 @@ import sessionsZh from "./locales/zh-CN/sessions";
 import modelsZh from "./locales/zh-CN/models";
 import providersZh from "./locales/zh-CN/providers";
 import officeZh from "./locales/zh-CN/office";
+import staffZh from "./locales/zh-CN/staff";
 import errorsZh from "./locales/zh-CN/errors";
 import schedulesZh from "./locales/zh-CN/schedules";
 import skillsZh from "./locales/zh-CN/skills";
@@ -159,6 +172,7 @@ import gatewayZh from "./locales/zh-CN/gateway";
 import agentsZh from "./locales/zh-CN/agents";
 import soulZh from "./locales/zh-CN/soul";
 import memoryZh from "./locales/zh-CN/memory";
+import notesZh from "./locales/zh-CN/notes";
 import installZh from "./locales/zh-CN/install";
 import constantsZh from "./locales/zh-CN/constants";
 import kanbanZh from "./locales/zh-CN/kanban";
@@ -173,6 +187,7 @@ import sessionsZhTw from "./locales/zh-TW/sessions";
 import modelsZhTw from "./locales/zh-TW/models";
 import providersZhTw from "./locales/zh-TW/providers";
 import officeZhTw from "./locales/zh-TW/office";
+import staffZhTw from "./locales/zh-TW/staff";
 import errorsZhTw from "./locales/zh-TW/errors";
 import schedulesZhTw from "./locales/zh-TW/schedules";
 import skillsZhTw from "./locales/zh-TW/skills";
@@ -180,6 +195,7 @@ import gatewayZhTw from "./locales/zh-TW/gateway";
 import agentsZhTw from "./locales/zh-TW/agents";
 import soulZhTw from "./locales/zh-TW/soul";
 import memoryZhTw from "./locales/zh-TW/memory";
+import notesZhTw from "./locales/zh-TW/notes";
 import installZhTw from "./locales/zh-TW/install";
 import constantsZhTw from "./locales/zh-TW/constants";
 import kanbanZhTw from "./locales/zh-TW/kanban";
@@ -194,6 +210,7 @@ import sessionsJa from "./locales/ja/sessions";
 import modelsJa from "./locales/ja/models";
 import providersJa from "./locales/ja/providers";
 import officeJa from "./locales/ja/office";
+import staffJa from "./locales/ja/staff";
 import errorsJa from "./locales/ja/errors";
 import schedulesJa from "./locales/ja/schedules";
 import skillsJa from "./locales/ja/skills";
@@ -201,6 +218,7 @@ import gatewayJa from "./locales/ja/gateway";
 import agentsJa from "./locales/ja/agents";
 import soulJa from "./locales/ja/soul";
 import memoryJa from "./locales/ja/memory";
+import notesJa from "./locales/ja/notes";
 import installJa from "./locales/ja/install";
 import constantsJa from "./locales/ja/constants";
 import commonPt from "./locales/pt-BR/common";
@@ -214,6 +232,7 @@ import sessionsPt from "./locales/pt-BR/sessions";
 import modelsPt from "./locales/pt-BR/models";
 import providersPt from "./locales/pt-BR/providers";
 import officePt from "./locales/pt-BR/office";
+import staffPt from "./locales/pt-BR/staff";
 import errorsPt from "./locales/pt-BR/errors";
 import schedulesPt from "./locales/pt-BR/schedules";
 import skillsPt from "./locales/pt-BR/skills";
@@ -221,6 +240,7 @@ import gatewayPt from "./locales/pt-BR/gateway";
 import agentsPt from "./locales/pt-BR/agents";
 import soulPt from "./locales/pt-BR/soul";
 import memoryPt from "./locales/pt-BR/memory";
+import notesPt from "./locales/pt-BR/notes";
 import installPt from "./locales/pt-BR/install";
 import constantsPt from "./locales/pt-BR/constants";
 import commonPtPt from "./locales/pt-PT/common";
@@ -234,6 +254,7 @@ import sessionsPtPt from "./locales/pt-PT/sessions";
 import modelsPtPt from "./locales/pt-PT/models";
 import providersPtPt from "./locales/pt-PT/providers";
 import officePtPt from "./locales/pt-PT/office";
+import staffPtPt from "./locales/pt-PT/staff";
 import errorsPtPt from "./locales/pt-PT/errors";
 import schedulesPtPt from "./locales/pt-PT/schedules";
 import skillsPtPt from "./locales/pt-PT/skills";
@@ -241,6 +262,7 @@ import gatewayPtPt from "./locales/pt-PT/gateway";
 import agentsPtPt from "./locales/pt-PT/agents";
 import soulPtPt from "./locales/pt-PT/soul";
 import memoryPtPt from "./locales/pt-PT/memory";
+import notesPtPt from "./locales/pt-PT/notes";
 import installPtPt from "./locales/pt-PT/install";
 import constantsPtPt from "./locales/pt-PT/constants";
 import kanbanPtPt from "./locales/pt-PT/kanban";
@@ -257,6 +279,7 @@ import sessionsTr from "./locales/tr/sessions";
 import modelsTr from "./locales/tr/models";
 import providersTr from "./locales/tr/providers";
 import officeTr from "./locales/tr/office";
+import staffTr from "./locales/tr/staff";
 import errorsTr from "./locales/tr/errors";
 import schedulesTr from "./locales/tr/schedules";
 import skillsTr from "./locales/tr/skills";
@@ -264,6 +287,7 @@ import gatewayTr from "./locales/tr/gateway";
 import agentsTr from "./locales/tr/agents";
 import soulTr from "./locales/tr/soul";
 import memoryTr from "./locales/tr/memory";
+import notesTr from "./locales/tr/notes";
 import installTr from "./locales/tr/install";
 import constantsTr from "./locales/tr/constants";
 import kanbanTr from "./locales/tr/kanban";
@@ -280,6 +304,7 @@ import sessionsAr from "./locales/ar/sessions";
 import modelsAr from "./locales/ar/models";
 import providersAr from "./locales/ar/providers";
 import officeAr from "./locales/ar/office";
+import staffAr from "./locales/ar/staff";
 import errorsAr from "./locales/ar/errors";
 import schedulesAr from "./locales/ar/schedules";
 import skillsAr from "./locales/ar/skills";
@@ -287,6 +312,7 @@ import gatewayAr from "./locales/ar/gateway";
 import agentsAr from "./locales/ar/agents";
 import soulAr from "./locales/ar/soul";
 import memoryAr from "./locales/ar/memory";
+import notesAr from "./locales/ar/notes";
 import installAr from "./locales/ar/install";
 import constantsAr from "./locales/ar/constants";
 import kanbanAr from "./locales/ar/kanban";
@@ -313,7 +339,9 @@ export const resources = {
       providers: providersRu,
       gateway: gatewayRu,
       memory: memoryRu,
+      notes: notesRu,
       office: officeRu,
+      staff: staffRu,
       soul: soulRu,
       agents: agentsRu,
       install: installRu,
@@ -334,6 +362,7 @@ export const resources = {
       models: modelsEn,
       providers: providersEn,
       office: officeEn,
+      staff: staffEn,
       errors: errorsEn,
       schedules: schedulesEn,
       skills: skillsEn,
@@ -341,6 +370,7 @@ export const resources = {
       agents: agentsEn,
       soul: soulEn,
       memory: memoryEn,
+      notes: notesEn,
       install: installEn,
       constants: constantsEn,
       kanban: kanbanEn,
@@ -361,6 +391,7 @@ export const resources = {
       models: modelsHe,
       providers: providersHe,
       office: officeHe,
+      staff: staffHe,
       errors: errorsHe,
       schedules: schedulesHe,
       skills: skillsHe,
@@ -368,6 +399,7 @@ export const resources = {
       agents: agentsHe,
       soul: soulHe,
       memory: memoryHe,
+      notes: notesHe,
       install: installHe,
       constants: constantsHe,
       kanban: kanbanHe,
@@ -387,6 +419,7 @@ export const resources = {
       models: modelsPl,
       providers: providersPl,
       office: officePl,
+      staff: staffPl,
       errors: errorsPl,
       schedules: schedulesPl,
       skills: skillsPl,
@@ -394,6 +427,7 @@ export const resources = {
       agents: agentsPl,
       soul: soulPl,
       memory: memoryPl,
+      notes: notesPl,
       install: installPl,
       constants: constantsPl,
       kanban: kanbanPl,
@@ -412,6 +446,7 @@ export const resources = {
       models: modelsEs,
       providers: providersEs,
       office: officeEs,
+      staff: staffEs,
       errors: errorsEs,
       schedules: schedulesEs,
       skills: skillsEs,
@@ -419,6 +454,7 @@ export const resources = {
       agents: agentsEs,
       soul: soulEs,
       memory: memoryEs,
+      notes: notesEs,
       install: installEs,
       constants: constantsEs,
       kanban: kanbanEs,
@@ -438,6 +474,7 @@ export const resources = {
       models: modelsId,
       providers: providersId,
       office: officeId,
+      staff: staffId,
       errors: errorsId,
       schedules: schedulesId,
       skills: skillsId,
@@ -445,6 +482,7 @@ export const resources = {
       agents: agentsId,
       soul: soulId,
       memory: memoryId,
+      notes: notesId,
       install: installId,
       constants: constantsId,
     },
@@ -462,6 +500,7 @@ export const resources = {
       models: modelsZh,
       providers: providersZh,
       office: officeZh,
+      staff: staffZh,
       errors: errorsZh,
       schedules: schedulesZh,
       skills: skillsZh,
@@ -469,6 +508,7 @@ export const resources = {
       agents: agentsZh,
       soul: soulZh,
       memory: memoryZh,
+      notes: notesZh,
       install: installZh,
       constants: constantsZh,
       kanban: kanbanZh,
@@ -487,6 +527,7 @@ export const resources = {
       models: modelsZhTw,
       providers: providersZhTw,
       office: officeZhTw,
+      staff: staffZhTw,
       errors: errorsZhTw,
       schedules: schedulesZhTw,
       skills: skillsZhTw,
@@ -494,6 +535,7 @@ export const resources = {
       agents: agentsZhTw,
       soul: soulZhTw,
       memory: memoryZhTw,
+      notes: notesZhTw,
       install: installZhTw,
       constants: constantsZhTw,
       kanban: kanbanZhTw,
@@ -512,6 +554,7 @@ export const resources = {
       models: modelsPt,
       providers: providersPt,
       office: officePt,
+      staff: staffPt,
       errors: errorsPt,
       schedules: schedulesPt,
       skills: skillsPt,
@@ -519,6 +562,7 @@ export const resources = {
       agents: agentsPt,
       soul: soulPt,
       memory: memoryPt,
+      notes: notesPt,
       install: installPt,
       constants: constantsPt,
     },
@@ -536,6 +580,7 @@ export const resources = {
       models: modelsPtPt,
       providers: providersPtPt,
       office: officePtPt,
+      staff: staffPtPt,
       errors: errorsPtPt,
       schedules: schedulesPtPt,
       skills: skillsPtPt,
@@ -543,6 +588,7 @@ export const resources = {
       agents: agentsPtPt,
       soul: soulPtPt,
       memory: memoryPtPt,
+      notes: notesPtPt,
       install: installPtPt,
       constants: constantsPtPt,
       kanban: kanbanPtPt,
@@ -562,6 +608,7 @@ export const resources = {
       models: modelsJa,
       providers: providersJa,
       office: officeJa,
+      staff: staffJa,
       errors: errorsJa,
       schedules: schedulesJa,
       skills: skillsJa,
@@ -569,6 +616,7 @@ export const resources = {
       agents: agentsJa,
       soul: soulJa,
       memory: memoryJa,
+      notes: notesJa,
       install: installJa,
       constants: constantsJa,
     },
@@ -587,6 +635,7 @@ export const resources = {
       models: modelsTr,
       providers: providersTr,
       office: officeTr,
+      staff: staffTr,
       errors: errorsTr,
       schedules: schedulesTr,
       skills: skillsTr,
@@ -594,6 +643,7 @@ export const resources = {
       agents: agentsTr,
       soul: soulTr,
       memory: memoryTr,
+      notes: notesTr,
       install: installTr,
       constants: constantsTr,
       kanban: kanbanTr,
@@ -614,6 +664,7 @@ export const resources = {
       models: modelsAr,
       providers: providersAr,
       office: officeAr,
+      staff: staffAr,
       errors: errorsAr,
       schedules: schedulesAr,
       skills: skillsAr,
@@ -621,6 +672,7 @@ export const resources = {
       agents: agentsAr,
       soul: soulAr,
       memory: memoryAr,
+      notes: notesAr,
       install: installAr,
       constants: constantsAr,
       kanban: kanbanAr,

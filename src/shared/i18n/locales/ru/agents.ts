@@ -31,8 +31,7 @@ export default {
   deleteProfile: "Удалить профиль",
   deleteProfileInfo:
     "Удаление этого профиля навсегда уничтожает его конфигурацию, память, сессии чата, навыки и API-ключи. Действие необратимо.",
-  deleteProfileConfirm:
-    "Удалить этот профиль навсегда? Действие необратимо.",
+  deleteProfileConfirm: "Удалить этот профиль навсегда? Действие необратимо.",
   edit: "Изменить",
   uploadImage: "Загрузить изображение",
   removeImage: "Удалить изображение",
@@ -75,4 +74,14 @@ export default {
   walletDeleteWarning:
     "Это навсегда удалит этот кошелёк из Hermes. Убедитесь, что вы сохранили фразу восстановления — без неё восстановить кошелёк не получится.",
   walletDeleteConfirmLabel: "Удалить кошелёк",
+  createTitle: "Новый профиль",
+  nameLabel: "Имя агента",
+  cloneFromLabel: "Скопировать из",
+  running: "Работает",
+  off: "Выключен",
+  starting: "Запускается…",
+  colProfile: "Профиль",
+  colModel: "Модель",
+  colStatus: "Статус",
+  colActions: "Действия",
 } as const;

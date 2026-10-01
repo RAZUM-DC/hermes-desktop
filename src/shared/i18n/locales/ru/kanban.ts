@@ -97,8 +97,8 @@ export default {
 
   // Prompts / confirmations
   blockReasonPrompt: "Причина блокировки?",
-  confirmMarkDone: 'Отметить «{{title}}» выполненной?',
-  confirmArchive: 'Архивировать «{{title}}»?',
+  confirmMarkDone: "Отметить «{{title}}» выполненной?",
+  confirmArchive: "Архивировать «{{title}}»?",
 
   // Errors
   moveNotAllowed:

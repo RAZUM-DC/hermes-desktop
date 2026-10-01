@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "Недавние",
+  recentFoldersEmpty: "Пока пусто",
+  openFolderAction: "Выбрать папку…",
+  showWebPreview: "Показать веб-просмотр",
+  hideWebPreview: "Скрыть веб-просмотр",
+  folderOutsideRoots:
+    "Эта папка вне Документов, Загрузок и Рабочего стола — ассистент её не увидит.",
   title: "Новый чат",
   sessionTitle: "Сессия {{id}}",
   noModel: "Модель не выбрана",
   auto: "Авто",
   commandsTitle: "Команды",
   typeMessage: "Спросите что угодно",
+  dictationPending: "Распознаю надиктованное…",
   quickAskTitle:
     "Быстрый вопрос (/btw) — побочный вопрос, не влияющий на контекст разговора",
   send: "Отправить",
@@ -77,9 +85,19 @@ export default {
   contextFolderActive: "Папка контекста: {{path}}",
   removeContextFolder: "Убрать папку контекста",
   attach: "Прикрепить файлы",
+  screenshotRegion: "Вырезать область",
+  screenshotFullScreen: "Снимок всего экрана",
+  screenshotOptions: "Варианты снимка",
+  screenshot: "Скриншот экрана",
+  screenshotHiding: "Снимаю экран…",
+  screenshotBlocked:
+    "Не удалось снять экран: система не дала приложению доступ к изображению экрана. Обычно так делает антивирус или корпоративная политика безопасности. Попросите администратора разрешить приложению снятие снимков экрана.",
+  screenshotFailed: "Не удалось снять экран. {{detail}}",
   voiceInput: "Голосовой ввод",
   voiceStop: "Остановить запись",
   voiceTranscribing: "Распознавание…",
+  dictationListening: "Говорите…",
+  dictationHint: "Отпустите клавиши — текст вставится в чат",
   voiceBlocked:
     "Не удалось открыть микрофон: система не отдаёт приложению устройство записи звука. Обычно так делает антивирус или корпоративная политика безопасности — например, компонент «Предотвращение вторжений» в Kaspersky. Попросите администратора разрешить приложению доступ к устройствам записи звука.",
   voiceDenied:
@@ -91,6 +109,21 @@ export default {
   contextUsed: "Использовано {{pct}}% (осталось {{left}}%)",
   contextTokens: "Использовано {{used}} / {{total}} токенов",
   contextCache: "Кэш: попаданий {{pct}}% ({{read}} чтение / {{write}} запись)",
+  dictationWaiting: "Записано",
+  dictationWaitingHint: "После распознавания текст появится в приложении",
+  drafts: {
+    title: "Ожидают",
+    screenshot: "Снимок экрана",
+    insert: "Вставить",
+    remove: "Удалить черновик",
+    clearAll: "Убрать всё ожидающее",
+    open: "Открыть",
+    recognizing: "Распознавание…",
+    nothingHeard: "Ничего не распознано",
+    hint: "{{hotkey}} — вставить последний в открытый диалог",
+    insertFailed: "Диалог не принял этот черновик.",
+    insertNoChat: "Откройте чат или заметки, чтобы вставить.",
+  },
   removeAttachment: "Убрать вложение",
   dropToAttach: "Перетащите файлы, чтобы прикрепить",
   dashboardUnavailableFallback:
@@ -127,6 +160,7 @@ export default {
   noUsageData: "Данных об использовании пока нет. Сначала отправьте сообщение.",
   showEarlierMessages: "Показать предыдущие сообщения: {{count}}",
   media: {
+    close: "Закрыть",
     open: "Открыть",
     saveAs: "Сохранить как…",
     saveImage: "Сохранить изображение",

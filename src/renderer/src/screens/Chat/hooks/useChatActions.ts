@@ -141,6 +141,11 @@ export function useChatActions({
   const pushUser = useCallback(
     (content: string, idPrefix = "user", attachments?: Attachment[]) => {
       const turn = createTurn(idPrefix);
+      console.log(
+        "[ATT] user bubble:",
+        attachments?.length ?? 0,
+        "attachment(s)",
+      );
       setMessages((prev) => [
         ...prev,
         {

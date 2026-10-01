@@ -1,4 +1,7 @@
 export default {
+  signingInTitle: "正在登入",
+  signingInHint: "登入頁面會在瀏覽器中開啟。完成後應用程式會自動繼續。",
+  signInAgain: "重新登入",
   title: "歡迎使用 Hermes",
   subtitle: "你的自我進化 AI 助理，在本機執行，兼顧隱私、能力與持續學習。",
   installIssueTitle: "安裝問題",

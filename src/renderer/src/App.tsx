@@ -21,9 +21,6 @@ const SPLASH_MIN_MS = 3000;
 function App(): React.JSX.Element {
   const [screen, setScreen] = useState<Screen>("splash");
   const [installError, setInstallError] = useState<string | null>(null);
-  const [connectionMode, setConnectionMode] = useState<
-    "local" | "remote" | "ssh"
-  >("local");
   // Soft warning: install files exist but the deep `verifyInstall` probe
   // failed (e.g. slow Python startup, restricted network). We surface this
   // as a dismissible banner instead of bouncing the user back to Welcome,
@@ -53,7 +50,6 @@ function App(): React.JSX.Element {
       setSplashStatus("Checking connection…");
       const conn = await window.hermesAPI.getConnectionConfig();
       isRemote = conn.mode === "remote" || conn.mode === "ssh";
-      setConnectionMode(conn.mode);
 
       if (conn.mode === "ssh" && conn.ssh) {
         setSplashStatus("Starting SSH tunnel…");
@@ -143,6 +139,41 @@ function App(): React.JSX.Element {
     runInstallCheck();
   }, [runInstallCheck]);
 
+  // Пока человек на экране входа, companion в это время проводит enroll и,
+  // закончив, пишет remote-конфиг прямо на диск — мимо всех уведомлений
+  // (notifyConnectionConfigChanged шлётся только из обработчиков настроек,
+  // то есть когда конфиг меняет сам пользователь внутри приложения).
+  // Раньше заметить это было нечем, и единственным способом продолжить была
+  // кнопка «Проверить снова»: человек логинился в браузере, возвращался — и
+  // видел всё тот же экран.
+  //
+  // Поэтому опрашиваем конфиг сами. Опрос дешёвый: чтение одного json-файла
+  // раз в две секунды, и только пока мы на этом экране — уйдя с него,
+  // интервал снимается.
+  useEffect(() => {
+    if (screen !== "welcome") return;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      void window.hermesAPI
+        .getConnectionConfig()
+        .then((conn) => {
+          if (cancelled) return;
+          // Признак завершённого enroll — не сам режим, а появившийся адрес:
+          // режим по умолчанию remote и до входа, так что по нему судить
+          // нельзя.
+          if (conn.mode === "remote" && conn.remoteUrl) {
+            setInstallError(null);
+            setScreen("main");
+          }
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [screen]);
+
   // Track screen views for analytics
   useEffect(() => {
     captureScreenView(screen);
@@ -162,21 +193,10 @@ function App(): React.JSX.Element {
     setScreen("welcome");
   }
 
-  function handleRetryInstall(): void {
-    setInstallError(null);
-    setScreen("installing");
-  }
-
   function handleRecheck(): void {
     setInstallError(null);
     setScreen("splash");
     runInstallCheck();
-  }
-
-  async function handleSwitchToLocal(): Promise<void> {
-    await window.hermesAPI.setConnectionConfig("local", "", "");
-    setConnectionMode("local");
-    handleRecheck();
   }
 
   function handleVerifyReinstall(): void {
@@ -199,15 +219,7 @@ function App(): React.JSX.Element {
           />
         );
       case "welcome":
-        return (
-          <Welcome
-            error={installError}
-            connectionMode={connectionMode}
-            onStart={handleRetryInstall}
-            onRecheck={handleRecheck}
-            onSwitchToLocal={handleSwitchToLocal}
-          />
-        );
+        return <Welcome error={installError} onRecheck={handleRecheck} />;
       case "installing":
         return (
           <Install

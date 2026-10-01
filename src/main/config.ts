@@ -96,11 +96,37 @@ export function writeDesktopConfig(data: Record<string, unknown>): void {
   writeFileSync(desktopConfigFile(), JSON.stringify(data, null, 2), "utf-8");
 }
 
+/**
+ * Режим подключения из конфига, с умолчанием.
+ *
+ * Умолчание — `remote`, и это отражает то, чем сборка является на самом деле.
+ * Companion поднимается при каждом старте (см. start.ts) и сам записывает в
+ * desktop.json `connectionMode: "remote"` сразу после enroll — то есть любой
+ * реальный пользователь оказывается в гибриде, а прежнее умолчание `local`
+ * работало ровно те несколько секунд, что идут до записи конфига, и всё это
+ * время приложение считало себя не тем, чем было.
+ *
+ * Ветки `local` и `ssh` в коде остаются: они достались от апстрима, с
+ * которым мы продолжаем сливаться, и удалять их значило бы получать конфликт
+ * в каждом будущем merge. Они просто перестают быть достижимыми — ни через
+ * умолчание, ни через интерфейс.
+ *
+ * Функция отдельная и экспортирована ради тестов: разбор значения из файла
+ * должен быть предсказуем на мусорных данных, а не только на правильных.
+ */
+export function normalizeConnectionMode(
+  value: unknown,
+): "local" | "remote" | "ssh" {
+  return value === "local" || value === "ssh" || value === "remote"
+    ? value
+    : "remote";
+}
+
 export function getConnectionConfig(): ConnectionConfig {
   const data = readDesktopConfig();
   const ssh = (data.sshConfig as Partial<SshConnectionConfig>) ?? {};
   return {
-    mode: (data.connectionMode as "local" | "remote" | "ssh") || "local",
+    mode: normalizeConnectionMode(data.connectionMode),
     remoteUrl: (data.remoteUrl as string) || "",
     apiKey: (data.remoteApiKey as string) || "",
     remoteChatTransport: normalizeRemoteChatTransport(data.remoteChatTransport),

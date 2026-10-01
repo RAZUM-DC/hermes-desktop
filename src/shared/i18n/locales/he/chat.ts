@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "אחרונים",
+  recentFoldersEmpty: "אין תיקיות אחרונות",
+  openFolderAction: "פתיחת תיקייה…",
+  showWebPreview: "הצגת תצוגת אינטרנט",
+  hideWebPreview: "הסתרת תצוגת אינטרנט",
+  folderOutsideRoots:
+    "התיקייה הזו מחוץ למסמכים, הורדות ושולחן העבודה — העוזר לא רואה אותה.",
   title: "צ'אט חדש",
   sessionTitle: "סשן {{id}}",
   noModel: "לא הוגדר מודל",
   auto: "אוטומטי",
   commandsTitle: "פקודות",
   typeMessage: "הקלידו הודעה... (Shift+Enter לשורה חדשה)",
+  dictationPending: "מתמלל את ההכתבה שלך…",
   quickAskTitle: "שאלה מהירה (/btw) - שאלה צדדית שלא תשפיע על הקשר השיחה",
   send: "שליחה",
   custom: "מותאם אישית",

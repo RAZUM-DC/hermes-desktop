@@ -108,9 +108,13 @@ export const ClarifyCard = memo(function ClarifyCard({
             disabled={submitting || unavailable}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                void submit(text);
-              }
+              if (e.key !== "Enter") return;
+              // Ответ на уточнение — обычно одна строка, поэтому Enter
+              // отправляет, как в поле ввода чата. Перенос строки остаётся
+              // на Shift+Enter, а Ctrl+Enter сохранён: к нему привыкли.
+              if (e.shiftKey) return;
+              e.preventDefault();
+              void submit(text);
             }}
           />
           <button

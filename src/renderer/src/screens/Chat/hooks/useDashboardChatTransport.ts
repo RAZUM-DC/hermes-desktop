@@ -1661,6 +1661,29 @@ export function useDashboardChatTransport({
           );
         }
       };
+      // The agent keeps the turn as text with a `[screenshot]` marker where
+      // the picture was, so the pictures only survive a restart if the desktop
+      // stores them itself.
+      const recordPromptAttachments = async (): Promise<void> => {
+        const storedSessionId = storedSessionIdRef.current;
+        const persist = window.hermesAPI.persistPromptAttachments;
+        if (
+          !storedSessionId ||
+          !attachments?.length ||
+          typeof persist !== "function"
+        ) {
+          return;
+        }
+        // Ключ — тот текст, который реально ушёл агенту: для сообщения из
+        // одной картинки без подписи он подставляет свой вопрос, и если
+        // записать картинку под пустой строкой, при следующей загрузке
+        // истории она не найдётся.
+        await persist(
+          storedSessionId,
+          dashboardText || text,
+          attachments,
+        ).catch(() => undefined);
+      };
       const failActiveTurn = (message: string): true => {
         const activeTurn = activeTurnRef.current;
         if (activeTurn) activeTurn.status = "failed";
@@ -1782,6 +1805,7 @@ export function useDashboardChatTransport({
             runtimeSessionIdRef.current = recoveredSessionId;
           },
         });
+        await recordPromptAttachments();
         return true;
       } catch (err) {
         appliedModelRef.current = null;

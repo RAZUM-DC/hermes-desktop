@@ -5,6 +5,7 @@ import {
   type DbHistoryItem,
 } from "../Chat/sessionHistory";
 import {
+  shouldPersistAutoTitle,
   type ChatRun,
   mintRun,
   patchRun,
@@ -21,11 +22,43 @@ import Discover from "../Discover/Discover";
 import Overview from "../Discover/Overview";
 import ProfileSwitcher from "./ProfileSwitcher";
 import SidebarRecentSessions from "./SidebarRecentSessions";
+import {
+  advance,
+  neighbourRunId,
+  openSwitcher,
+  runIdAtPosition,
+  SWITCHER_LIMIT,
+  type SwitcherItem,
+  type SwitcherState,
+} from "./runSwitcher";
+import { ChatSwitcherOverlay } from "./ChatSwitcherOverlay";
+import { DraftTray } from "./DraftTray";
+import {
+  clearDrafts,
+  isInsertable,
+  isRecognizing,
+  markInserting,
+  pushDraft,
+  removeDraft,
+  resolveTextDraft,
+  type PendingDraft,
+} from "./draftStack";
+import {
+  acceleratorModifiers,
+  formatAccelerator,
+  INSERT_DRAFT_DEFAULT,
+  matchesAccelerator,
+  NEXT_CHAT_DEFAULT,
+  PREV_CHAT_DEFAULT,
+  SWITCH_CHAT_DEFAULT,
+} from "../../../../shared/hotkeys";
 import Skills from "../Skills/Skills";
 import Memory from "../Memory/Memory";
+import { MemoryBank } from "../Memory/MemoryBank";
+import Notes from "../Notes/Notes";
 import Tools from "../Tools/Tools";
 import Gateway from "../Gateway/Gateway";
-import Office from "../Office/Office";
+import Staff from "../Staff/Staff";
 import Providers from "../Providers/Providers";
 import Schedules from "../Schedules/Schedules";
 import Kanban from "../Kanban/Kanban";
@@ -38,27 +71,32 @@ import {
   Settings as SettingsIcon,
   Brain,
   Workflow,
-  Signal,
-  Building,
-  KeyRound,
+  Users as StaffIcon,
   Timer,
   Kanban as KanbanIcon,
+  NotesIcon,
   Download,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Users,
+  Puzzle,
+  Plug,
+  Signal,
 } from "../../assets/icons";
 import type { LucideIcon } from "lucide-react";
 import { useI18n } from "../../components/useI18n";
+import type { AttachmentError } from "../Chat/attachmentUtils";
 
 type View =
   | "chat"
   | "discover"
   | "agents"
-  | "office"
+  | "staff"
   | "providers"
   | "skills"
   | "memory"
+  | "notes"
   | "tools"
   | "schedules"
   | "kanban"
@@ -68,22 +106,64 @@ const PINNED_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
   { view: "discover", icon: Compass, labelKey: "navigation.discover" },
   // "agents" (Profiles) is reached from the sidebar-footer ProfileSwitcher's
   // "Manage profiles" action rather than a top-level nav item.
-  { view: "office", icon: Building, labelKey: "navigation.office" },
+  // «Офис» убран: трёхмерная комната показывала одну выдуманную фигурку —
+  // список агентов она читала из локальных файлов, которых в гибриде нет, — а
+  // кнопка чата в ней была намертво привязана к локально запущенному шлюзу.
+  // Работала там ровно одна вещь, список штатных сотрудников с сервера, и
+  // теперь это самостоятельный раздел. Сам экран остался в коде: он рабочий
+  // для local и приходит из апстрима, с которым мы продолжаем сливаться.
+  { view: "staff", icon: StaffIcon, labelKey: "navigation.staff" },
   { view: "kanban", icon: KanbanIcon, labelKey: "navigation.kanban" },
   // "skills" lives under the Discover tab (installed + community), so it's no
   // longer a top-level nav item.
   { view: "schedules", icon: Timer, labelKey: "navigation.schedules" },
+  // Блокнот человека, а не банк памяти: память ведёт ассистент и трогать её
+  // руками нельзя, а сюда пишут сами, и лежит это на своей же машине.
+  { view: "notes", icon: NotesIcon, labelKey: "navigation.notes" },
 ];
 
+// Провайдеры и Шлюз из меню убраны намеренно.
+//
+// Оба экрана читают данные ЛОКАЛЬНОЙ установки: ключи провайдеров из
+// ~/.hermes/.env, статус локального шлюза сообщений. В гибриде ничего этого
+// нет — ключи на каждого пользователя выдаёт key-broker, модели настраивает
+// провижнер, а Telegram подключается через корпоративный онбординг. Экраны
+// показывали заглушку «недоступно в удалённом режиме», и человек натыкался на
+// неё снова и снова, прежде чем понять, что половина меню бесполезна.
+//
+// Единственное, что в провайдерах было по-настоящему пользовательским —
+// выбор модели, — и он давно живёт прямо в поле ввода.
+//
+// Сами экраны в коде остались: они рабочие для local и ssh и приходят из
+// апстрима, с которым мы продолжаем сливаться.
 const FOOTER_NAV_ITEMS: { view: View; icon: LucideIcon; labelKey: string }[] = [
-  { view: "providers", icon: KeyRound, labelKey: "navigation.providers" },
-  { view: "gateway", icon: Signal, labelKey: "navigation.gateway" },
   { view: "tools", icon: Workflow, labelKey: "navigation.tools" },
   { view: "memory", icon: Brain, labelKey: "navigation.memory" },
 ];
 
+/**
+ * Подписи и значки для вкладок разделов в верхней полосе.
+ *
+ * Собирается из тех же списков, что и боковая панель, чтобы названия не
+ * разъехались, и дополняется разделами, которых в меню нет: в них попадают
+ * из других мест — «Профили» из переключателя внизу, «Навыки» из «Обзора», —
+ * но вкладка нужна им такая же.
+ */
+const VIEW_TABS: Partial<Record<View, { icon: LucideIcon; labelKey: string }>> =
+  {
+    ...Object.fromEntries(
+      [...PINNED_NAV_ITEMS, ...FOOTER_NAV_ITEMS].map((item) => [
+        item.view,
+        { icon: item.icon, labelKey: item.labelKey },
+      ]),
+    ),
+    agents: { icon: Users, labelKey: "navigation.agents" },
+    skills: { icon: Puzzle, labelKey: "navigation.skills" },
+    providers: { icon: Plug, labelKey: "navigation.providers" },
+    gateway: { icon: Signal, labelKey: "navigation.gateway" },
+  };
+
 const SIDEBAR_COLLAPSED_KEY = "hermes.sidebar.collapsed";
-const LAST_SESSION_KEY = "hermes.lastSessionId";
 const SIDEBAR_SCROLLBAR_HIDE_MS = 700;
 
 interface LayoutProps {
@@ -244,9 +324,10 @@ function Layout({
   // сессии остаются без названия), один раз на сессию.
   const titledSessions = useRef<Set<string>>(new Set());
   const persistSessionTitle = useCallback(
-    (sessionId: string, title: string) => {
+    (run: ChatRun | undefined, sessionId: string, title: string) => {
       const t = title.trim();
-      if (!sessionId || !t || titledSessions.current.has(sessionId)) return;
+      if (!sessionId || titledSessions.current.has(sessionId)) return;
+      if (!shouldPersistAutoTitle(run, t)) return;
       titledSessions.current.add(sessionId);
       // sessions.title имеет UNIQUE-ограничение: если такое название уже есть,
       // первый PATCH упадёт — повторяем с суффиксом даты/времени для уникальности.
@@ -255,11 +336,20 @@ function Layout({
         const p = (n: number): string => String(n).padStart(2, "0");
         return ` · ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
       };
+      // auto = true: главный процесс сам решит, стоит ли трогать заголовок, и
+      // запомнит, что этот диалог уже называли — в отличие от множества выше,
+      // переживёт перезапуск.
       void window.hermesAPI
-        .updateSessionTitle(sessionId, t)
+        .updateSessionTitle(sessionId, t, undefined, undefined, true)
         .catch(() =>
           window.hermesAPI
-            .updateSessionTitle(sessionId, t + stamp())
+            .updateSessionTitle(
+              sessionId,
+              t + stamp(),
+              undefined,
+              undefined,
+              true,
+            )
             .catch(() => {}),
         );
     },
@@ -270,14 +360,8 @@ function Layout({
       setRuns((prev) => {
         const next = patchRun(prev, runId, { sessionId });
         if (sessionId) {
-          // Запоминаем последний активный диалог, чтобы открыть его при запуске.
-          try {
-            localStorage.setItem(LAST_SESSION_KEY, sessionId);
-          } catch {
-            /* ignore persistence failures */
-          }
           const run = next.find((r) => r.runId === runId);
-          if (run?.title) persistSessionTitle(sessionId, run.title);
+          if (run?.title) persistSessionTitle(run, sessionId, run.title);
         }
         return next;
       });
@@ -289,7 +373,7 @@ function Layout({
       setRuns((prev) => {
         const next = patchRun(prev, runId, { title });
         const run = next.find((r) => r.runId === runId);
-        if (run?.sessionId) persistSessionTitle(run.sessionId, title);
+        if (run?.sessionId) persistSessionTitle(run, run.sessionId, title);
         return next;
       });
     },
@@ -320,6 +404,28 @@ function Layout({
     nonce: number;
   } | null>(null);
 
+  /**
+   * Разделы, открытые в верхней полосе, в порядке открытия.
+   *
+   * Отдельно от `visitedViews`: тот только помнит, что вкладку уже монтировали,
+   * и порядка не хранит, а полосе он нужен — вкладки не должны прыгать местами
+   * при каждом возврате.
+   */
+  const [openSections, setOpenSections] = useState<View[]>([]);
+
+  const sectionTabs = useMemo(
+    () =>
+      openSections
+        .map((v) => {
+          const tab = VIEW_TABS[v];
+          return tab ? { view: v, ...tab } : null;
+        })
+        .filter((t): t is { view: View; icon: LucideIcon; labelKey: string } =>
+          Boolean(t),
+        ),
+    [openSections],
+  );
+
   const paneStyle = (target: View): React.CSSProperties => ({
     display: view === target ? "flex" : "none",
     flex: 1,
@@ -329,7 +435,32 @@ function Layout({
 
   const goTo = useCallback((v: View) => {
     setVisitedViews((prev) => (prev.has(v) ? prev : new Set(prev).add(v)));
+    // Чат вкладкой раздела не считается: у него своя полоса диалогов.
+    if (v !== "chat") {
+      setOpenSections((prev) => (prev.includes(v) ? prev : [...prev, v]));
+    }
     setView(v);
+  }, []);
+
+  /**
+   * Закрыть вкладку раздела.
+   *
+   * Снимаем и с `visitedViews`: экран перестаёт быть смонтированным, и при
+   * следующем открытии поднимется заново. Иначе закрытая вкладка продолжала бы
+   * висеть в памяти и держать свои подписки — для «Канбана» и «Офиса» это
+   * заметно.
+   */
+  const closeSection = useCallback((v: View) => {
+    setOpenSections((prev) => prev.filter((x) => x !== v));
+    setVisitedViews((prev) => {
+      if (!prev.has(v)) return prev;
+      const next = new Set(prev);
+      next.delete(v);
+      return next;
+    });
+    // Закрыли ту, на которую смотрим, — возвращаемся в чат: оставаться на
+    // размонтированном экране означало бы пустое окно.
+    setView((current) => (current === v ? "chat" : current));
   }, []);
 
   useEffect(() => {
@@ -563,6 +694,409 @@ function Layout({
     [runs, goTo],
   );
 
+  // --- Переключение диалогов с клавиатуры ----------------------------------
+  //
+  // Комбинации внутриоконные, поэтому здесь всё честно: видно и нажатие, и
+  // отпускание, и повторы — в отличие от глобальных хоткеев, которые система
+  // перехватывает целиком.
+  //
+  // Списка два, и это осознанно. Цифры и Alt+стрелки ходят по верхней строке
+  // вкладок — по тому порядку, который человек видит на экране, так что
+  // «третья вкладка» и Ctrl+3 означают одно и то же. Ctrl+Tab ходит по
+  // сайдбару: это уже не переключение открытых вкладок, а переход в историю,
+  // и он может стоить загрузки переписки.
+  const [switcher, setSwitcher] = useState<SwitcherState | null>(null);
+  const [switchHotkey, setSwitchHotkey] = useState(SWITCH_CHAT_DEFAULT);
+  const [nextChatHotkey, setNextChatHotkey] = useState(NEXT_CHAT_DEFAULT);
+  const [prevChatHotkey, setPrevChatHotkey] = useState(PREV_CHAT_DEFAULT);
+  // Список сайдбара поднят сюда: панель Ctrl+Tab показывает ровно его.
+  const [sidebarSessions, setSidebarSessions] = useState<SwitcherItem[]>([]);
+  const switcherRef = useRef<SwitcherState | null>(null);
+  switcherRef.current = switcher;
+  const runsRef = useRef<ChatRun[]>(runs);
+  runsRef.current = runs;
+  const activeRunIdRef = useRef(activeRunId);
+  activeRunIdRef.current = activeRunId;
+  // Свёрнутый сайдбар ничего не загружает — панель осталась бы пустой.
+  // Читаем тот же кэш напрямую: это чтение JSON, без обращения к базе.
+  const [cachedSessions, setCachedSessions] = useState<SwitcherItem[]>([]);
+  const switcherItems =
+    sidebarSessions.length >= 2 ? sidebarSessions : cachedSessions;
+  const sidebarSessionsRef = useRef<SwitcherItem[]>(switcherItems);
+  sidebarSessionsRef.current = switcherItems;
+  const currentSessionIdRef = useRef<string | null>(currentSessionId);
+  currentSessionIdRef.current = currentSessionId;
+  const activateRunRef = useRef(handleActivateRun);
+  activateRunRef.current = handleActivateRun;
+  // Присваивается ниже, сразу после объявления handleResumeSession: тот
+  // объявлен позже по файлу, и взять его здесь напрямую нельзя.
+  const resumeSessionRef = useRef<(sessionId: string) => Promise<void>>(
+    async () => {},
+  );
+
+  // Сайдбар отдаёт свой список наверх. Он же решает, что такое «недавние»:
+  // повторять эту сортировку здесь значило бы разойтись с тем, что видно.
+  const handleSidebarSessions = useCallback((list: SwitcherItem[]): void => {
+    setSidebarSessions((prev) => {
+      if (
+        prev.length === list.length &&
+        prev.every((s, i) => s.id === list[i].id && s.title === list[i].title)
+      ) {
+        return prev;
+      }
+      return list;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (sidebarSessions.length >= 2) return;
+    let alive = true;
+    void window.hermesAPI
+      .listCachedSessions(SWITCHER_LIMIT, 0, undefined, activeProfile)
+      .then((rows) => {
+        if (!alive) return;
+        setCachedSessions(rows.map(({ id, title }) => ({ id, title })));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+    // currentSessionId в зависимостях намеренно: переключение диалога меняет
+    // порядок «недавних», и к следующему нажатию список должен быть свежим.
+  }, [sidebarSessions.length, activeProfile, currentSessionId]);
+
+  useEffect(() => {
+    void window.hermesAPI
+      .getHotkeys?.()
+      .then((h) => {
+        if (h?.switchChat) setSwitchHotkey(h.switchChat);
+        if (h?.nextChat) setNextChatHotkey(h.nextChat);
+        if (h?.prevChat) setPrevChatHotkey(h.prevChat);
+        if (h?.insertDraft) setInsertHotkey(h.insertDraft);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  // --- Черновики, ожидающие диалога ----------------------------------------
+  //
+  // Комбинации снимка и диктовки глобальные: их нажимают, глядя в чужое окно,
+  // и какой диалог открыт в этот момент — случайность. Поэтому сделанное
+  // задерживается здесь, в Layout, а не уезжает в чат сразу: карточка должна
+  // пережить смену диалога, ради чего всё и затевалось.
+  const [drafts, setDrafts] = useState<PendingDraft[]>([]);
+  const [insertHotkey, setInsertHotkey] = useState(INSERT_DRAFT_DEFAULT);
+  /** Почему черновик не уехал в чат — показываем прямо в карточке. */
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const draftsRef = useRef<PendingDraft[]>(drafts);
+  draftsRef.current = drafts;
+  // Ждём ли текст от распознавания — этим поле ввода подменяет подсказку,
+  // чтобы пустая строка с курсором не читалась как «ничего не записалось».
+  // Флаг производный от стека черновиков (см. isRecognizing), поэтому он не
+  // может разъехаться с карточкой, и уходит во все вкладки, а не только в
+  // активную: распознавание одно на приложение, и если переключиться на
+  // соседний чат, пока оно идёт, подсказка должна быть и там.
+  const dictationPending = isRecognizing(drafts);
+  /** Строка заметки, которая сейчас распознаётся: ответ придёт отдельно. */
+  const recognizingIdRef = useRef<string | null>(null);
+
+  const newDraftId = (): string =>
+    `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  useEffect(() => {
+    const subscribe = window.hermesAPI?.onScreenshotCaptured;
+    if (typeof subscribe !== "function") return;
+    return subscribe((shot) => {
+      if (!shot?.png) return;
+      const name = shot.name || "screenshot.png";
+      const file = new File([shot.png], name, { type: "image/png" });
+      setDrafts((prev) =>
+        pushDraft(prev, {
+          id: newDraftId(),
+          kind: "image",
+          name,
+          url: URL.createObjectURL(file),
+          file,
+          at: Date.now(),
+        }),
+      );
+    });
+  }, []);
+
+  // Диктовка. Строка появляется сразу по отпусканию клавиш, с пометкой
+  // «распознавание», и достраивается текстом, когда сайдкар ответит: иначе
+  // между записью и текстом человек секунду-другую смотрит в пустоту и не
+  // понимает, записалось ли что-нибудь.
+  useEffect(() => {
+    const onPending = window.hermesAPI?.onDictationPending;
+    const onText = window.hermesAPI?.onDictationText;
+    const onDropped = window.hermesAPI?.onDictationDropped;
+    if (typeof onText !== "function") return;
+
+    const offPending =
+      typeof onPending === "function"
+        ? onPending(() => {
+            const id = newDraftId();
+            recognizingIdRef.current = id;
+            setDrafts((prev) =>
+              pushDraft(prev, {
+                id,
+                kind: "text",
+                text: "",
+                state: "recognizing",
+                at: Date.now(),
+              }),
+            );
+          })
+        : () => undefined;
+
+    const offText = onText((text: string) => {
+      const id = recognizingIdRef.current;
+      recognizingIdRef.current = null;
+      if (!id) return;
+      setDrafts((prev) => resolveTextDraft(prev, id, text));
+    });
+
+    const offDropped =
+      typeof onDropped === "function"
+        ? onDropped(() => {
+            const id = recognizingIdRef.current;
+            recognizingIdRef.current = null;
+            if (id) setDrafts((prev) => removeDraft(prev, id));
+          })
+        : () => undefined;
+
+    return () => {
+      offPending();
+      offText();
+      offDropped();
+    };
+  }, []);
+
+  // Вставка идёт событием окна, а не пропсом: вкладки смонтированы все сразу,
+  // и принять снимок должна ровно та, что сейчас на экране. Guard по `active`
+  // живёт в самом чате — там же, где остальные такие подписки.
+  //
+  // Чат подтверждает приём и отдаёт обещание разбора. Пока оно не выполнено,
+  // черновик остаётся в карточке с пометкой: разбор асинхронный, и если
+  // убирать его сразу, человек успеет отправить сообщение раньше, чем
+  // вложение окажется в поле ввода, — и не поймёт, куда оно делось.
+  const insertDraft = useCallback(
+    (id: string): void => {
+      const draft = draftsRef.current.find((d) => d.id === id);
+      if (!draft || !isInsertable(draft)) return;
+      setDraftError(null);
+      setDrafts((prev) => markInserting(prev, id, true));
+
+      let taken = false;
+      const accept = (result: Promise<AttachmentError[]>): void => {
+        taken = true;
+        result
+          .then((errors) => {
+            if (errors.length > 0) {
+              console.warn("[DRAFT] the open tab refused the draft", errors);
+              setDrafts((prev) => markInserting(prev, id, false));
+              setDraftError(t("chat.drafts.insertFailed"));
+              return;
+            }
+            console.log("[DRAFT] inserted into the open tab:", draft.kind);
+            setDrafts((prev) => removeDraft(prev, id));
+          })
+          .catch((err) => {
+            console.warn("[DRAFT] insert failed", err);
+            setDrafts((prev) => markInserting(prev, id, false));
+            setDraftError(t("chat.drafts.insertFailed"));
+          });
+      };
+
+      window.dispatchEvent(
+        new CustomEvent("hermes-insert-draft", {
+          detail:
+            draft.kind === "image" || draft.kind === "file"
+              ? { files: [draft.file], accept }
+              : { text: draft.text, accept },
+        }),
+      );
+
+      // Событие рассылается синхронно: если к этой строке никто не отозвался,
+      // открытого чата, готового принять черновик, просто нет.
+      if (!taken) {
+        // Ни чат, ни блокнот не отозвались: открытой вкладки, готовой
+        // принять черновик, сейчас нет.
+        console.warn("[DRAFT] no tab accepted the draft");
+        setDrafts((prev) => markInserting(prev, id, false));
+        setDraftError(t("chat.drafts.insertNoChat"));
+      }
+    },
+    [t],
+  );
+
+  /**
+   * Заметка, отправленная из блокнота, кладётся в ту же карточку, что снимки
+   * и диктовка, а не вставляется в диалог сама.
+   *
+   * Так человек сам решает, куда она пойдёт: карточка переживает смену
+   * вкладки, и из неё можно вставить в любой диалог — или вернуться в
+   * блокнот и вставить обратно в другую заметку. Прежний вариант выбирал
+   * диалог за человека и уводил его из блокнота, даже если он просто хотел
+   * отложить заметку под рукой.
+   *
+   * Текст и каждое вложение идут отдельными строками: вставляются они тоже
+   * по одной, и человеку может понадобиться не всё сразу.
+   */
+  const sendNoteToTray = useCallback((text: string, files: File[]): void => {
+    setDraftError(null);
+    const at = Date.now();
+    setDrafts((prev) => {
+      let next = prev;
+      // Файлы кладём первыми, текст последним: pushDraft кладёт наверх, и
+      // текст заметки должен оказаться над своими вложениями.
+      for (const file of files) {
+        // Картинке нужна ссылка на блоб — под миниатюру и полноразмерный
+        // просмотр; остальным файлам показывать нечего, и ссылку, которую
+        // потом пришлось бы отзывать, им не заводим.
+        next = pushDraft(
+          next,
+          file.type.startsWith("image/")
+            ? {
+                id: newDraftId(),
+                kind: "image",
+                name: file.name,
+                url: URL.createObjectURL(file),
+                file,
+                at,
+              }
+            : { id: newDraftId(), kind: "file", name: file.name, file, at },
+        );
+      }
+      if (text) {
+        next = pushDraft(next, {
+          id: newDraftId(),
+          kind: "text",
+          text,
+          state: "ready",
+          at,
+        });
+      }
+      return next;
+    });
+  }, []);
+
+  const removeDraftById = useCallback((id: string): void => {
+    setDraftError(null);
+    setDrafts((prev) => removeDraft(prev, id));
+  }, []);
+
+  const clearAllDrafts = useCallback((): void => {
+    setDraftError(null);
+    setDrafts((prev) => clearDrafts(prev));
+  }, []);
+
+  // Внутриоконные комбинации, пойманные главным процессом: на Windows слой
+  // окна разбирает сочетания с Alt раньше страницы, и до обработчика ниже они
+  // не доходят.
+  useEffect(() => {
+    return window.hermesAPI.onWindowHotkey?.((action) => {
+      if (action === "insertDraft") {
+        // Верхний готовый: заметка, которая ещё распознаётся, не вставляется.
+        const top = draftsRef.current.find(isInsertable);
+        if (top) insertDraft(top.id);
+        return;
+      }
+      const target = neighbourRunId(
+        runsRef.current.map((r) => r.runId),
+        activeRunIdRef.current,
+        action === "prevChat",
+      );
+      if (target && target !== activeRunIdRef.current) {
+        activateRunRef.current(target);
+      }
+    });
+  }, [insertDraft]);
+
+  useEffect(() => {
+    const runIds = (): string[] => runsRef.current.map((r) => r.runId);
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      // Цифра — прямой переход к вкладке с этим номером в верхней строке.
+      // Нумерация буквальная: десятой и дальше по цифрам не добраться, для
+      // них есть стрелки.
+      const digit = /^Digit([1-9])$/.exec(event.code);
+      if (
+        digit &&
+        event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        !event.shiftKey
+      ) {
+        const target = runIdAtPosition(runIds(), Number(digit[1]));
+        if (!target) return;
+        event.preventDefault();
+        activateRunRef.current(target);
+        return;
+      }
+
+      // Соседняя вкладка по порядку строки, с зацикливанием.
+      const forward = matchesAccelerator(event, nextChatHotkey);
+      const back = !forward && matchesAccelerator(event, prevChatHotkey);
+      if (forward || back) {
+        const target = neighbourRunId(runIds(), activeRunIdRef.current, back);
+        if (!target || target === activeRunIdRef.current) {
+          // Одна вкладка — гасим нажатие всё равно: иначе Alt+стрелка уедет
+          // в поле ввода и подвинет там каретку.
+          event.preventDefault();
+          return;
+        }
+        event.preventDefault();
+        activateRunRef.current(target);
+        return;
+      }
+
+      if (!matchesAccelerator(event, switchHotkey, true)) return;
+      event.preventDefault();
+      const backwards = event.shiftKey;
+      const open = switcherRef.current;
+      const next = open
+        ? advance(open, backwards)
+        : openSwitcher(
+            sidebarSessionsRef.current,
+            currentSessionIdRef.current,
+            backwards,
+            SWITCHER_LIMIT,
+          );
+      if (next) setSwitcher(next);
+    };
+
+    const onKeyUp = (event: KeyboardEvent): void => {
+      const open = switcherRef.current;
+      if (!open) return;
+      // Переключение завершает отпускание модификатора — ровно как у Alt+Tab.
+      if (!acceleratorModifiers(switchHotkey).includes(event.key)) return;
+      setSwitcher(null);
+      const target = open.items[open.index];
+      // Диалог из сайдбара может быть ещё не открыт — тогда это загрузка
+      // истории, и её берёт на себя обычный путь открытия сессии.
+      if (target) void resumeSessionRef.current(target.id);
+    };
+
+    const onEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape" && switcherRef.current) setSwitcher(null);
+    };
+
+    const onBlur = (): void => setSwitcher(null);
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onEscape);
+    window.addEventListener("keyup", onKeyUp);
+    // Окно потеряло фокус с зажатой комбинацией — отпускания мы не увидим.
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [switchHotkey, nextChatHotkey, prevChatHotkey]);
+
   // Close a conversation tab: stop it if it's running, drop it from the list,
   // and (if it was active) move to a neighbour. Always keep at least one chat
   // open so the chat view is never empty.
@@ -609,6 +1143,7 @@ function Layout({
         )) as DbHistoryItem[];
         const run = mintRun(activeProfile, dbItemsToChatMessages(items));
         run.sessionId = sessionId;
+        run.fromHistory = true;
         setRuns(
           (prev) => openSessionRunTransition(prev, activeRunId, run).runs,
         );
@@ -621,27 +1156,16 @@ function Layout({
     },
     [runs, activeRunId, handleActivateRun, activeProfile, goTo],
   );
+  resumeSessionRef.current = handleResumeSession;
 
-  // При запуске открываем последний диалог пользователя вместо пустого чата
-  // (удалённые сессии живут на сервере; пустой run иначе их прячет). Один раз
-  // и только если стартовый run ещё чистый.
-  const didAutoResumeRef = useRef(false);
-  useEffect(() => {
-    if (didAutoResumeRef.current) return;
-    didAutoResumeRef.current = true;
-    let last: string | null = null;
-    try {
-      last = localStorage.getItem(LAST_SESSION_KEY);
-    } catch {
-      last = null;
-    }
-    if (!last) return;
-    const active = runs.find((r) => r.runId === activeRunId);
-    if (active && !active.sessionId && !active.loading && !active.title) {
-      void handleResumeSession(last);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Запуск начинается с чистого нового диалога.
+  //
+  // Раньше приложение открывало последний диалог: список сессий тогда жил
+  // только на сервере, и пустой стартовый чат их прятал. Сейчас недавние
+  // диалоги видны в сайдбаре, так что восстанавливать что-то за человека
+  // незачем — он сам выберет, продолжать старое или начать новое. А выбор за
+  // него приложение всё равно делало плохо: запоминался не тот диалог, в
+  // котором работали последним, а тот, чья вкладка смонтировалась позже.
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((collapsed) => {
@@ -727,6 +1251,7 @@ function Layout({
                 loadingSessionIds={loadingSessionIds}
                 resumingSessionId={resumingSessionId}
                 onSelect={handleResumeSession}
+                onSessionsChange={handleSidebarSessions}
                 onSessionDeleted={(id) => {
                   // If the open chat was the one deleted, drop to a fresh chat
                   // so the user isn't left viewing a now-gone conversation.
@@ -814,13 +1339,24 @@ function Layout({
           <ProfileSwitcher
             activeProfile={activeProfile}
             onSwitch={handleSelectProfile}
-            onManage={() => goTo("agents")}
+            // Профилями в гибриде распоряжается организация, а экран управления
+            // ими показывает ту же заглушку. Прячем пункт, а не ведём в тупик.
+            onManage={remoteMode ? undefined : () => goTo("agents")}
             compact={sidebarCollapsed}
           />
         </div>
       </aside>
 
       <main className="content">
+        {switcher && <ChatSwitcherOverlay state={switcher} />}
+        <DraftTray
+          drafts={drafts}
+          insertHotkey={formatAccelerator(insertHotkey)}
+          error={draftError}
+          onInsert={insertDraft}
+          onRemove={removeDraftById}
+          onClear={clearAllDrafts}
+        />
         {/* Doubles as the window drag strip — keep it first so it owns the top
             band; the warning banner (if any) sits just below it. */}
         <ActiveSessionsBar
@@ -830,6 +1366,10 @@ function Layout({
           onClose={handleCloseRun}
           onNew={handleNewChat}
           getAppearance={getAppearance}
+          sections={sectionTabs}
+          activeView={view}
+          onSelectSection={(v) => goTo(v as View)}
+          onCloseSection={(v) => closeSection(v as View)}
         />
         {verifyWarning && onReinstall && onDismissVerifyWarning && (
           <VerifyWarningBanner
@@ -856,7 +1396,9 @@ function Layout({
                 initialMessages={run.seed}
                 initialSessionId={run.sessionId}
                 active={run.runId === activeRunId}
+                onScreen={view === "chat"}
                 profile={run.profile}
+                dictationPending={dictationPending}
                 onNewChat={handleNewChat}
                 onOpenDiagnose={(section?: string) =>
                   openSettings(section, { profile: run.profile })
@@ -927,9 +1469,9 @@ function Layout({
           </div>
         )}
 
-        {visitedViews.has("office") && (
-          <div style={paneStyle("office")}>
-            <Office profile={activeProfile} visible={view === "office"} />
+        {visitedViews.has("staff") && (
+          <div style={paneStyle("staff")}>
+            <Staff visible={view === "staff"} />
           </div>
         )}
 
@@ -955,10 +1497,18 @@ function Layout({
         {visitedViews.has("memory") && (
           <div style={paneStyle("memory")}>
             {remoteMode ? (
-              <RemoteNotice feature="Memory" />
+              // В гибриде показываем личный банк памяти с сервера, а не
+              // заглушку: путь до него построен, банк существует и наполняется.
+              <MemoryBank />
             ) : (
               <Memory profile={activeProfile} />
             )}
+          </div>
+        )}
+
+        {visitedViews.has("notes") && (
+          <div style={paneStyle("notes")}>
+            <Notes active={view === "notes"} onSendToTray={sendNoteToTray} />
           </div>
         )}
 

@@ -1,10 +1,5 @@
 import { app, ipcMain, type BrowserWindow } from "electron";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import type { AppUpdater } from "electron-updater";
 import { dirname, join } from "path";
 import { updaterLogger } from "../updater-log";
@@ -53,7 +48,15 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
   });
 
   const isPortableBuild = !!process.env.PORTABLE_EXECUTABLE_DIR;
-  if (!app.isPackaged || isPortableBuild) {
+  // electron-builder writes app-update.yml next to the app only when the
+  // build has a publish configuration. A locally packaged build (or an
+  // unpacked win-unpacked folder run directly) has none, so electron-updater
+  // would fail on its very first check and light up the sidebar with a red
+  // "update failed" button about an update channel that does not exist.
+  const hasUpdateFeed = existsSync(
+    join(process.resourcesPath || "", "app-update.yml"),
+  );
+  if (!app.isPackaged || isPortableBuild || !hasUpdateFeed) {
     autoUpdaterInstance = null;
     ipcMain.handle("check-for-updates", async () => null);
     ipcMain.handle("download-update", () => true);
@@ -85,8 +88,13 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
   autoUpdater.on("update-downloaded", () => {
     getMainWindow()?.webContents.send("update-downloaded");
   });
+  // Background checks run on a timer that the user never asked for, so their
+  // failures (offline, blocked by a corporate proxy, feed temporarily down)
+  // belong in the log, not in the UI. Errors from the explicit "download"
+  // action are still reported below — there the user is waiting for an
+  // answer and silence would be worse.
   autoUpdater.on("error", (err) => {
-    getMainWindow()?.webContents.send("update-error", err.message);
+    updaterLogger.warn(`update check failed: ${err.message}`);
   });
 
   ipcMain.handle("check-for-updates", async () => {
