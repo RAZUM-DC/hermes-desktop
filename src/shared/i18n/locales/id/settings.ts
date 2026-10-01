@@ -137,7 +137,7 @@ export default {
   autostart: {
     label: "Jalankan bersama Windows",
     hint: "Aplikasi berjalan saat Anda masuk dan menunggu di baki sistem.",
-    unsupported: "Autostart tidak tersedia di versi ini.",
+    unsupported: "Autostart hanya tersedia di aplikasi hasil build, bukan saat dijalankan dari sumber.",
     trayNote: "Sengaja dimulai terminimalkan: kalau tidak, jendela akan muncul setiap kali masuk. Dikte, tangkapan layar, dan notifikasi tugas tetap jalan dari baki.",
   },
 } as const;

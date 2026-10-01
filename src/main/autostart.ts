@@ -43,12 +43,17 @@ export function shouldStartHidden(argv: readonly string[]): boolean {
  * автозапуск в диспетчере задач Windows, и тогда наша галочка врала бы.
  */
 export function isAutostartEnabled(): boolean {
-  // В неупакованной сборке запись указывала бы на electron.exe из
-  // node_modules — после пересборки этот путь протухает и в автозагрузке
-  // остаётся мусор. Поэтому в разработке просто сообщаем «выключено».
+  // Речь только о запуске через `npm run dev`: там запись указывала бы на
+  // electron.exe из node_modules, этот путь протухает после первой же
+  // пересборки, и в автозагрузке у человека остаётся мусор. Любая собранная
+  // сборка — установленная, распакованная или портабл — считается упакованной
+  // и автозапуск поддерживает.
   if (!app.isPackaged) return false;
   try {
-    return app.getLoginItemSettings({ args: [HIDDEN_FLAG] }).openAtLogin;
+    return app.getLoginItemSettings({
+      path: autostartTargetPath(),
+      args: [HIDDEN_FLAG],
+    }).openAtLogin;
   } catch {
     // Linux без поддержки автозапуска в Electron — не повод падать.
     return false;
@@ -61,14 +66,28 @@ export function setAutostart(enabled: boolean): boolean {
     app.setLoginItemSettings({
       openAtLogin: enabled,
       // Путь задаём явно: без него Windows в некоторых случаях записывает в
-      // автозагрузку путь к процессу-обновлятору, а не к самому приложению.
-      path: process.execPath,
+      // автозагрузку путь к процессу-обновлятору, а не к самому приложению,
+      // а для портабл-сборки — путь во временную папку (см. выше).
+      path: autostartTargetPath(),
       args: [HIDDEN_FLAG],
     });
     return isAutostartEnabled();
   } catch {
     return false;
   }
+}
+
+/**
+ * Путь, который надо прописать в автозагрузку.
+ *
+ * Для портабл-сборки это не `process.execPath`. Портабл распаковывается во
+ * временную папку и запускается оттуда, поэтому execPath указывает внутрь
+ * %TEMP% — Windows её вычистит, и в автозагрузке останется запись в никуда.
+ * electron-builder кладёт настоящий путь к .exe в PORTABLE_EXECUTABLE_FILE,
+ * его и берём, когда он есть.
+ */
+export function autostartTargetPath(): string {
+  return process.env.PORTABLE_EXECUTABLE_FILE?.trim() || process.execPath;
 }
 
 /** Поддерживается ли автозапуск в этой сборке и на этой системе. */

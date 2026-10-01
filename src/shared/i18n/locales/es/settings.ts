@@ -141,7 +141,7 @@ export default {
   autostart: {
     label: "Iniciar con Windows",
     hint: "La aplicación se inicia al entrar y espera en la bandeja.",
-    unsupported: "El inicio automático no está disponible en esta versión.",
+    unsupported: "El inicio automático solo está disponible en una app compilada, no al ejecutar desde el código.",
     trayNote: "Se inicia minimizada a propósito: de lo contrario la ventana aparecería en cada inicio de sesión. El dictado, las capturas y los avisos de tareas funcionan desde la bandeja.",
   },
 } as const;
