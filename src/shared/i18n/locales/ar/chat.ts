@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "الأخيرة",
+  recentFoldersEmpty: "لا توجد مجلدات حديثة",
+  openFolderAction: "فتح مجلد…",
+  showWebPreview: "إظهار معاينة الويب",
+  hideWebPreview: "إخفاء معاينة الويب",
+  folderOutsideRoots:
+    "هذا المجلد خارج المستندات والتنزيلات وسطح المكتب — لا يمكن للمساعد رؤيته.",
   title: "محادثة جديدة",
   sessionTitle: "الجلسة {{id}}",
   noModel: "لم يتم تعيين نموذج",
   auto: "تلقائي",
   commandsTitle: "الأوامر",
   typeMessage: "اسأل أي شيء",
+  dictationPending: "جارٍ تفريغ ما أمليته…",
   quickAskTitle: "سؤال سريع (/btw) — سؤال جانبي لا يؤثر على سياق المحادثة",
   send: "إرسال",
   searchModels: "البحث في النماذج...",

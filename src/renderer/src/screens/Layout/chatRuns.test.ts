@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  shouldPersistAutoTitle,
   isScratchRun,
   mintRun,
   openSessionRunTransition,
@@ -126,5 +127,22 @@ describe("chat run profile transitions", () => {
 
     expect(next.activeRunId).toBe("run-saved");
     expect(next.runs).toEqual([active, saved]);
+  });
+});
+
+describe("shouldPersistAutoTitle", () => {
+  it("даёт назвать новый диалог", () => {
+    expect(shouldPersistAutoTitle({ fromHistory: undefined }, "Привет")).toBe(
+      true,
+    );
+  });
+
+  it("не трогает диалог, открытый из истории", () => {
+    // Там уже есть название — возможно, заданное человеком вручную.
+    expect(shouldPersistAutoTitle({ fromHistory: true }, "Привет")).toBe(false);
+  });
+
+  it("не пишет пустое название", () => {
+    expect(shouldPersistAutoTitle(undefined, "   ")).toBe(false);
   });
 });

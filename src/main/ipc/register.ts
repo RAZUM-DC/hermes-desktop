@@ -20,6 +20,7 @@ import type {
 } from "../../shared/session-continuation";
 import { stageAttachment, clearStagedAttachments } from "../attachment-staging";
 import { persistPromptImageAttachments } from "../session-attachment-store";
+import { markAutoTitled, wasAutoTitled } from "../auto-title-store";
 import {
   discoverProviderModels,
   getModelContextWindow,
@@ -84,6 +85,19 @@ import {
   detectDeviceCode,
 } from "../hermes-auth";
 import { writeReenrollFlag } from "../companion";
+import { listMemoryFacts } from "../memory-bank";
+import {
+  attachBytes,
+  attachFiles,
+  attachmentBytes,
+  attachmentDataUrl,
+  attachmentPath,
+  deleteNote,
+  listNotes,
+  removeAttachment,
+  saveNote,
+} from "../notes-store";
+import type { NoteInput } from "../notes-store";
 import {
   isRemoteMode,
   isRemoteOnlyMode,
@@ -103,6 +117,8 @@ import {
   resolvePendingClarify,
   resolvePendingApproval,
 } from "../hermes";
+import { captureRegion, captureScreen, ScreenshotError } from "../screenshot";
+import type { ScreenshotResponse } from "../../shared/screenshot";
 import {
   cancelLocalRecording,
   isVoiceSidecarAvailable,
@@ -1199,6 +1215,45 @@ export function registerIpcHandlers(context: IpcContext): void {
     cancelLocalRecording();
   });
 
+  // Скриншот экрана для кнопки в поле ввода: окно убирается с экрана, кадр
+  // снимается, окно возвращается. getMainWindow() вызывается здесь, а не
+  // берётся из замыкания: на момент регистрации обработчиков окна может ещё
+  // не быть. Ошибка возвращается значением, а не исключением — через IPC
+  // исключение приезжает в рендерер строкой, по которой уже не понять,
+  // отказала система в захвате экрана или что-то сломалось у нас.
+  // Same capture, but the user drags a rectangle over the frozen frame first.
+  ipcMain.handle(
+    "take-screenshot-region",
+    async (): Promise<ScreenshotResponse> => {
+      try {
+        const shot = await captureRegion(getMainWindow());
+        if (!shot) return { ok: false, reason: "cancelled", detail: "" };
+        return { ok: true, ...shot };
+      } catch (e) {
+        console.error("[screenshot] region capture failed:", e);
+        return {
+          ok: false,
+          reason: e instanceof ScreenshotError ? e.reason : "error",
+          detail: e instanceof Error ? e.message : String(e),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle("take-screenshot", async (): Promise<ScreenshotResponse> => {
+    try {
+      const shot = await captureScreen(getMainWindow());
+      return { ok: true, ...shot };
+    } catch (e) {
+      console.error("[screenshot] capture failed:", e);
+      return {
+        ok: false,
+        reason: e instanceof ScreenshotError ? e.reason : "error",
+        detail: e instanceof Error ? e.message : String(e),
+      };
+    }
+  });
+
   ipcMain.handle(
     "send-message",
     async (
@@ -1845,6 +1900,27 @@ export function registerIpcHandlers(context: IpcContext): void {
     },
   );
 
+  // Images that went out with a prompt. The legacy chat path persists these
+  // itself when a turn finishes; the dashboard transport talks to the gateway
+  // straight from the renderer, so it calls this instead — without it, remote
+  // mode stores nothing and every picture disappears on restart.
+  ipcMain.handle(
+    "persist-prompt-attachments",
+    (
+      _event,
+      sessionId: string,
+      promptText: string,
+      attachments?: Attachment[],
+    ) => {
+      try {
+        persistPromptImageAttachments(sessionId, promptText, attachments);
+      } catch (err) {
+        console.warn("[sessions] Failed to persist prompt attachments:", err);
+      }
+      return true;
+    },
+  );
+
   ipcMain.handle(
     "record-session-continuation",
     (_event, sessionId: string, items: DesktopSessionContinuationItem[]) => {
@@ -2239,23 +2315,34 @@ export function registerIpcHandlers(context: IpcContext): void {
       title: string,
       _connectionId?: string,
       profile?: string,
+      auto?: boolean,
     ) => {
       const conn = getConnectionConfig();
       const scopedProfile = activeSessionProfile(profile);
+      // Автозаголовок даётся диалогу один раз за всю его жизнь. Признак лежит
+      // в десктопной базе, а не в памяти: раньше он обнулялся при перезапуске,
+      // и приложение переписывало первым сообщением имя, заданное вручную.
+      if (auto) {
+        if (wasAutoTitled(sessionId)) return;
+        markAutoTitled(sessionId);
+      }
+      const source = auto ? "auto" : "user";
       if (conn.mode === "remote")
         return remoteUpdateSessionTitle(
           scopedRemoteSessionConfig(conn, scopedProfile),
           sessionId,
           title,
+          source,
         );
       if (conn.mode === "ssh" && conn.ssh)
         return withSshDashboardSessions(
           conn,
-          (config) => remoteUpdateSessionTitle(config, sessionId, title),
+          (config) =>
+            remoteUpdateSessionTitle(config, sessionId, title, source),
           undefined,
           scopedProfile,
         );
-      return updateSessionTitle(sessionId, title, scopedProfile);
+      return updateSessionTitle(sessionId, title, scopedProfile, auto);
     },
   );
 
@@ -2581,6 +2668,85 @@ export function registerIpcHandlers(context: IpcContext): void {
     (_event, input: CreateTaskInput, profile?: string) =>
       kanbanCreateTask(input, profile),
   );
+  // Корни, внутри которых агент вообще способен увидеть файлы: tool-connector
+  // запускается ровно с этими тремя и других не знает. Держим их здесь, а не
+  // в рендерере, чтобы список брался из тех же системных путей, что и у
+  // companion, и не разъезжался с ним при локализованных именах папок
+  // («Документы», «Рабочий стол»).
+  // Личный банк памяти — только чтение. Запись и удаление запрещены на
+  // сервере (флагом и маршрутом соответственно), см. memory-bank.ts.
+  ipcMain.handle(
+    "memory-bank-list",
+    (_event, limit?: number, offset?: number) =>
+      listMemoryFacts(
+        typeof limit === "number" ? limit : undefined,
+        typeof offset === "number" ? offset : undefined,
+      ),
+  );
+  // Заметки. Лежат файлом в userData, а не в базе: в гибриде базы нет
+  // вовсе, см. notes-store.ts.
+  ipcMain.handle("notes-list", () => listNotes());
+  ipcMain.handle("notes-save", (_event, input: NoteInput) => saveNote(input));
+  ipcMain.handle("notes-delete", (_event, id: string) => deleteNote(id));
+  ipcMain.handle("notes-attach", async (event, noteId: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const options: Electron.OpenDialogOptions = {
+      // Несколько файлов за раз: человек, прикладывающий снимки к заметке,
+      // почти никогда не прикладывает ровно один.
+      properties: ["openFile", "multiSelections"],
+    };
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return attachFiles(noteId, result.filePaths);
+  });
+  ipcMain.handle(
+    "notes-attach-data",
+    (_event, noteId: string, name: string, bytes: Uint8Array) =>
+      attachBytes(noteId, name, bytes),
+  );
+  ipcMain.handle(
+    "notes-attachment-remove",
+    (_event, noteId: string, attachmentId: string) =>
+      removeAttachment(noteId, attachmentId),
+  );
+  ipcMain.handle(
+    "notes-attachment-bytes",
+    (_event, noteId: string, attachmentId: string) =>
+      attachmentBytes(noteId, attachmentId),
+  );
+  ipcMain.handle(
+    "notes-attachment-data",
+    (_event, noteId: string, attachmentId: string) =>
+      attachmentDataUrl(noteId, attachmentId),
+  );
+  // Открываем вложение тем, чем его открыла бы система. Своего просмотрщика
+  // здесь нет намеренно: писать его ради pdf и docx означало бы сделать хуже
+  // того, что у человека уже установлено.
+  ipcMain.handle(
+    "notes-attachment-open",
+    async (_event, noteId: string, attachmentId: string) => {
+      const path = attachmentPath(noteId, attachmentId);
+      if (!path) return false;
+      const problem = await shell.openPath(path);
+      return problem === "";
+    },
+  );
+
+  ipcMain.handle("local-tool-roots", (): string[] => {
+    const roots: string[] = [];
+    for (const name of ["documents", "downloads", "desktop"] as const) {
+      try {
+        const p = app.getPath(name);
+        if (p) roots.push(p);
+      } catch {
+        /* на некоторых системах часть путей не определена — не беда */
+      }
+    }
+    return roots;
+  });
+
   ipcMain.handle("select-folder", async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = win

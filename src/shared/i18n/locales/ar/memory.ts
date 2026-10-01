@@ -1,7 +1,21 @@
 export default {
+  bankReadOnly:
+    "Facts can't be added or deleted from the app — the server has it switched off. The assistant fills memory on its own as you talk.",
+  bankSubtitle: "What the assistant remembers about you between conversations.",
+  bankAddLabel: "Add a fact",
+  bankAddPlaceholder:
+    "For example: reports always in docx; Oleg K. is Konovalov",
+  bankAddAction: "Remember",
+  bankAddHint: "Ctrl+Enter to save",
+  bankEmpty: "Nothing remembered yet.",
+  bankCount: "Facts: {{count}}",
+  bankNoDelete:
+    "Facts can't be deleted from the app — the server forbids it. Ask an administrator.",
+  bankForbidden: "The server refused this operation.",
+  bankUnauthorized: "Could not confirm access to memory.",
+  bankUnavailable: "Memory is unavailable right now.",
   title: "الذاكرة",
-  subtitle:
-    "ما يتذكره Hermes عنك وعن بيئتك عبر الجلسات.",
+  subtitle: "ما يتذكره Hermes عنك وعن بيئتك عبر الجلسات.",
   sessions: "الجلسات",
   messages: "الرسائل",
   memories: "الذكريات",
@@ -45,8 +59,7 @@ export default {
   activating: "جارٍ التنشيط...",
   activate: "تنشيط",
   providers: {
-    honcho:
-      "نمذجة مستخدم ذكية عبر الجلسات مع أسئلة وأجوبة جدلية وبحث دلالي",
+    honcho: "نمذجة مستخدم ذكية عبر الجلسات مع أسئلة وأجوبة جدلية وبحث دلالي",
     hindsight:
       "ذاكرة طويلة المدى مع رسم بياني معرفي واسترجاع متعدد الاستراتيجيات",
     mem0: "استخراج حقائق LLM من جهة الخادم مع بحث دلالي وإلغاء تكرار تلقائي",
@@ -55,8 +68,7 @@ export default {
       "ذاكرة دلالية طويلة المدى مع استدعاء الملف الشخصي واستخراج الكيانات",
     holographic:
       "مخزن حقائق SQLite محلي مع بحث FTS5 وتقييم ثقة (لا يحتاج مفتاح API)",
-    openviking:
-      "ذاكرة مدارة بالجلسات مع استرجاع متدرج وتصفح المعرفة",
+    openviking: "ذاكرة مدارة بالجلسات مع استرجاع متدرج وتصفح المعرفة",
     byterover: "شجرة معرفة دائمة مع استرجاع متدرج عبر CLI brv",
   },
 } as const;

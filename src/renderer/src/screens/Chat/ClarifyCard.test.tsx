@@ -70,6 +70,35 @@ describe("ClarifyCard", () => {
     );
   });
 
+  it("sends on Enter and leaves Shift+Enter for a line break", async () => {
+    const respondClarify = stubRespond();
+    render(<ClarifyCard msg={baseMsg()} onResolved={vi.fn()} />);
+
+    const textarea = screen.getByPlaceholderText(
+      "chat.clarify.placeholder",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "use staging" } });
+
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+    expect(respondClarify).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(respondClarify).toHaveBeenCalledWith("r1", "use staging");
+  });
+
+  it("still sends on the old Ctrl+Enter", async () => {
+    const respondClarify = stubRespond();
+    render(<ClarifyCard msg={baseMsg()} onResolved={vi.fn()} />);
+
+    const textarea = screen.getByPlaceholderText(
+      "chat.clarify.placeholder",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "production" } });
+    fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+
+    expect(respondClarify).toHaveBeenCalledWith("r1", "production");
+  });
+
   it("skip sends an empty answer (autonomous proceed)", async () => {
     const respondClarify = stubRespond();
     const onResolved = vi.fn();
@@ -160,9 +189,8 @@ describe("ClarifyCard", () => {
 
 describe("ClarifyCard dashboard routing", () => {
   it("submits a gateway choice through the supplied transport instead of IPC", async () => {
-    const { applyDashboardStreamEvent } = await import(
-      "./dashboardEventAdapter"
-    );
+    const { applyDashboardStreamEvent } =
+      await import("./dashboardEventAdapter");
     const state = applyDashboardStreamEvent(
       { messages: [], reasoningSegmentClosed: false },
       {

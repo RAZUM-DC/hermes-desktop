@@ -14,6 +14,7 @@ import {
 } from "./sessions";
 import type { Attachment } from "../shared/attachments";
 import { isImageMime, MAX_IMAGE_BYTES } from "../shared/attachments";
+import { isTransientUpstream, retryWhileNotReady } from "./transient-upstream";
 
 export interface RemoteSessionConfig {
   remoteUrl: string;
@@ -269,14 +270,33 @@ async function remoteSessionListPage(
     `/api/profiles/sessions?limit=${limit}&offset=${offset}` +
     `&min_messages=0&archived=exclude&order=recent&profile=${encodeURIComponent(profile)}`;
 
-  try {
-    return await remoteRequestJson(config, profileEndpoint);
-  } catch {
-    return remoteRequestJson(
-      config,
-      `/api/sessions?limit=${limit}&offset=${offset}&archived=exclude&order=recent`,
-    );
-  }
+  const fallbackEndpoint =
+    `/api/sessions?limit=${limit}&offset=${offset}` +
+    `&archived=exclude&order=recent`;
+
+  // Повтор снаружи обоих запросов, а не внутри каждого: причина отказа у них
+  // общая (не готов транспорт), и перебирать её дважды подряд значило бы
+  // удвоить ожидание на ровном месте.
+  //
+  // Запасной маршрут при этом пробуется ВСЕГДА, какой бы ни была ошибка
+  // основного. Заманчиво было пропускать его при временном отказе — мол, он
+  // уткнётся в то же самое, — но это ломает саму причину, по которой он здесь
+  // появился: /api/profiles/sessions есть не у каждого дашборда, и отвечать
+  // он может чем угодно, в том числе и 503. Пропустив запасной, мы бы
+  // навсегда потеряли список там, где он прекрасно отдаётся.
+  return retryWhileNotReady(async () => {
+    try {
+      return await remoteRequestJson(config, profileEndpoint);
+    } catch (primaryError) {
+      try {
+        return await remoteRequestJson(config, fallbackEndpoint);
+      } catch (fallbackError) {
+        // Решение о повторе принимаем по ошибке запасного: он последний, и
+        // именно его вердикт говорит, есть ли смысл ждать ещё.
+        throw isTransientUpstream(fallbackError) ? fallbackError : primaryError;
+      }
+    }
+  });
 }
 
 export async function remoteListSessions(
@@ -549,13 +569,20 @@ export async function remoteUpdateSessionTitle(
   config: RemoteSessionConfig,
   sessionId: string,
   title: string,
+  /**
+   * Кто задал название. Локальный путь проставляет в базе `title_source`,
+   * чтобы серверная автогенерация не переписывала ручное имя; через API до
+   * сих пор уходило одно название, и отличить ручное от автоматического на
+   * той стороне было нечем.
+   */
+  source: "user" | "auto" = "user",
 ): Promise<void> {
   await remoteRequestJson(
     config,
     `/api/sessions/${encodeURIComponent(sessionId)}`,
     {
       method: "PATCH",
-      body: { title },
+      body: { title, title_source: source },
     },
   );
 }

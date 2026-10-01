@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "Son kullanılanlar",
+  recentFoldersEmpty: "Son klasör yok",
+  openFolderAction: "Klasör aç…",
+  showWebPreview: "Web önizlemesini göster",
+  hideWebPreview: "Web önizlemesini gizle",
+  folderOutsideRoots:
+    "Bu klasör Belgeler, İndirilenler ve Masaüstü dışında — asistan onu göremez.",
   title: "Yeni Sohbet",
   sessionTitle: "Oturum {{id}}",
   noModel: "Model ayarlanmamış",
   auto: "Otomatik",
   commandsTitle: "Komutlar",
   typeMessage: "Bir mesaj yaz... (Shift+Enter yeni satır)",
+  dictationPending: "Dikte ettiğiniz metin çözümleniyor…",
   quickAskTitle: "Hızlı Sor (/btw) — sohbet bağlamını etkilemeyen yan soru",
   send: "Gönder",
   custom: "Özel",

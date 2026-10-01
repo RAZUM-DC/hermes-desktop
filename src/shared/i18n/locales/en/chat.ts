@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "Recent",
+  recentFoldersEmpty: "No recent folders",
+  openFolderAction: "Open folder…",
+  showWebPreview: "Show web preview",
+  hideWebPreview: "Hide web preview",
+  folderOutsideRoots:
+    "This folder is outside Documents, Downloads and Desktop — the assistant can't see it.",
   title: "New Chat",
   sessionTitle: "Session {{id}}",
   noModel: "No model set",
   auto: "Auto",
   commandsTitle: "Commands",
   typeMessage: "Ask anything",
+  dictationPending: "Transcribing your dictation…",
   quickAskTitle:
     "Quick Ask (/btw) — side question that won't affect conversation context",
   send: "Send",
@@ -75,9 +83,19 @@ export default {
   contextFolderActive: "Context folder: {{path}}",
   removeContextFolder: "Remove context folder",
   attach: "Attach files",
+  screenshotRegion: "Select an area",
+  screenshotFullScreen: "Whole screen",
+  screenshotOptions: "Screenshot options",
+  screenshot: "Screenshot",
+  screenshotHiding: "Capturing the screen…",
+  screenshotBlocked:
+    "Could not capture the screen: the system refused to give this app the screen contents. That is usually an antivirus or a corporate security policy. Ask your administrator to allow this app to take screenshots.",
+  screenshotFailed: "Could not capture the screen. {{detail}}",
   voiceInput: "Voice input",
   voiceStop: "Stop recording",
   voiceTranscribing: "Transcribing…",
+  dictationListening: "Listening…",
+  dictationHint: "Release the keys to insert the text",
   voiceBlocked:
     "Could not open the microphone: the system refused to hand the recording device to this app. That is usually an antivirus or a corporate security policy — Kaspersky's Host Intrusion Prevention, for one. Ask your administrator to allow this app access to sound recording devices.",
   voiceDenied:
@@ -89,6 +107,22 @@ export default {
   contextUsed: "{{pct}}% used ({{left}}% left)",
   contextTokens: "{{used}} / {{total}} tokens used",
   contextCache: "Cache: {{pct}}% hit ({{read}} read / {{write}} write)",
+  dictationWaiting: "Recorded",
+  dictationWaitingHint:
+    "The text will appear in the app once it is transcribed",
+  drafts: {
+    title: "Waiting",
+    screenshot: "Screenshot",
+    insert: "Insert",
+    remove: "Delete draft",
+    clearAll: "Discard everything waiting",
+    open: "Open",
+    recognizing: "Transcribing…",
+    nothingHeard: "Nothing was recognised",
+    hint: "{{hotkey}} inserts the newest one into the open conversation",
+    insertFailed: "The conversation did not accept this draft.",
+    insertNoChat: "Open a chat or Notes to insert this.",
+  },
   removeAttachment: "Remove attachment",
   dropToAttach: "Drop files to attach",
   dashboardUnavailableFallback:
@@ -125,6 +159,7 @@ export default {
   noUsageData: "No usage data yet. Send a message first.",
   showEarlierMessages: "Show {{count}} earlier messages",
   media: {
+    close: "Close",
     open: "Open",
     saveAs: "Save as…",
     saveImage: "Save image",

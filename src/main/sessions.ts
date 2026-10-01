@@ -6,11 +6,15 @@ import { removeSessionFromCache } from "./session-cache";
 import { getDbConnection, sessionVisibilityPredicate } from "./db";
 import {
   attachmentFromLocalVisionImagePath,
+  deletePromptAttachmentsForSession,
   deletePromptImageAttachmentsForSession,
   extractLeadingVisionImageFallback,
+  loadPromptAttachmentsBySession,
   loadPromptImageAttachments,
+  promptAttachmentKey,
   stripTrailingImagePlaceholders,
 } from "./session-attachment-store";
+import { getDesktopDb } from "./desktop-db";
 import {
   deleteSessionContinuationForSession,
   loadSessionContinuationItems,
@@ -676,6 +680,35 @@ export function mergeStoredPromptImageAttachments(
   });
 }
 
+/**
+ * Put back the images stored against a prompt's text.
+ *
+ * Keyed by text rather than by the agent's message id because the id only
+ * exists when the agent's database is on this machine; the text is all the
+ * desktop has in remote mode. Repeated prompts are told apart by counting
+ * occurrences in transcript order, which is the same order they were sent in.
+ */
+export function mergePromptImageAttachments(
+  items: HistoryItem[],
+  byPrompt: Map<string, Attachment[][]>,
+): HistoryItem[] {
+  if (byPrompt.size === 0) return items;
+  const seen = new Map<string, number>();
+
+  return items.map((item) => {
+    if (item.kind !== "user") return item;
+    const key = promptAttachmentKey(item.content || "");
+    const occurrence = seen.get(key) ?? 0;
+    seen.set(key, occurrence + 1);
+
+    // Anything the transcript already carries wins — it is the live copy.
+    if (item.attachments && item.attachments.length > 0) return item;
+    const stored = byPrompt.get(key)?.[occurrence];
+    if (!stored || stored.length === 0) return item;
+    return { ...item, attachments: stored };
+  });
+}
+
 export function getSessionMessages(
   sessionId: string,
   profile?: unknown,
@@ -695,30 +728,55 @@ export function getSessionMessages(
     .all(sessionId) as RawMessageRow[];
 
   const items = expandRowsToHistory(rows);
-  const canonical = mergeStoredPromptImageAttachments(
-    items,
-    loadPromptImageAttachments(db, sessionId),
-  );
-  return applySessionLocalOverlays(sessionId, canonical, db, profile);
+  return applySessionLocalOverlays(sessionId, items, db, profile);
 }
 
+/**
+ * Re-apply everything the desktop keeps next to a conversation: the images
+ * sent with a prompt, the local copy of the transcript, and errors from sends
+ * that never reached the agent.
+ *
+ * All of it lives in the desktop's own database, which exists in every
+ * connection mode. The agent's state.db is consulted too, but only as a
+ * fallback for rows written before that store moved — and it is simply absent
+ * in remote mode, which is exactly why this used to be a no-op there.
+ */
 export function applySessionLocalOverlays(
   sessionId: string,
   items: HistoryItem[],
   existingDb?: Database.Database | null,
   profile?: unknown,
 ): HistoryItem[] {
-  const db = existingDb ?? getDb(true, profile);
-  if (!db) return items;
-  const canonical = mergeStoredPromptImageAttachments(
+  const desktopDb = getDesktopDb();
+  const legacyDb = existingDb ?? getDb(true, profile);
+
+  let merged = mergePromptImageAttachments(
     items,
-    loadPromptImageAttachments(db, sessionId),
+    loadPromptAttachmentsBySession(sessionId),
   );
-  const withLocalErrors = mergeSessionLocalErrors(
-    canonical,
-    loadSessionLocalErrors(db, sessionId),
+  // Runs even with nothing stored: this is also what strips the `[screenshot]`
+  // marker the agent leaves in the text where the picture used to be.
+  merged = mergeStoredPromptImageAttachments(
+    merged,
+    legacyDb ? loadPromptImageAttachments(legacyDb, sessionId) : new Map(),
   );
-  return [...loadSessionContinuationItems(db, sessionId), ...withLocalErrors];
+
+  const errorDb = desktopDb ?? legacyDb;
+  const withLocalErrors = errorDb
+    ? mergeSessionLocalErrors(
+        merged,
+        loadSessionLocalErrors(errorDb, sessionId),
+      )
+    : merged;
+
+  let continuation = desktopDb
+    ? loadSessionContinuationItems(desktopDb, sessionId)
+    : [];
+  if (continuation.length === 0 && legacyDb) {
+    continuation = loadSessionContinuationItems(legacyDb, sessionId);
+  }
+
+  return [...continuation, ...withLocalErrors];
 }
 
 export interface DeleteSessionsResult {
@@ -759,6 +817,8 @@ function hasParentSessionColumn(db: Database.Database): boolean {
 
 function deleteSessionRows(db: Database.Database, sessionId: string): number {
   deletePromptImageAttachmentsForSession(db, sessionId);
+  // Same rows in the desktop's own database, which is where new ones go.
+  deletePromptAttachmentsForSession(sessionId);
   deleteSessionContinuationForSession(db, sessionId);
   // Unlink any child sessions first. better-sqlite3 enables
   // PRAGMA foreign_keys=ON by default, so deleting a parent while a child

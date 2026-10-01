@@ -244,6 +244,12 @@ export function updateSessionTitle(
   sessionId: string,
   title: string,
   profile?: unknown,
+  /**
+   * Название придумало приложение, а не человек. Такое имя ставится только
+   * диалогу, у которого названия ещё нет: иначе автоматика перебивала бы
+   * ручное переименование.
+   */
+  auto = false,
 ): void {
   const locale = getAppLocale();
   const normalized = normalizeSessionTitle(title);
@@ -270,6 +276,13 @@ export function updateSessionTitle(
     throw new Error(t("sessions.renameUnavailable", locale));
   }
 
+  if (auto) {
+    const existing = db
+      .prepare("SELECT title FROM sessions WHERE id = ?")
+      .get(sessionId) as { title: string | null } | undefined;
+    if (existing?.title && existing.title.trim()) return;
+  }
+
   // Match Hermes SessionDB.set_session_title: reject conflicts before write so
   // we never partially update the JSON cache on a UNIQUE constraint failure.
   const conflict = db
@@ -287,7 +300,7 @@ export function updateSessionTitle(
       name: string;
     }>;
     const titleSource = columns.some((column) => column.name === "title_source")
-      ? ", title_source = 'user'"
+      ? `, title_source = '${auto ? "auto" : "user"}'`
       : "";
     changes = db
       .prepare(`UPDATE sessions SET title = ?${titleSource} WHERE id = ?`)

@@ -27,12 +27,15 @@ import { registerIpcHandlers } from "../ipc/register";
 import { setGatewayPromptParent } from "../gatewayPrompt";
 import { showChatContextMenu } from "./context-menu";
 import { buildMenu } from "./menu";
+import { attachWindowHotkeys } from "./window-hotkeys";
 import { setupUpdater } from "./updater";
 import { startCompanion, stopCompanion } from "../companion";
-import { warmVoiceSidecar } from "../voice-sidecar";
+import { warmVoiceDaemon, stopVoiceDaemon } from "../voice-sidecar";
+import { destroyVoiceDictation, setupVoiceDictation } from "./voice-overlay";
 import { startStaffWatcher, stopStaffWatcher } from "../staff-watcher";
 
-const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "РАЗУМ Ассистент";
+const APP_NAME =
+  process.env.HERMES_DESKTOP_APP_NAME?.trim() || "РАЗУМ Ассистент";
 const OPEN_DEVTOOLS_ON_START =
   process.env.HERMES_OPEN_DEVTOOLS === "1" ||
   process.env.HERMES_DESKTOP_OPEN_DEVTOOLS === "1";
@@ -94,9 +97,11 @@ export function startMainProcess(): void {
     // Передаём доступ к mainWindow, чтобы in-app OAuth-окно открывалось как
     // дочернее (parent) при state=enrolling.
     startCompanion(() => mainWindow);
-    // Прогрев кэша локальной Whisper-модели для офлайн-распознавания речи
-    // (кнопка микрофона) — best-effort, не блокирует запуск приложения.
-    warmVoiceSidecar();
+    // Резидентный сайдкар распознавания речи: модель грузится один раз здесь,
+    // а не при каждой записи. Для кнопки в чате это просто приятно, для
+    // диктовки по горячей клавише — обязательно: там ожидание пришлось бы на
+    // момент, когда человек уже договорил. Best-effort, старт не блокирует.
+    warmVoiceDaemon();
 
     app.on("browser-window-created", (_, window) => {
       optimizer.watchWindowShortcuts(window);
@@ -142,6 +147,10 @@ export function startMainProcess(): void {
     // Фоновые уведомления по доске «ИИ-сотрудники» (Фаза B).
     startStaffWatcher(() => mainWindow);
     registerQuickCallShortcut();
+    setupVoiceDictation({
+      showMainWindow,
+      getMainWindow: () => mainWindow,
+    });
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -158,6 +167,8 @@ export function startMainProcess(): void {
     tray?.destroy();
     tray = null;
     stopCompanion();
+    stopVoiceDaemon();
+    destroyVoiceDictation();
     stopStaffWatcher();
     stopHealthPolling();
     for (const abort of activeRuns.values()) abort();
@@ -251,7 +262,11 @@ function createWindow(): void {
     ...(process.platform === "darwin"
       ? { trafficLightPosition: { x: 16, y: 16 } }
       : {}),
-    ...(process.platform === "linux" ? { icon } : {}),
+    // Явная иконка окна для всех платформ, кроме macOS (там её даёт бандл).
+    // На Windows панель задач обычно берёт иконку из ресурсов самого .exe, но
+    // прошить их может только rcedit под Windows/wine — на Linux-сборщике этот
+    // шаг отключён, и без явной иконки окно получает логотип Electron.
+    ...(process.platform === "darwin" ? {} : { icon }),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       nodeIntegration: false,
@@ -262,6 +277,8 @@ function createWindow(): void {
       webviewTag: true,
     },
   });
+
+  attachWindowHotkeys(mainWindow);
 
   mainWindow.on("ready-to-show", () => mainWindow?.show());
   // Свернуть в трей вместо выхода: окно живёт в трее, quick-call хоткей
@@ -282,7 +299,11 @@ function createWindow(): void {
   setGatewayPromptParent(() => mainWindow);
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
-    console.error("[CRASH] Renderer process gone:", details.reason, details.exitCode);
+    console.error(
+      "[CRASH] Renderer process gone:",
+      details.reason,
+      details.exitCode,
+    );
   });
   mainWindow.webContents.on("console-message", (details) => {
     // Electron ≥35 passes a single event object (level is now a string);
@@ -294,27 +315,40 @@ function createWindow(): void {
       );
     }
   });
-  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
-    console.error("[LOAD FAIL]", errorCode, errorDescription);
-  });
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription) => {
+      console.error("[LOAD FAIL]", errorCode, errorDescription);
+    },
+  );
   mainWindow.webContents.setWindowOpenHandler((details) => {
     openExternalUrl(details.url);
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (isAllowedAppNavigationUrl(url, rendererHtmlPath, is.dev ? process.env["ELECTRON_RENDERER_URL"] : undefined)) return;
+    if (
+      isAllowedAppNavigationUrl(
+        url,
+        rendererHtmlPath,
+        is.dev ? process.env["ELECTRON_RENDERER_URL"] : undefined,
+      )
+    )
+      return;
     event.preventDefault();
     openExternalUrl(url);
   });
-  mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
-    const isWebPreview = params.partition === "web-preview";
-    if (!isAllowedWebviewUrl(params.src, isWebPreview)) {
-      event.preventDefault();
-      console.warn("[SECURITY] Blocked webview attachment for untrusted URL");
-      return;
-    }
-    hardenWebviewPreferences(webPreferences);
-  });
+  mainWindow.webContents.on(
+    "will-attach-webview",
+    (event, webPreferences, params) => {
+      const isWebPreview = params.partition === "web-preview";
+      if (!isAllowedWebviewUrl(params.src, isWebPreview)) {
+        event.preventDefault();
+        console.warn("[SECURITY] Blocked webview attachment for untrusted URL");
+        return;
+      }
+      hardenWebviewPreferences(webPreferences);
+    },
+  );
   mainWindow.webContents.on("context-menu", (_event, params) => {
     showChatContextMenu(mainWindow, params);
   });

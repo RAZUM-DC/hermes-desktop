@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "Recientes",
+  recentFoldersEmpty: "Sin carpetas recientes",
+  openFolderAction: "Abrir carpeta…",
+  showWebPreview: "Mostrar vista web",
+  hideWebPreview: "Ocultar vista web",
+  folderOutsideRoots:
+    "Esta carpeta está fuera de Documentos, Descargas y Escritorio: el asistente no puede verla.",
   title: "Nuevo chat",
   sessionTitle: "Sesión {{id}}",
   noModel: "No hay un modelo configurado",
   auto: "Automático",
   commandsTitle: "Comandos",
   typeMessage: "Escribe un mensaje... (Mayús+Enter para una nueva línea)",
+  dictationPending: "Transcribiendo tu dictado…",
   quickAskTitle:
     "Pregunta rápida (/btw) — una pregunta secundaria que no afectará el contexto de la conversación",
   send: "Enviar",

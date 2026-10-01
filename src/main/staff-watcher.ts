@@ -75,10 +75,9 @@ async function tick(): Promise<void> {
 
   const sres = await listStaffAgents();
   if (!sres.success || !sres.data) return;
-  const agents =
-    ((sres.data as { agents?: StaffAgent[] }).agents || []).filter(
-      (a) => a && a.runtime_id,
-    );
+  const agents = ((sres.data as { agents?: StaffAgent[] }).agents || []).filter(
+    (a) => a && a.runtime_id,
+  );
 
   for (const agent of agents) {
     const br = await agentKanbanRequest(
@@ -88,7 +87,7 @@ async function tick(): Promise<void> {
     );
     if (!br.success || !br.data) continue;
     const cols =
-      ((br.data as { columns?: { tasks?: StaffTask[] }[] }).columns || []);
+      (br.data as { columns?: { tasks?: StaffTask[] }[] }).columns || [];
     const tasks = cols.flatMap((c) => c.tasks || []);
     for (const t of tasks) {
       if (!t || !t.id) continue;

@@ -3,6 +3,7 @@ import { isBubbleMessage, markActiveTurnFailed } from "../chatMessages";
 import type { ActiveTurn, ChatMessage, UsageState } from "../types";
 import {
   dbItemsToChatMessages,
+  countUserAttachments,
   reconcileAfterDbRefresh,
   type DbHistoryItem,
 } from "../sessionHistory";
@@ -104,9 +105,22 @@ export function useChatIPC({
         }
         const dbMessages = dbItemsToChatMessages(items);
         if (dbMessages.length === 0) return;
-        setMessages((prev) =>
-          reconcileAfterDbRefresh(prev, dbMessages, { activeTurn }),
-        );
+        setMessages((prev) => {
+          const next = reconcileAfterDbRefresh(prev, dbMessages, {
+            activeTurn,
+          });
+          const before = countUserAttachments(prev);
+          const after = countUserAttachments(next);
+          if (before !== after) {
+            console.warn(
+              "[ATT] db refresh changed attachments:",
+              before,
+              "->",
+              after,
+            );
+          }
+          return next;
+        });
       } catch {
         // Mid-stream DB refresh is opportunistic; final refresh still runs.
       } finally {
@@ -221,9 +235,22 @@ export function useChatIPC({
           )) as DbHistoryItem[];
           const dbMessages = dbItemsToChatMessages(items);
           if (dbMessages.length > 0) {
-            setMessages((prev) =>
-              reconcileAfterDbRefresh(prev, dbMessages, { activeTurn }),
-            );
+            setMessages((prev) => {
+              const next = reconcileAfterDbRefresh(prev, dbMessages, {
+                activeTurn,
+              });
+              const before = countUserAttachments(prev);
+              const after = countUserAttachments(next);
+              if (before !== after) {
+                console.warn(
+                  "[ATT] final db refresh changed attachments:",
+                  before,
+                  "->",
+                  after,
+                );
+              }
+              return next;
+            });
           }
           if (activeTurn) activeTurn.status = "completed";
         } catch {

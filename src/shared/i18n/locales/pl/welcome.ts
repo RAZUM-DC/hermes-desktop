@@ -1,4 +1,8 @@
 export default {
+  signingInTitle: "Logowanie",
+  signingInHint:
+    "Strona logowania otworzy się w przeglądarce. Aplikacja sama przejdzie dalej.",
+  signInAgain: "Zaloguj się ponownie",
   title: "Witamy w Hermes",
   subtitle:
     "Twój samodoskonalący się asystent AI działający lokalnie na Twoim komputerze. Prywatny, mocny i stale uczący się.",

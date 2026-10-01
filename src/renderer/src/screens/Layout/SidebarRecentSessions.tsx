@@ -24,6 +24,11 @@ import SidebarSessionMenu, {
   type SidebarMenuProject,
   type SidebarMenuTarget,
 } from "./SidebarSessionMenu";
+import {
+  loadStateAfterFailure,
+  retryDelayMs,
+  type SessionsLoadState,
+} from "./sessionRetry";
 
 interface RecentSession {
   id: string;
@@ -42,6 +47,7 @@ const RECENT_REFRESH_MS = 60_000;
 // Minimum gap between event-driven refreshes (focus, session switch) so a
 // burst of focus/blur events doesn't hammer state.db.
 const REFRESH_THROTTLE_MS = 5_000;
+
 const INFINITE_SCROLL_THRESHOLD_PX = 180;
 const PROJECTS_OPEN_KEY = "hermes.sidebar.projectsOpen";
 const CHATS_OPEN_KEY = "hermes.sidebar.chatsOpen";
@@ -166,6 +172,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   loadingSessionIds,
   resumingSessionId,
   onSelect,
+  onSessionsChange,
   onSessionDeleted,
   scrollRootRef,
 }: {
@@ -180,6 +187,11 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   /** A session whose history is being fetched for resume (transient spinner). */
   resumingSessionId: string | null;
   onSelect: (sessionId: string) => void;
+  /**
+   * Публикует загруженный список наверх — по нему работает панель
+   * переключения диалогов, чтобы её порядок совпадал с видимым сайдбаром.
+   */
+  onSessionsChange?: (sessions: Array<{ id: string; title: string }>) => void;
   /** Notifies Layout when a row is deleted so it can leave a stale active chat. */
   onSessionDeleted?: (sessionId: string) => void;
   /** Scroll container owned by Layout; nearing its bottom loads the next page. */
@@ -187,6 +199,13 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
 }): React.JSX.Element | null {
   const { t } = useI18n();
   const [sessions, setSessions] = useState<RecentSession[]>([]);
+  // Чем закончилась последняя попытка получить список. Пустой список и
+  // неудавшийся запрос — разные вещи, и раньше они выглядели одинаково:
+  // «Нет чатов». В гибридном режиме companion в первые секунды после старта
+  // отвечает «agent session not ready», и человек видел ровно ту же надпись,
+  // что при честном отсутствии истории. Отличить их обязательно — иначе
+  // задержка транспорта неотличима от потери данных.
+  const [loadState, setLoadState] = useState<SessionsLoadState>("loading");
   // True when the profile has more cache rows than the sidebar has loaded.
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -222,6 +241,12 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const lastRefreshRef = useRef(0);
+  // Отложенная фоновая попытка: одна очередь, а не веер таймеров.
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryAttemptRef = useRef(0);
+  // Планировщик объявлен ниже refresh, а нужен внутри него — значит, через
+  // ref: иначе получится цикл в зависимостях useCallback.
+  const scheduleRetryRef = useRef<() => void>(() => undefined);
   const sessionsRef = useRef<RecentSession[]>([]);
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
@@ -234,6 +259,13 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
+
+  // Порядок здесь — тот же, в котором строки нарисованы: закреплённые и
+  // проекты разложены по секциям только при отрисовке, сам список остаётся
+  // отсортированным по давности.
+  useEffect(() => {
+    onSessionsChange?.(sessions.map(({ id, title }) => ({ id, title })));
+  }, [sessions, onSessionsChange]);
 
   useEffect(() => {
     hasMoreRef.current = hasMore;
@@ -336,12 +368,51 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         );
         if (requestGenerationRef.current !== generation) return;
         applyLoadedWindow(synced);
+        setLoadState("ready");
+        // Получилось — очередь повторов больше не нужна.
+        retryAttemptRef.current = 0;
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
       } catch {
-        // keep whatever we had — the list is best-effort UI sugar
+        // Список — вещь второстепенная, поэтому уже показанное не стираем.
+        if (requestGenerationRef.current !== generation) return;
+        retryAttemptRef.current += 1;
+        setLoadState((prev) =>
+          loadStateAfterFailure(prev, retryAttemptRef.current),
+        );
+        // Ждём дальше в фоне. Человек ничего не нажимает — список появится
+        // сам, как только сервер ответит.
+        scheduleRetryRef.current();
       }
     },
     [activeProfile, applyLoadedWindow, connectionId],
   );
+
+  // Следующая фоновая попытка. Пауза растёт с каждой неудачей и упирается в
+  // минуту — ту же, с какой список обновляется в спокойном состоянии.
+  const scheduleRetry = useCallback((): void => {
+    if (retryTimerRef.current) return;
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      // force: обычный троттлинг тут только мешал бы — паузу мы уже выдержали
+      // сами, и она заведомо длиннее его окна.
+      void refresh(true);
+    }, retryDelayMs(retryAttemptRef.current));
+  }, [refresh]);
+  scheduleRetryRef.current = scheduleRetry;
+
+  // Очередь повторов не должна пережить ни размонтирование, ни смену
+  // подключения: иначе запрос уйдёт уже не туда, куда собирался.
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const loadNextPage = useCallback(async (): Promise<void> => {
     if (!open || !hasMoreRef.current || loadingMoreRef.current) return;
@@ -381,6 +452,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
     if (!open) return;
     let cancelled = false;
     void (async () => {
+      let painted = false;
       try {
         const cached = await window.hermesAPI.listCachedSessions(
           // One over the page size so the cache read alone can decide whether
@@ -390,7 +462,10 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
           connectionId,
           activeProfile,
         );
-        if (!cancelled) applyFirstPage(cached);
+        if (!cancelled) {
+          applyFirstPage(cached);
+          painted = true;
+        }
       } catch {
         /* ignore cache read errors */
       }
@@ -400,9 +475,29 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
           connectionId,
           activeProfile,
         );
-        if (!cancelled) applyFirstPage(synced);
+        if (!cancelled) {
+          applyFirstPage(synced);
+          painted = true;
+        }
       } catch {
-        // cache read above already painted something
+        // Прежний комментарий здесь гласил «кэш выше уже что-то нарисовал».
+        // В локальном режиме это правда, в удалённом — нет: там обработчик
+        // list-cached-sessions уходит в ту же сеть, локального кэша не
+        // существует, и оба запроса падают вместе. Поэтому исход отмечаем по
+        // факту, а не по предположению.
+      }
+      if (cancelled) return;
+      if (painted) {
+        setLoadState("ready");
+        retryAttemptRef.current = 0;
+      } else {
+        // Первая попытка не удалась — уходим в фон. Слово «не удалось»
+        // появится не сейчас, а только если не выйдет и со следующих раз.
+        retryAttemptRef.current += 1;
+        setLoadState((prev) =>
+          loadStateAfterFailure(prev, retryAttemptRef.current),
+        );
+        scheduleRetryRef.current();
       }
     })();
     return () => {
@@ -414,6 +509,16 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
     return window.hermesAPI.onConnectionConfigChanged(() => {
       requestGenerationRef.current += 1;
       setSessions([]);
+      // Список обнулили — значит снова ждём, а не «чатов нет»: иначе на
+      // время перезапроса мелькнёт ложное пустое состояние.
+      setLoadState("loading");
+      // Новое подключение — новый отсчёт: прежние неудачи к нему отношения
+      // не имеют, и отложенная попытка ушла бы уже не по адресу.
+      retryAttemptRef.current = 0;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       setHasMore(false);
       setLoadingMore(false);
       loadingMoreRef.current = false;
@@ -948,7 +1053,11 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
                 )
               ) : (
                 <div className="sidebar-recent-empty">
-                  {t("navigation.noChats")}
+                  {loadState === "loading"
+                    ? t("navigation.chatsLoading")
+                    : loadState === "failed"
+                      ? t("navigation.chatsLoadFailed")
+                      : t("navigation.noChats")}
                 </div>
               )}
             </div>

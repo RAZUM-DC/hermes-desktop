@@ -8,7 +8,7 @@ import { ModelPicker } from "./ModelPicker";
 import { ReasoningEffortPicker } from "./ReasoningEffortPicker";
 import { ContextFolderChip } from "./ContextFolderChip";
 import { WorktreePanel } from "./WorktreePanel";
-import { RemoteFolderPicker } from "./RemoteFolderPicker";
+import { isInsideRoots } from "../../../../shared/localRoots";
 import { WebPreviewPanel } from "./WebPreviewPanel";
 import { useChatScroll } from "./hooks/useChatScroll";
 import { useTranscriptState } from "./hooks/useTranscriptState";
@@ -30,6 +30,12 @@ import { buildChatTranscript } from "./transcriptUtils";
 import { ConfigHealthBanner } from "../../components/ConfigHealthBanner";
 import FollowUsModal from "../../components/FollowUsModal";
 import type { Attachment } from "../../../../shared/attachments";
+import type { AttachmentError } from "./attachmentUtils";
+import {
+  claimFallbackNotice,
+  forgetFallbackNotice,
+  noticeSignature,
+} from "./dashboardNotice";
 import type { ApprovalChoice } from "../../../../shared/chat-approval";
 import type { SessionModelOverride } from "../../../../shared/model-override";
 import type {
@@ -102,7 +108,20 @@ interface ChatProps {
   initialSessionId?: string | null;
   /** Whether this run is the one currently shown (drives keyboard handlers). */
   active?: boolean;
+  /**
+   * Видна ли вкладка чата вообще.
+   *
+   * Не то же самое, что `active`: активный диалог остаётся активным и когда
+   * человек ушёл в «Заметки» или «Канбан» — вкладки смонтированы все разом.
+   * Для вставки черновика этого мало: надиктованное должно попасть туда, на
+   * что человек смотрит, иначе оно ложится в оба места сразу.
+   */
+  onScreen?: boolean;
   profile?: string;
+  /** Диктовка закончилась, но текст ещё распознаётся. Layout держит этот флаг
+   *  на всё приложение и раздаёт его всем вкладкам: распознавание одно, а
+   *  вкладку за это время могли переключить. */
+  dictationPending?: boolean;
   onSessionStarted?: () => void;
   onNewChat?: () => void;
   /** Optional callback to open Settings — from the config-health banner's
@@ -124,7 +143,9 @@ function Chat({
   initialMessages,
   initialSessionId,
   active = true,
+  onScreen = true,
   profile,
+  dictationPending = false,
   onSessionStarted,
   onNewChat,
   onOpenDiagnose,
@@ -183,6 +204,8 @@ function Chat({
   // persisted per session so a re-opened conversation restores its folder, and
   // reset on new chat below.
   const [contextFolder, setContextFolder] = useState<string | null>(null);
+  /** Выбранная папка лежит вне корней tool-connector — агент её не увидит. */
+  const [folderOutsideRoots, setFolderOutsideRoots] = useState(false);
   // Gate folder persistence until the stored value for a resumed session has
   // been loaded — otherwise the initial null would overwrite the saved folder
   // before the load resolves. A brand-new chat (no initialSessionId) has
@@ -230,7 +253,6 @@ function Chat({
   // Whether the worktree panel is visible (only applies when contextFolder is set)
   // Default false so the panel doesn't open automatically and interfere with scrolling
   const [worktreeVisible, setWorktreeVisible] = useState<boolean>(false);
-  const [folderPickerOpen, setFolderPickerOpen] = useState<boolean>(false);
   const [webPreviewVisible, setWebPreviewVisible] = useState<boolean>(false);
   const [webPreviewUrl, setWebPreviewUrl] =
     useState<string>("https://google.com");
@@ -589,13 +611,36 @@ function Chat({
   // Fired once per connection when the dashboard WebSocket transport can't
   // connect (e.g. SSH tunnel → `hermes gateway`, which has no `/api/ws`, issue
   // #667) and we fall back to legacy chat. A fixed toast id dedupes.
-  const handleDashboardUnavailable = useCallback(() => {
-    toast(t("chat.dashboardUnavailableFallback"), {
-      id: "dashboard-unavailable-fallback",
-      icon: "ℹ️",
-      duration: 8000,
+  const handleDashboardUnavailable = useCallback(
+    (reason: string) => {
+      // Плашка объясняет человеку последствие, а не причину: причина —
+      // техническая и на английском. Но без неё разбираться невозможно,
+      // поэтому она уходит в консоль — и уходит всегда, даже когда плашку
+      // мы уже показывали.
+      console.warn("[DASHBOARD] fallback to basic chat:", reason);
+      // Проверка транспорта идёт при каждом запуске, и на подключении, где
+      // панель не заработает никогда, плашка при каждом старте — шум. Один
+      // и тот же отказ показываем один раз; новый покажется снова.
+      if (!claimFallbackNotice(noticeSignature(connectionMode, reason))) {
+        return;
+      }
+      toast(t("chat.dashboardUnavailableFallback"), {
+        id: "dashboard-unavailable-fallback",
+        icon: "ℹ️",
+        duration: 8000,
+      });
+    },
+    [t, connectionMode],
+  );
+
+  // Настройки подключения поменяли — прежний отказ больше ничего не значит,
+  // и про новый нужно сказать снова.
+  useEffect(() => {
+    if (!active) return;
+    return window.hermesAPI.onConnectionConfigChanged(() => {
+      forgetFallbackNotice();
     });
-  }, [t]);
+  }, [active]);
 
   const dashboardTransport = useDashboardChatTransport({
     activeTurnRef,
@@ -863,17 +908,89 @@ function Chat({
     chatInputRef.current?.setText(text);
   }, []);
 
+  // Вставка снимка из карточки предпросмотра. Снимок больше не прилетает
+  // сюда сам: он ждёт в карточке, пока человек выберет диалог, и приезжает
+  // только по явному действию — так же, как если бы файл принесли из
+  // проводника.
+  //
+  // Слушают все вкладки, поэтому проверка на активную обязательна: они
+  // смонтированы одновременно (скрытые прячутся через display: none), и без
+  // неё вложение легло бы в поле ввода каждой.
+  useEffect(() => {
+    if (!active || !onScreen) return;
+    const onInsert = (event: Event): void => {
+      const detail = (
+        event as CustomEvent<{
+          files?: File[];
+          text?: string;
+          accept?: (result: Promise<AttachmentError[]>) => void;
+        }>
+      ).detail;
+      const input = chatInputRef.current;
+      if (!input) return;
+      const files = detail?.files ?? [];
+      const text = detail?.text?.trim() ?? "";
+      if (files.length === 0 && !text) return;
+
+      // Текст и файлы обрабатываются вместе, а не по отдельности. Черновик из
+      // карточки — всегда что-то одно, снимок или надиктованное, но заметка
+      // приезжает целиком: её текст и приложенные к ней файлы это одно
+      // сообщение, и раскладывать их двумя событиями значило бы дать человеку
+      // увидеть сообщение наполовину собранным.
+      if (text) {
+        // Дописывается к тому, что уже набрано, и не заменяет его: человек мог
+        // начать печатать до того, как заметка доехала.
+        input.appendText(text);
+      }
+      // Подтверждаем приём и отдаём обещание разбора: карточка убирает
+      // черновик только после него, иначе он исчез бы раньше, чем вложение
+      // окажется в поле ввода.
+      detail?.accept?.(
+        files.length > 0 ? input.addFiles(files) : Promise.resolve([]),
+      );
+      input.focus();
+    };
+    window.addEventListener("hermes-insert-draft", onInsert);
+    return () => window.removeEventListener("hermes-insert-draft", onInsert);
+  }, [active, onScreen]);
+
+  // Системный диалог во всех режимах.
+  //
+  // Раньше в гибриде вместо него открывался встроенный обозреватель, который
+  // спрашивал содержимое каталога у главного процесса, а там для remote стоял
+  // `return null` — транспорт дописать не успели. Окно открывалось пустым, и
+  // нажать в нём было не на что.
+  //
+  // Доделывать обозреватель смысла нет: он показывал бы папки сервера, а в
+  // гибриде рабочая папка разговора осмысленна ровно одна — на компьютере
+  // человека. Серверный каталог внутри контейнера эфемерный, он стирается
+  // сразу после задачи, и выбирать его рабочей папкой значит указывать на то,
+  // чего завтра не будет.
   const handlePickFolder = useCallback(async () => {
-    if (remoteMode) {
-      setFolderPickerOpen(true);
+    const path = await window.hermesAPI.selectFolder();
+    if (!path) return;
+    setContextFolder(path);
+
+    // Агент дотянется до папки только через local.* у tool-connector, а у того
+    // корни фиксированы. Проверяем сразу: узнать об этом из невнятного ответа
+    // через минуту после вопроса — худший из возможных способов.
+    if (!remoteMode) {
+      setFolderOutsideRoots(false);
       return;
     }
-    const path = await window.hermesAPI.selectFolder();
-    if (path) setContextFolder(path);
+    try {
+      const roots = await window.hermesAPI.localToolRoots();
+      setFolderOutsideRoots(roots.length > 0 && !isInsideRoots(path, roots));
+    } catch {
+      // Не смогли спросить корни — молчим. Ложное предупреждение хуже, чем
+      // его отсутствие: оно отговорит от папки, которая на самом деле видна.
+      setFolderOutsideRoots(false);
+    }
   }, [remoteMode]);
 
   const handleClearFolder = useCallback(() => {
     setContextFolder(null);
+    setFolderOutsideRoots(false);
   }, []);
 
   // Stable toolbar callbacks so the memoized ModelPicker / ContextFolderChip
@@ -1108,6 +1225,11 @@ function Chat({
           messages={queuedMessages}
           onRemove={handleRemoveQueued}
         />
+        {folderOutsideRoots && (
+          <div className="chat-attachment-error" role="status">
+            {t("chat.folderOutsideRoots")}
+          </div>
+        )}
         <ChatInput
           ref={chatInputRef}
           isLoading={isLoading}
@@ -1115,6 +1237,7 @@ function Chat({
           sessionId={hermesSessionId}
           remoteMode={remoteMode}
           profile={profile}
+          dictationPending={dictationPending}
           contextUsage={contextUsage}
           readiness={readiness}
           slashCommands={slashMenuCommands}
@@ -1170,7 +1293,9 @@ function Chat({
                 className={`btn-ghost chat-tool-btn ${webPreviewVisible ? "chat-tool-btn-active" : ""}`}
                 onClick={() => setWebPreviewVisible((v) => !v)}
                 title={
-                  webPreviewVisible ? "Hide web preview" : "Show web preview"
+                  webPreviewVisible
+                    ? t("chat.hideWebPreview")
+                    : t("chat.showWebPreview")
                 }
                 style={{
                   display: "inline-flex",
@@ -1201,15 +1326,6 @@ function Chat({
           </div>
         </div>
       )}
-      <RemoteFolderPicker
-        initialPath={contextFolder}
-        open={folderPickerOpen}
-        onCancel={() => setFolderPickerOpen(false)}
-        onSelect={(path) => {
-          setContextFolder(path);
-          setFolderPickerOpen(false);
-        }}
-      />
       {/* Show follow-us modal only after setup is complete */}
       {active && connectionModeLoaded && readiness.ok && <FollowUsModal />}
     </div>

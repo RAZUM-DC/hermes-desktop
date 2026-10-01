@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "Terbaru",
+  recentFoldersEmpty: "Belum ada folder",
+  openFolderAction: "Buka folder…",
+  showWebPreview: "Tampilkan pratinjau web",
+  hideWebPreview: "Sembunyikan pratinjau web",
+  folderOutsideRoots:
+    "Folder ini di luar Documents, Downloads, dan Desktop — asisten tidak dapat melihatnya.",
   title: "Chat Baru",
   sessionTitle: "Sesi {{id}}",
   noModel: "Model belum diatur",
   auto: "Otomatis",
   commandsTitle: "Perintah",
   typeMessage: "Ketik pesan... (Shift+Enter untuk baris baru)",
+  dictationPending: "Mentranskripsikan dikte Anda…",
   quickAskTitle:
     "Tanya Cepat (/btw) - pertanyaan sampingan yang tidak memengaruhi konteks percakapan",
   send: "Kirim",

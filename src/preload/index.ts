@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppLocale } from "../shared/i18n/types";
 import type { Attachment } from "../shared/attachments";
+import type { MemoryFact } from "../shared/memory-bank";
+import type { Note } from "../shared/notes";
+import type { ScreenshotResponse } from "../shared/screenshot";
 import type { SessionModelOverride } from "../shared/model-override";
 import type { DesktopSessionContinuationItem } from "../shared/session-continuation";
 import type { DesktopSessionLocalError } from "../shared/session-continuation";
@@ -427,6 +430,169 @@ const hermesAPI = {
 
   cancelVoiceRecording: (): Promise<void> =>
     ipcRenderer.invoke("voice-record-cancel"),
+
+  // --- Горячие клавиши -----------------------------------------------------
+
+  getHotkeys: (): Promise<{
+    voiceDictation: string;
+    screenshot: string;
+    region: string;
+    voiceDictationQuiet: string;
+    switchChat: string;
+    nextChat: string;
+    prevChat: string;
+    insertDraft: string;
+  }> => ipcRenderer.invoke("hotkeys-get"),
+
+  checkHotkey: (
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-check", accelerator),
+
+  setVoiceHotkey: (
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-set-voice", accelerator),
+
+  setVoiceQuietHotkey: (
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-set-voice-quiet", accelerator),
+
+  setScreenshotHotkey: (
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-set-screenshot", accelerator),
+
+  setRegionHotkey: (
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-set-region", accelerator),
+
+  /**
+   * Внутриоконное действие по комбинации, пойманной главным процессом: на
+   * Windows сочетания с Alt разбирает слой окна раньше страницы.
+   */
+  onWindowHotkey: (
+    callback: (action: "nextChat" | "prevChat" | "insertDraft") => void,
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      action: unknown,
+    ): void => {
+      if (
+        action === "nextChat" ||
+        action === "prevChat" ||
+        action === "insertDraft"
+      ) {
+        callback(action);
+      }
+    };
+    ipcRenderer.on("in-app-hotkey", handler);
+    return () => ipcRenderer.removeListener("in-app-hotkey", handler);
+  },
+
+  /** Внутриоконные комбинации: переключение чатов и вкладок. */
+  setInAppHotkey: (
+    action: "switchChat" | "nextChat" | "prevChat" | "insertDraft",
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-set-in-app", action, accelerator),
+
+  /**
+   * Основное окно: снимок, сделанный по глобальной комбинации. В чат он
+   * больше не уезжает сам — его принимает карточка предпросмотра.
+   */
+  onScreenshotCaptured: (
+    callback: (shot: { png: ArrayBuffer; name: string }) => void,
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, shot: unknown): void =>
+      callback(shot as { png: ArrayBuffer; name: string });
+    ipcRenderer.on("screenshot-captured", handler);
+    return () => ipcRenderer.removeListener("screenshot-captured", handler);
+  },
+
+  // --- Быстрая диктовка (окошко по глобальной горячей клавише) -------------
+
+  /** Окошко диктовки: main сообщает, что пора начинать запись. */
+  onDictationBegin: (
+    callback: (info: {
+      keys: string[];
+      codes: string[];
+      hotkey: string;
+    }) => void,
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, info: unknown): void =>
+      callback(info as { keys: string[]; codes: string[]; hotkey: string });
+    ipcRenderer.on("voice-dictation-begin", handler);
+    return () => ipcRenderer.removeListener("voice-dictation-begin", handler);
+  },
+
+  /** Окошко диктовки: завершить запись (повторное нажатие хоткея). */
+  onDictationFinish: (callback: () => void): (() => void) => {
+    const handler = (): void => callback();
+    ipcRenderer.on("voice-dictation-finish", handler);
+    return () => ipcRenderer.removeListener("voice-dictation-finish", handler);
+  },
+
+  /** Основное окно: диктовка закончена, идёт распознавание. */
+  onDictationPending: (callback: () => void): (() => void) => {
+    const handler = (): void => callback();
+    ipcRenderer.on("voice-dictation-pending", handler);
+    return () => ipcRenderer.removeListener("voice-dictation-pending", handler);
+  },
+
+  /** Основное окно: распознанный текст из окошка диктовки. */
+  onDictationText: (callback: (text: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, text: unknown): void =>
+      callback(String(text ?? ""));
+    ipcRenderer.on("voice-dictation-text", handler);
+    return () => ipcRenderer.removeListener("voice-dictation-text", handler);
+  },
+
+  watchDictationHold: (): Promise<"released" | "absent" | null> =>
+    ipcRenderer.invoke("voice-dictation-watch"),
+
+  beginDictationHandoff: (): Promise<boolean> =>
+    ipcRenderer.invoke("voice-dictation-handoff"),
+
+  showDictationError: (): Promise<boolean> =>
+    ipcRenderer.invoke("voice-dictation-error"),
+
+  commitDictation: (text: string): Promise<boolean> =>
+    ipcRenderer.invoke("voice-dictation-commit", text),
+
+  /** Тихий режим: закрыть окошко, ничего не сообщая. */
+  closeDictation: (): Promise<boolean> =>
+    ipcRenderer.invoke("voice-dictation-close"),
+
+  /** Запись отменена — строку в карточке нужно убрать. */
+  onDictationDropped: (callback: () => void): (() => void) => {
+    const handler = (): void => callback();
+    ipcRenderer.on("voice-dictation-dropped", handler);
+    return () => ipcRenderer.removeListener("voice-dictation-dropped", handler);
+  },
+
+  cancelDictation: (): Promise<boolean> =>
+    ipcRenderer.invoke("voice-dictation-cancel"),
+
+  takeScreenshot: (): Promise<ScreenshotResponse> =>
+    ipcRenderer.invoke("take-screenshot"),
+
+  takeScreenshotRegion: (): Promise<ScreenshotResponse> =>
+    ipcRenderer.invoke("take-screenshot-region"),
+
+  persistPromptAttachments: (
+    sessionId: string,
+    promptText: string,
+    attachments?: Attachment[],
+  ): Promise<boolean> =>
+    ipcRenderer.invoke(
+      "persist-prompt-attachments",
+      sessionId,
+      promptText,
+      attachments,
+    ),
 
   getApiServerKeyStatus: (
     profile?: string,
@@ -1006,6 +1172,8 @@ const hermesAPI = {
     title: string,
     connectionId?: string,
     profile?: string,
+    /** Название придумало приложение, а не человек. */
+    auto?: boolean,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "update-session-title",
@@ -1013,6 +1181,7 @@ const hermesAPI = {
       title,
       connectionId,
       profile,
+      auto,
     ),
   deleteSession: (
     sessionId: string,
@@ -1359,6 +1528,49 @@ const hermesAPI = {
   ) => ipcRenderer.invoke("kanban-create-task", input, profile),
   selectFolder: (): Promise<string | null> =>
     ipcRenderer.invoke("select-folder"),
+  localToolRoots: (): Promise<string[]> =>
+    ipcRenderer.invoke("local-tool-roots"),
+  memoryBankList: (
+    limit?: number,
+    offset?: number,
+  ): Promise<{ items: MemoryFact[]; total: number }> =>
+    ipcRenderer.invoke("memory-bank-list", limit, offset),
+  notesList: (): Promise<Note[]> => ipcRenderer.invoke("notes-list"),
+  notesSave: (input: {
+    id?: string;
+    title?: string;
+    text?: string;
+  }): Promise<Note> => ipcRenderer.invoke("notes-save", input),
+  notesDelete: (id: string): Promise<void> =>
+    ipcRenderer.invoke("notes-delete", id),
+  notesAttach: (noteId: string): Promise<Note | null> =>
+    ipcRenderer.invoke("notes-attach", noteId),
+  notesAttachData: (
+    noteId: string,
+    name: string,
+    bytes: Uint8Array,
+  ): Promise<Note | null> =>
+    ipcRenderer.invoke("notes-attach-data", noteId, name, bytes),
+  notesAttachmentRemove: (
+    noteId: string,
+    attachmentId: string,
+  ): Promise<Note | null> =>
+    ipcRenderer.invoke("notes-attachment-remove", noteId, attachmentId),
+  notesAttachmentBytes: (
+    noteId: string,
+    attachmentId: string,
+  ): Promise<Uint8Array | null> =>
+    ipcRenderer.invoke("notes-attachment-bytes", noteId, attachmentId),
+  notesAttachmentData: (
+    noteId: string,
+    attachmentId: string,
+  ): Promise<string | null> =>
+    ipcRenderer.invoke("notes-attachment-data", noteId, attachmentId),
+  notesAttachmentOpen: (
+    noteId: string,
+    attachmentId: string,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke("notes-attachment-open", noteId, attachmentId),
   readDirectory: (
     dirPath: string,
   ): Promise<{ name: string; isDirectory: boolean }[] | null> =>

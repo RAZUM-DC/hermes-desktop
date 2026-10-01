@@ -170,11 +170,18 @@ export const MessageList = memo(function MessageList({
 
   // Bubbles with empty content are still hidden (live-stream placeholders).
   // History rows pass through unconditionally.
+  // Пустые пузыри в ленту не попадают — они остаются от служебных ходов.
+  // Но «пустой» здесь значит «без текста И без вложений»: сообщение, где
+  // человек отправил одну картинку без подписи, содержимое имеет, просто оно
+  // не текстовое, и выкидывать его нельзя — иначе снимок исчезает из
+  // переписки целиком, хотя агент его получил и отвечает по нему.
   const visibleMessages = useMemo(
     () =>
       messages.filter((m) => {
         if (!isBubble(m)) return true;
-        return !!m.error || ((m.content as string) || "").trim().length > 0;
+        if (m.error) return true;
+        if (((m.content as string) || "").trim().length > 0) return true;
+        return (m.attachments?.length ?? 0) > 0;
       }),
     [messages],
   );

@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "最近",
+  recentFoldersEmpty: "履歴はまだありません",
+  openFolderAction: "フォルダーを開く…",
+  showWebPreview: "Web プレビューを表示",
+  hideWebPreview: "Web プレビューを非表示",
+  folderOutsideRoots:
+    "このフォルダーはドキュメント・ダウンロード・デスクトップの外にあり、アシスタントからは見えません。",
   title: "新規チャット",
   sessionTitle: "セッション {{id}}",
   noModel: "モデル未設定",
   auto: "自動",
   commandsTitle: "コマンド",
   typeMessage: "メッセージを入力...（Shift+Enter で改行）",
+  dictationPending: "音声を認識しています…",
   quickAskTitle: "Quick Ask (/btw) — 会話コンテキストに影響しないサイド質問",
   send: "送信",
   custom: "カスタム",

@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { Spinner, X, Plus } from "../../assets/icons";
+import type { LucideIcon } from "lucide-react";
 import { useI18n } from "../../components/useI18n";
 import ProfileAvatar from "../../components/common/ProfileAvatar";
 import { defaultColorForName } from "../../../../shared/profileColors";
@@ -10,8 +11,23 @@ export interface ProfileAppearance {
   avatar?: string | null;
 }
 
+/** Открытый раздел — «Заметки», «Канбан» и прочее, что не диалог. */
+export interface SectionTab {
+  view: string;
+  icon: LucideIcon;
+  labelKey: string;
+}
+
 /**
- * The window's top strip. Doubles as the title-bar drag region (browser-style):
+ * The window's top strip.
+ *
+ * Здесь же живут вкладки разделов — «Заметки», «Канбан», «Офис» и прочее.
+ * Раньше в полосе были только диалоги, а разделы открывались из боковой
+ * панели и нигде не отмечались: уйдя из «Канбана» в чат, человек терял
+ * единственный признак того, что «Канбан» вообще открыт, и возвращался в него
+ * той же дорогой, что и в первый раз. Теперь открытый раздел остаётся
+ * вкладкой, пока его не закроют, — ровно как диалог.
+ * Doubles as the title-bar drag region (browser-style):
  * the strip itself is draggable, while the conversation chips on top of it stay
  * clickable. When several sessions are open (background sessions / multi-agent)
  * it shows a chip per session to switch between them and watch each stream live.
@@ -25,6 +41,10 @@ export const ActiveSessionsBar = memo(function ActiveSessionsBar({
   onClose,
   onNew,
   getAppearance,
+  sections = [],
+  activeView = "chat",
+  onSelectSection,
+  onCloseSection,
 }: {
   runs: ChatRun[];
   activeRunId: string;
@@ -35,19 +55,31 @@ export const ActiveSessionsBar = memo(function ActiveSessionsBar({
   onNew: () => void;
   /** Resolve a profile's avatar/colour for its chip. */
   getAppearance?: (profile: string) => ProfileAppearance;
+  /** Разделы, открытые сейчас, в порядке открытия. */
+  sections?: SectionTab[];
+  /** Что на экране. Диалог подсвечен только когда открыта вкладка чата. */
+  activeView?: string;
+  onSelectSection?: (view: string) => void;
+  onCloseSection?: (view: string) => void;
 }): React.JSX.Element {
   const { t } = useI18n();
 
   const anyLoading = runs.some((r) => r.loading);
   const hasRealSession = runs.some((r) => r.sessionId || r.title);
   // Nothing real to switch to yet → leave the strip empty (pure drag area).
-  const showChips = runs.length > 1 || anyLoading || hasRealSession;
+  // Открытый раздел — такой же повод показать полосу, как настоящий диалог.
+  const showChips =
+    runs.length > 1 || anyLoading || hasRealSession || sections.length > 0;
+  const chatOnScreen = activeView === "chat";
 
   return (
     <div className="active-sessions-bar" role="tablist">
       {showChips &&
         runs.map((run) => {
-          const active = run.runId === activeRunId;
+          // Диалог активен только когда и вкладка чата на экране: иначе
+          // подсветка говорила бы, что человек смотрит в чат, стоя в
+          // «Заметках».
+          const active = chatOnScreen && run.runId === activeRunId;
           const label = run.title || t("sessions.newConversation");
           const appearance = getAppearance?.(run.profile);
           const color = appearance?.color || defaultColorForName(run.profile);
@@ -94,6 +126,37 @@ export const ActiveSessionsBar = memo(function ActiveSessionsBar({
             </div>
           );
         })}
+      {sections.map(({ view, icon: Icon, labelKey }) => {
+        const active = activeView === view;
+        const label = t(labelKey);
+        return (
+          <div
+            key={view}
+            role="tab"
+            aria-selected={active}
+            className={`active-session-chip section-chip ${active ? "active" : ""}`}
+            onClick={() => onSelectSection?.(view)}
+            title={label}
+          >
+            <span className="active-session-chip-avatar section-chip-icon">
+              <Icon size={13} />
+            </span>
+            <span className="active-session-chip-title">{label}</span>
+            <button
+              type="button"
+              className="active-session-chip-close"
+              title={t("sessions.closeTab")}
+              aria-label={t("sessions.closeTab")}
+              onClick={(e) => {
+                e.stopPropagation();
+                onCloseSection?.(view);
+              }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        );
+      })}
       {showChips && (
         <button
           type="button"

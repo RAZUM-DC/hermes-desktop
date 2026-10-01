@@ -4,7 +4,7 @@ import type {
   DesktopSessionContinuationItem,
   DesktopSessionLocalError,
 } from "../shared/session-continuation";
-import { getDbConnection } from "./db";
+import { getDesktopDb } from "./desktop-db";
 import type { HistoryItem } from "./sessions";
 
 const TABLE = "desktop_session_continuations";
@@ -137,7 +137,7 @@ export function persistSessionContinuation(
   const normalized = normalizeContinuationItems(items);
   if (!sessionId || normalized.length === 0) return;
 
-  const db = getDbConnection(false);
+  const db = getDesktopDb();
   if (!db) return;
 
   ensureTable(db);
@@ -159,7 +159,7 @@ export function persistSessionLocalError(
   const promptText = typeof userContent === "string" ? userContent.trim() : "";
   if (!sessionId || !errorText || !promptText) return;
 
-  const db = getDbConnection(false);
+  const db = getDesktopDb();
   if (!db) return;
 
   ensureTable(db);

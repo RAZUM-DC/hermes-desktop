@@ -185,7 +185,8 @@ async function remoteKanbanGet(path: string): Promise<KanbanResult<unknown>> {
     const resp = await fetch(base + "/api/plugins/kanban" + path, {
       headers: conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {},
     });
-    if (!resp.ok) return { success: false, error: "kanban HTTP " + resp.status };
+    if (!resp.ok)
+      return { success: false, error: "kanban HTTP " + resp.status };
     return { success: true, data: await resp.json() };
   } catch (e) {
     return { success: false, error: (e as Error).message };
@@ -231,7 +232,8 @@ async function remoteKanbanReq(
       }
       return { success: false, error: "kanban HTTP " + resp.status + detail };
     }
-    const data = resp.status === 204 ? null : await resp.json().catch(() => null);
+    const data =
+      resp.status === 204 ? null : await resp.json().catch(() => null);
     return { success: true, data };
   } catch (e) {
     return { success: false, error: (e as Error).message };
@@ -263,7 +265,8 @@ export async function listBoards(
   if (isRemoteOnlyMode()) {
     const r = await remoteKanbanGet("/boards");
     if (!r.success) return { success: false, error: r.error };
-    const boards = (((r.data as Record<string, unknown>)?.boards ?? []) as KanbanBoard[]);
+    const boards = ((r.data as Record<string, unknown>)?.boards ??
+      []) as KanbanBoard[];
     return { success: true, data: boards };
   }
   const args = ["boards", "list", "--json"];
@@ -279,7 +282,10 @@ export async function currentBoard(
   if (isRemoteOnlyMode()) {
     const r = await remoteKanbanGet("/boards");
     if (!r.success) return { success: false, error: r.error };
-    return { success: true, data: String((r.data as Record<string, unknown>)?.current ?? "") };
+    return {
+      success: true,
+      data: String((r.data as Record<string, unknown>)?.current ?? ""),
+    };
   }
   const res = await runKanban(["boards", "show"], { profile });
   if (!res.success) return { success: false, error: res.error };
@@ -293,7 +299,9 @@ export async function switchBoard(
 ): Promise<KanbanResult<void>> {
   if (!slug) return { success: false, error: "Missing board slug" };
   if (isRemoteOnlyMode()) {
-    const r = await remoteKanbanPost("/boards/" + encodeURIComponent(slug) + "/switch");
+    const r = await remoteKanbanPost(
+      "/boards/" + encodeURIComponent(slug) + "/switch",
+    );
     return { success: r.success, error: r.error };
   }
   const res = await runKanban(["boards", "switch", slug], { profile });
@@ -330,7 +338,9 @@ export async function removeBoard(
   if (!slug) return { success: false, error: "Missing board slug" };
   if (isRemoteOnlyMode()) {
     const r = await remoteKanbanDelete(
-      "/boards/" + encodeURIComponent(slug) + (hardDelete ? "?delete=true" : ""),
+      "/boards/" +
+        encodeURIComponent(slug) +
+        (hardDelete ? "?delete=true" : ""),
     );
     return { success: r.success, error: r.error };
   }
@@ -352,10 +362,13 @@ export async function listTasks(
   if (isRemoteOnlyMode()) {
     const r = await remoteKanbanGet("/board");
     if (!r.success) return { success: false, error: r.error };
-    const cols = (((r.data as Record<string, unknown>)?.columns ?? []) as Array<{ tasks?: KanbanTask[] }>);
+    const cols = ((r.data as Record<string, unknown>)?.columns ?? []) as Array<{
+      tasks?: KanbanTask[];
+    }>;
     let tasks = cols.flatMap((c) => c.tasks ?? []);
     if (opts.status) tasks = tasks.filter((t) => t.status === opts.status);
-    if (opts.assignee) tasks = tasks.filter((t) => t.assignee === opts.assignee);
+    if (opts.assignee)
+      tasks = tasks.filter((t) => t.assignee === opts.assignee);
     return { success: true, data: tasks };
   }
   const args = ["list", "--json"];
@@ -673,7 +686,6 @@ export async function dispatchOnce(
   return { success: res.success, error: res.error, data: res.data };
 }
 
-
 // ── FEAT-office: мостик к доскам ШТАТНЫХ агентов ──
 // Десктоп ходит через companion-шим (remoteUrl=127.0.0.1:18644), который
 // прибавляет префикс /agent → identity-proxy. Поэтому путь = base + "/staff…"
@@ -687,7 +699,8 @@ export async function listStaffAgents(): Promise<KanbanResult<unknown>> {
     const resp = await fetch(base + "/staff", {
       headers: conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {},
     });
-    if (!resp.ok) return { success: false, error: "agents HTTP " + resp.status };
+    if (!resp.ok)
+      return { success: false, error: "agents HTTP " + resp.status };
     return { success: true, data: await resp.json() };
   } catch (e) {
     return { success: false, error: (e as Error).message };
@@ -713,8 +726,19 @@ export async function agentKanbanRequest(
     };
     if (body !== undefined) init.body = JSON.stringify(body);
     const resp = await fetch(base + "/staff/" + runtimeId + path, init);
-    if (!resp.ok) return { success: false, error: "agent-kanban HTTP " + resp.status };
-    const data = resp.status === 204 ? null : await resp.json().catch(() => null);
+    if (!resp.ok) {
+      // Код ответа без тела бесполезен: на 422 сервер пишет, какое именно
+      // поле его не устроило, и без этой строки оставалось только гадать.
+      const detail = await resp.text().catch(() => "");
+      return {
+        success: false,
+        error: detail
+          ? `agent-kanban HTTP ${resp.status}: ${detail.slice(0, 500)}`
+          : "agent-kanban HTTP " + resp.status,
+      };
+    }
+    const data =
+      resp.status === 204 ? null : await resp.json().catch(() => null);
     return { success: true, data };
   } catch (e) {
     return { success: false, error: (e as Error).message };
@@ -730,10 +754,17 @@ export async function agentMontageArtifact(
   if (!base) return { success: false, error: "remoteUrl не задан" };
   try {
     const resp = await fetch(
-      base + "/montage/artifact/" + projectId + "?which=" + encodeURIComponent(which),
-      { headers: conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {} },
+      base +
+        "/montage/artifact/" +
+        projectId +
+        "?which=" +
+        encodeURIComponent(which),
+      {
+        headers: conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {},
+      },
     );
-    if (!resp.ok) return { success: false, error: "artifact HTTP " + resp.status };
+    if (!resp.ok)
+      return { success: false, error: "artifact HTTP " + resp.status };
     const buf = Buffer.from(await resp.arrayBuffer());
     const mime = resp.headers.get("content-type") || "video/mp4";
     // Маленькие ролики — data-url (быстро). Большие — во временный файл + file://
@@ -743,7 +774,10 @@ export async function agentMontageArtifact(
     if (buf.byteLength <= INLINE_MAX) {
       return {
         success: true,
-        data: { dataUrl: `data:${mime};base64,${buf.toString("base64")}`, mime },
+        data: {
+          dataUrl: `data:${mime};base64,${buf.toString("base64")}`,
+          mime,
+        },
       };
     }
     try {
@@ -761,7 +795,10 @@ export async function agentMontageArtifact(
     } catch {
       return {
         success: true,
-        data: { dataUrl: `data:${mime};base64,${buf.toString("base64")}`, mime },
+        data: {
+          dataUrl: `data:${mime};base64,${buf.toString("base64")}`,
+          mime,
+        },
       };
     }
   } catch (e) {
