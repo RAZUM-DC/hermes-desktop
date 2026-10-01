@@ -1,4 +1,6 @@
 import { app } from "electron";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 
 /**
  * Запуск вместе с Windows, сразу в трей.
@@ -93,4 +95,46 @@ export function autostartTargetPath(): string {
 /** Поддерживается ли автозапуск в этой сборке и на этой системе. */
 export function isAutostartSupported(): boolean {
   return app.isPackaged && process.platform !== "linux";
+}
+
+/**
+ * Отметка о том, что автозапуск уже предлагался системе.
+ *
+ * Нужна ровно для одного: включить автозапуск при первом запуске и больше к
+ * этому не возвращаться. Без отметки «по умолчанию включено» означало бы
+ * «включается при каждом старте», и снятая человеком галочка возвращалась бы
+ * сама — то есть настройки бы не было вовсе.
+ *
+ * Файл, а не электронный store: читается он один раз на старте, и заводить
+ * ради одного байта что-то большее незачем.
+ */
+function initMarkerPath(): string {
+  return join(app.getPath("userData"), "autostart-initialized");
+}
+
+/**
+ * Включает автозапуск при первом запуске собранного приложения.
+ *
+ * Приложение задумано резидентным: companion держит вход, горячие клавиши
+ * диктовки и снимков работают из трея, наблюдатель доски шлёт уведомления о
+ * задачах. Человеку, который этого ждёт, не должно приходиться искать галочку,
+ * чтобы оно просто работало.
+ *
+ * Если система отказала — политика, ограничения прав, — отметку всё равно
+ * ставим: повторять попытку при каждом старте бессмысленно, а настройка
+ * остаётся доступной руками.
+ */
+export function initAutostartDefault(): void {
+  if (!isAutostartSupported()) return;
+  const marker = initMarkerPath();
+  if (existsSync(marker)) return;
+  try {
+    mkdirSync(dirname(marker), { recursive: true });
+    writeFileSync(marker, `${new Date().toISOString()}\n`);
+  } catch {
+    // Не смогли записать отметку — лучше не включать вовсе, чем включать
+    // заново при каждом запуске.
+    return;
+  }
+  setAutostart(true);
 }
