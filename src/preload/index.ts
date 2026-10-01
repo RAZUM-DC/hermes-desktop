@@ -1535,6 +1535,10 @@ const hermesAPI = {
     offset?: number,
   ): Promise<{ items: MemoryFact[]; total: number }> =>
     ipcRenderer.invoke("memory-bank-list", limit, offset),
+  autostartGet: (): Promise<{ enabled: boolean; supported: boolean }> =>
+    ipcRenderer.invoke("autostart-get"),
+  autostartSet: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke("autostart-set", enabled),
   notesList: (): Promise<Note[]> => ipcRenderer.invoke("notes-list"),
   notesSave: (input: {
     id?: string;

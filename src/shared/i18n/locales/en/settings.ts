@@ -3,6 +3,7 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Appearance",
+    startup: "Startup",
     privacy: "Privacy",
     credentialPool: "Credential Pool",
   },
@@ -276,5 +277,12 @@ export default {
       reserved: "This combination is already used by Hermes One itself.",
       taken: "Another application already holds this combination.",
     },
+  },
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "Start with Windows",
+    hint: "The app starts when you sign in and waits in the tray.",
+    unsupported: "Autostart is unavailable in this build.",
+    trayNote: "It starts minimised on purpose: the window would otherwise jump up at every sign-in. Dictation, screenshots and task notifications work from the tray, without the window open.",
   },
 } as const;

@@ -3,6 +3,7 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Wygląd",
+    startup: "Uruchamianie",
     privacy: "Prywatność",
     credentialPool: "Pula poświadczeń",
   },
@@ -134,4 +135,11 @@ export default {
     "Jesteś połączony ze zdalnym serwerem Hermes. Wybór modelu, klucze API dostawców i poświadczenia są zarządzane na serwerze w <code>~/.hermes/.env</code> oraz <code>config.yaml</code>. Edytuj je na hoście (np. <code>docker exec -it hermes vi /opt/data/.env</code>) i zrestartuj kontener.",
   connectionMode: "Tryb",
   switchedToLocal: "Przełączono na tryb lokalny",
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "Uruchamiaj razem z Windows",
+    hint: "Aplikacja startuje przy logowaniu i czeka w zasobniku.",
+    unsupported: "Autostart nie jest dostępny w tej wersji.",
+    trayNote: "Startuje zminimalizowana celowo: inaczej okno pojawiałoby się przy każdym logowaniu. Dyktowanie, zrzuty ekranu i powiadomienia działają z zasobnika.",
+  },
 } as const;

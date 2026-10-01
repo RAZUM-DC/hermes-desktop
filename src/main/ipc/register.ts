@@ -99,6 +99,11 @@ import {
 } from "../notes-store";
 import type { NoteInput } from "../notes-store";
 import {
+  isAutostartEnabled,
+  isAutostartSupported,
+  setAutostart,
+} from "../autostart";
+import {
   isRemoteMode,
   isRemoteOnlyMode,
   sendMessage,
@@ -2685,6 +2690,15 @@ export function registerIpcHandlers(context: IpcContext): void {
   );
   // Заметки. Лежат файлом в userData, а не в базе: в гибриде базы нет
   // вовсе, см. notes-store.ts.
+  // Автозапуск вместе с системой, сразу в трей. Состояние читаем у системы,
+  // а не из своих настроек: человек мог выключить его в диспетчере задач.
+  ipcMain.handle("autostart-get", () => ({
+    enabled: isAutostartEnabled(),
+    supported: isAutostartSupported(),
+  }));
+  ipcMain.handle("autostart-set", (_event, enabled: boolean) =>
+    setAutostart(Boolean(enabled)),
+  );
   ipcMain.handle("notes-list", () => listNotes());
   ipcMain.handle("notes-save", (_event, input: NoteInput) => saveNote(input));
   ipcMain.handle("notes-delete", (_event, id: string) => deleteNote(id));

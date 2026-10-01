@@ -3,6 +3,7 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Tampilan",
+    startup: "Startup",
     privacy: "Privasi",
     credentialPool: "Kumpulan Kredensial",
   },
@@ -132,4 +133,11 @@ export default {
     "Anda terhubung ke server Hermes remote. Pilihan model, API key provider, dan kredensial dikelola di <code>~/.hermes/.env</code> dan <code>config.yaml</code> pada server. Edit di host (mis. <code>docker exec -it hermes vi /opt/data/.env</code>) lalu restart container.",
   connectionMode: "Mode",
   switchedToLocal: "Beralih ke mode lokal",
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "Jalankan bersama Windows",
+    hint: "Aplikasi berjalan saat Anda masuk dan menunggu di baki sistem.",
+    unsupported: "Autostart tidak tersedia di versi ini.",
+    trayNote: "Sengaja dimulai terminimalkan: kalau tidak, jendela akan muncul setiap kali masuk. Dikte, tangkapan layar, dan notifikasi tugas tetap jalan dari baki.",
+  },
 } as const;

@@ -3,6 +3,7 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "外観",
+    startup: "起動",
     privacy: "プライバシー",
     credentialPool: "認証情報プール",
   },
@@ -130,4 +131,11 @@ export default {
     "リモート Hermes サーバに接続中です。モデル選択、プロバイダ API キー、認証情報はサーバ側の <code>~/.hermes/.env</code> と <code>config.yaml</code> で管理されます。ホスト側で編集（例：<code>docker exec -it hermes vi /opt/data/.env</code>）してコンテナを再起動してください。",
   connectionMode: "モード",
   switchedToLocal: "ローカルモードに切り替えました",
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "Windows と一緒に起動",
+    hint: "サインイン時に起動し、通知領域で待機します。",
+    unsupported: "このビルドでは自動起動を使えません。",
+    trayNote: "あえて最小化で起動します。そうしないとサインインのたびにウィンドウが前面に出ます。音声入力・スクリーンショット・タスク通知は通知領域からでも動きます。",
+  },
 } as const;

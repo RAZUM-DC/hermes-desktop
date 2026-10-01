@@ -3,6 +3,7 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "外观",
+    startup: "启动",
     privacy: "隐私",
     credentialPool: "凭据池",
   },
@@ -125,4 +126,11 @@ export default {
     "你已连接到远程 Hermes 服务器。模型选择、提供商 API Key 和凭据均在服务器的 <code>~/.hermes/.env</code> 和 <code>config.yaml</code> 中管理。请在主机上编辑（例如 <code>docker exec -it hermes vi /opt/data/.env</code>）然后重启容器。",
   connectionMode: "模式",
   switchedToLocal: "已切换到本地模式",
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "随 Windows 一起启动",
+    hint: "登录时自动启动，在托盘中待命。",
+    unsupported: "此版本不支持开机自启。",
+    trayNote: "特意以最小化方式启动：否则每次登录窗口都会弹到最前。语音输入、截图和任务通知在托盘状态下照常工作。",
+  },
 } as const;
