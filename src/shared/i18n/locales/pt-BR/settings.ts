@@ -3,6 +3,7 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Aparência",
+    startup: "Inicialização",
     privacy: "Privacidade",
     credentialPool: "Pool de Credenciais",
   },
@@ -135,4 +136,11 @@ export default {
     "Você está conectado a um servidor remoto do Hermes. A seleção de modelos, as chaves de API dos provedores e as credenciais são gerenciadas no host remoto em <code>~/.hermes/.env</code> e <code>config.yaml</code>. Edite-os lá e reinicie o servidor.",
   connectionMode: "Modo",
   switchedToLocal: "Mudou para o modo local",
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "Iniciar com o Windows",
+    hint: "O aplicativo inicia ao entrar e aguarda na bandeja.",
+    unsupported: "A inicialização automática não está disponível nesta versão.",
+    trayNote: "Inicia minimizado de propósito: caso contrário a janela apareceria a cada login. Ditado, capturas e avisos de tarefas funcionam pela bandeja.",
+  },
 } as const;

@@ -10,12 +10,14 @@ import {
   ShieldCheck,
   Users,
   X,
+  Power,
 } from "lucide-react";
 import { useI18n } from "../useI18n";
 import { AppModal, AppModalTitle } from "../modal/AppModal";
 import { useSettingsData } from "./useSettingsData";
 import { SettingsDataContext } from "./SettingsDataContext";
 import AppearancePane from "./AppearancePane";
+import StartupPane from "./StartupPane";
 import LanguagePane from "./LanguagePane";
 import PrivacyPane from "./PrivacyPane";
 import ConnectionPane from "./ConnectionPane";
@@ -27,6 +29,7 @@ import HotkeysPane from "./HotkeysPane";
 
 export type SettingsSection =
   | "appearance"
+  | "startup"
   | "language"
   | "hotkeys"
   | "privacy"
@@ -50,6 +53,12 @@ const SETTINGS_NAV: ReadonlyArray<{
     id: "appearance",
     labelKey: "settings.nav.appearance",
     Icon: Palette,
+  },
+  {
+    group: "general",
+    id: "startup",
+    labelKey: "settings.nav.startup",
+    Icon: Power,
   },
   {
     group: "general",
@@ -198,6 +207,7 @@ export default function SettingsModal({
         <div className="settings-modal-content">
           <SettingsDataContext.Provider value={data}>
             {section === "appearance" && <AppearancePane />}
+            {section === "startup" && <StartupPane />}
             {section === "language" && <LanguagePane />}
             {section === "hotkeys" && <HotkeysPane />}
             {section === "privacy" && <PrivacyPane />}

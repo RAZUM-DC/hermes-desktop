@@ -3,6 +3,7 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Apariencia",
+    startup: "Inicio",
     privacy: "Privacidad",
     credentialPool: "Grupo de credenciales",
   },
@@ -136,4 +137,11 @@ export default {
     "Estás conectado a un servidor remoto de Hermes. La selección de modelos, las API keys de proveedores y las credenciales se administran en <code>~/.hermes/.env</code> y <code>config.yaml</code> del servidor. Edítalos en el host (por ejemplo, <code>docker exec -it hermes vi /opt/data/.env</code>) y reinicia el contenedor.",
   connectionMode: "Modo",
   switchedToLocal: "Se cambió al modo local",
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "Iniciar con Windows",
+    hint: "La aplicación se inicia al entrar y espera en la bandeja.",
+    unsupported: "El inicio automático no está disponible en esta versión.",
+    trayNote: "Se inicia minimizada a propósito: de lo contrario la ventana aparecería en cada inicio de sesión. El dictado, las capturas y los avisos de tareas funcionan desde la bandeja.",
+  },
 } as const;

@@ -1070,6 +1070,10 @@ interface HermesAPI {
     limit?: number,
     offset?: number,
   ) => Promise<{ items: MemoryFact[]; total: number }>;
+  /** Запуск вместе с системой, свёрнутым в трей. */
+  autostartGet: () => Promise<{ enabled: boolean; supported: boolean }>;
+  /** Возвращает состояние после попытки — система может не дать его изменить. */
+  autostartSet: (enabled: boolean) => Promise<boolean>;
   notesList: () => Promise<Note[]>;
   notesSave: (input: {
     id?: string;

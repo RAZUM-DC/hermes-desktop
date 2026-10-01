@@ -3,6 +3,7 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "المظهر",
+    startup: "بدء التشغيل",
     privacy: "الخصوصية",
     credentialPool: "مجموعة بيانات الاعتماد",
   },
@@ -211,4 +212,11 @@ export default {
   remoteErrorRequiredSimple: "يرجى إدخال رابط",
   remoteErrorFailedSimple: "تعذر الوصول إلى الخادم",
   apiGenerated: "تم توليد مفتاح API — إعادة تشغيل البوابة...",
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "التشغيل مع Windows",
+    hint: "يبدأ التطبيق عند تسجيل الدخول وينتظر في شريط المهام.",
+    unsupported: "بدء التشغيل التلقائي غير متاح في هذه النسخة.",
+    trayNote: "يبدأ مصغَّرًا عن قصد: وإلا لظهرت النافذة عند كل تسجيل دخول. الإملاء ولقطات الشاشة وإشعارات المهام تعمل من شريط المهام.",
+  },
 } as const;

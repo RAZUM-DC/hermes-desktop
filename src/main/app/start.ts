@@ -28,6 +28,7 @@ import { setGatewayPromptParent } from "../gatewayPrompt";
 import { showChatContextMenu } from "./context-menu";
 import { buildMenu } from "./menu";
 import { attachWindowHotkeys } from "./window-hotkeys";
+import { shouldStartHidden } from "../autostart";
 import { setupUpdater } from "./updater";
 import { startCompanion, stopCompanion } from "../companion";
 import { warmVoiceDaemon, stopVoiceDaemon } from "../voice-sidecar";
@@ -43,6 +44,14 @@ const OPEN_DEVTOOLS_ON_START =
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+/**
+ * Старт из автозагрузки: окно не показываем, приложение ждёт в трее.
+ *
+ * Считается один раз здесь, а не при каждом обращении: после того как человек
+ * сам открыл окно, аргумент командной строки уже ничего не значит, и повторная
+ * проверка прятала бы окно там, где его просили показать.
+ */
+const startHidden = shouldStartHidden(process.argv);
 const QUICK_CALL_SHORTCUT =
   process.env.HERMES_DESKTOP_HOTKEY?.trim() || "Control+Shift+Space";
 const activeRuns = new Map<string, () => void>();
@@ -280,7 +289,12 @@ function createWindow(): void {
 
   attachWindowHotkeys(mainWindow);
 
-  mainWindow.on("ready-to-show", () => mainWindow?.show());
+  mainWindow.on("ready-to-show", () => {
+    // При скрытом старте окно остаётся незагруженным ровно до первого
+    // показа — это и нужно: companion, горячие клавиши и наблюдатель доски
+    // поднимаются отдельно от окна и работают без него.
+    if (!startHidden) mainWindow?.show();
+  });
   // Свернуть в трей вместо выхода: окно живёт в трее, quick-call хоткей
   // мгновенно его возвращает. Реальный выход — через меню трея / before-quit.
   mainWindow.on("close", (event) => {

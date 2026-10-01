@@ -3,6 +3,7 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "מראה",
+    startup: "הפעלה",
     privacy: "פרטיות",
     credentialPool: "מאגר אישורים",
   },
@@ -195,4 +196,11 @@ export default {
   remoteErrorRequiredSimple: "אנא הזינו כתובת URL",
   remoteErrorFailedSimple: "לא ניתן היה להגיע לשרת",
   apiGenerated: "מפתח ה-API נוצר — השער מופעל מחדש…",
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "הפעלה יחד עם Windows",
+    hint: "האפליקציה עולה בכניסה למערכת וממתינה במגש.",
+    unsupported: "הפעלה אוטומטית אינה זמינה בגרסה הזו.",
+    trayNote: "עולה ממוזערת בכוונה: אחרת החלון היה קופץ בכל כניסה. הכתבה, צילומי מסך והתראות על משימות פועלים מהמגש.",
+  },
 } as const;
