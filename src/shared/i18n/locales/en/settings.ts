@@ -273,7 +273,7 @@ export default {
       "modifier-only": "Add a key to the modifiers.",
       "needs-modifier":
         "Use Ctrl, Alt or Win — otherwise the combination would swallow ordinary typing.",
-      unsupported: "This key cannot be used in a global shortcut.",
+      unsupported: "Autostart is only available in a built app, not when running from source.",
       reserved: "This combination is already used by Hermes One itself.",
       taken: "Another application already holds this combination.",
     },

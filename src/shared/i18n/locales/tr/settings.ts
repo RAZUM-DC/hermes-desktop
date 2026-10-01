@@ -206,7 +206,7 @@ export default {
   autostart: {
     label: "Windows ile birlikte başlat",
     hint: "Uygulama oturum açınca başlar ve sistem tepsisinde bekler.",
-    unsupported: "Bu sürümde otomatik başlatma kullanılamıyor.",
+    unsupported: "Otomatik başlatma yalnızca derlenmiş uygulamada çalışır, kaynaktan çalıştırırken değil.",
     trayNote: "Bilerek simge durumunda başlar: aksi halde pencere her oturum açışta öne çıkardı. Dikte, ekran görüntüsü ve görev bildirimleri tepsiden çalışır.",
   },
 } as const;

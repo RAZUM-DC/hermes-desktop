@@ -63,6 +63,22 @@ describe("автозапуск", () => {
       expect(isAutostartEnabled()).toBe(false);
     });
 
+    it("для портабла берёт настоящий .exe, а не копию во временной папке", async () => {
+      mockState.packaged = true;
+      vi.resetModules();
+      process.env.PORTABLE_EXECUTABLE_FILE = "D:\\Tools\\hermes.exe";
+      try {
+        const { setAutostart } = await mod();
+        setAutostart(true);
+        const opts = mockState.lastSet as { path: string };
+        // Иначе в автозагрузке осталась бы запись в %TEMP%, которую Windows
+        // вычистит, и автозапуск молча перестал бы работать.
+        expect(opts.path).toBe("D:\\Tools\\hermes.exe");
+      } finally {
+        delete process.env.PORTABLE_EXECUTABLE_FILE;
+      }
+    });
+
     it("прописывает скрытый старт и явный путь", async () => {
       mockState.packaged = true;
       const { setAutostart, HIDDEN_FLAG } = await mod();

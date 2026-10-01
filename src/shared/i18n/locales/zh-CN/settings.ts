@@ -130,7 +130,7 @@ export default {
   autostart: {
     label: "随 Windows 一起启动",
     hint: "登录时自动启动，在托盘中待命。",
-    unsupported: "此版本不支持开机自启。",
+    unsupported: "开机自启只在打包后的应用中可用，从源码运行时没有。",
     trayNote: "特意以最小化方式启动：否则每次登录窗口都会弹到最前。语音输入、截图和任务通知在托盘状态下照常工作。",
   },
 } as const;

@@ -139,7 +139,7 @@ export default {
   autostart: {
     label: "Uruchamiaj razem z Windows",
     hint: "Aplikacja startuje przy logowaniu i czeka w zasobniku.",
-    unsupported: "Autostart nie jest dostępny w tej wersji.",
+    unsupported: "Autostart działa tylko w zbudowanej aplikacji, nie przy uruchamianiu ze źródeł.",
     trayNote: "Startuje zminimalizowana celowo: inaczej okno pojawiałoby się przy każdym logowaniu. Dyktowanie, zrzuty ekranu i powiadomienia działają z zasobnika.",
   },
 } as const;
