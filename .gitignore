@@ -47,5 +47,6 @@ installer-build/
 portable-diagnostic-build/
 build-artifacts/
 .builder-cache/
+/*-portable.zip
 mic-log*.txt
 electron.vite.config.*.mjs

@@ -224,7 +224,19 @@ jobs:
           VITE_ANALYTICS_API_KEY: ${{ secrets.VITE_ANALYTICS_API_KEY }}
         run: npm run build
 
+      # Подпись кода. Без неё корпоративные средства защиты не дают
+      # приложению доступ к устройствам: Kaspersky Endpoint Security
+      # блокирует неподписанным программам микрофон, и приложение видит это
+      # как отказ записи. Поэтому релизная сборка обязана быть подписанной,
+      # иначе диктовка у части пользователей не работает вовсе.
+      #
+      # Если секреты не заданы, переменные приходят пустыми, electron-builder
+      # просто пропускает подпись, и сборка идёт как раньше — ломаться тут
+      # нечему.
       - name: Package Windows artifacts
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: npx electron-builder --win nsis portable --x64 --publish never
 
       - name: Upload artifacts
