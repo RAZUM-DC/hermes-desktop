@@ -12,6 +12,13 @@ extends: ./electron-builder.yml
 # that, and the app sees it as NotReadableError from getUserMedia). Voice
 # input therefore cannot be verified with a build from this profile — use a
 # signed build, see the signing notes in electron-builder.yml.
+# store = без LZMA-сжатия. Это портативной сборки для локальной проверки, не для
+# раздачи: несжатый exe собирается за секунды вместо нескольких минут и
+# укладывается в лимит времени одного вызова сборщика. В базовом конфиге этой
+# строки быть не должно — установщик, который скачивает человек, выходил бы
+# вдвое тяжелее без всякой причины.
+compression: store
+
 win:
   signAndEditExecutable: false
   signExts:

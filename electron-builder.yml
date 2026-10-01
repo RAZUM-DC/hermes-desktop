@@ -1,10 +1,5 @@
 electronVersion: 39.2.6
 appId: tools.razum.hermes-desktop
-# store = без LZMA-сжатия. Портативная сборка нужна только для локального
-# тестирования разработчиком, не для дистрибуции — на этой Linux-машине без
-# wine быстрее собрать несжатый exe (секунды вместо нескольких минут на LZMA),
-# чем упираться в лимит времени одного вызова инструмента сборки.
-compression: store
 productName: РАЗУМ Ассистент
 directories:
   buildResources: build

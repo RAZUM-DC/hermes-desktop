@@ -8,6 +8,13 @@ extends: ./electron-builder.yml
 # "Предотвращение вторжений" rule can be written against that path instead
 # of a file hash, which a portable build (fresh %TEMP% folder every launch)
 # can never have.
+# store = без LZMA-сжатия. Это диагностической сборки для локальной проверки, не для
+# раздачи: несжатый exe собирается за секунды вместо нескольких минут и
+# укладывается в лимит времени одного вызова сборщика. В базовом конфиге этой
+# строки быть не должно — установщик, который скачивает человек, выходил бы
+# вдвое тяжелее без всякой причины.
+compression: store
+
 win:
   signAndEditExecutable: false
   signExts:
