@@ -4,11 +4,15 @@ import { join } from "path";
 import { app } from "electron";
 
 // Hermes Voice Sidecar — локальное, полностью офлайн распознавание речи для
-// кнопки микрофона в чате. Отдельный Rust-бинарь (candle + квантованная
-// многоязычная модель Whisper "tiny", GGUF), собранный по тому же принципу,
+// кнопки микрофона в чате. Отдельный Rust-бинарь: GigaAM v3 e2e CTC
+// (Sber, MIT) в ONNX int8 через onnxruntime, собранный по тому же принципу,
 // что companion/tool-connector: бандлится в resources/bin (electron-builder
-// extraResources). Здесь только запуск процесса и обмен по stdin/stdout —
-// вся ML-логика находится в Rust-бинаре.
+// extraResources). Рядом с exe лежит onnxruntime.dll — сайдкар грузит её
+// динамически, по имени. Здесь только запуск процесса и обмен по
+// stdin/stdout — вся ML-логика находится в Rust-бинаре.
+//
+// Ядро распознаёт только русский: аргумент --language принимается ради
+// совместимости со старым вызовом и игнорируется.
 //
 // Протокол сайдкара: WAV (16 kHz, mono, PCM) на stdin -> одна строка JSON на
 // stdout:
@@ -38,8 +42,8 @@ function voiceSidecarBinary(): string | null {
   return null;
 }
 
-// %LOCALAPPDATA%\HermesVoice — кэш скачанной Whisper-модели (~40MB суммарно
-// для config/tokenizer/weights). Модель качается один раз при первом
+// %LOCALAPPDATA%\HermesVoice — кэш скачанной модели GigaAM (~215MB: веса
+// в ONNX int8 плюс словарь токенов). Модель качается один раз при первом
 // использовании (или заранее через warmVoiceSidecar()), а дальше
 // распознавание работает полностью офлайн, без Hermes API server.
 function modelCacheDir(): string {
@@ -186,6 +190,8 @@ export function transcribeAudioLocally(
 
 interface SidecarMessage {
   status?: string;
+  /** Ответ наблюдателя за комбинацией: "released" | "absent". */
+  hold?: string;
   partial?: string;
   text?: string;
   error?: string;
@@ -252,9 +258,163 @@ function waitFor(
   });
 }
 
+/**
+ * Разбор stdout/stderr сайдкара и завершение всех ожидающих при его смерти.
+ * Общий код для разового (`--record`) и резидентного (`--serve`) процессов.
+ */
+function attachSidecarStreams(s: RecordingSession, onClose?: () => void): void {
+  s.proc.stdout?.on("data", (chunk: Buffer) => {
+    s.stdout += chunk.toString("utf-8");
+    // Сайдкар пишет по одному JSON-объекту на строку; хвост без \n
+    // оставляем в буфере до следующего чанка.
+    const lines = s.stdout.split(/\r?\n/);
+    s.stdout = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let msg: SidecarMessage | null = null;
+      try {
+        msg = JSON.parse(line) as SidecarMessage;
+      } catch {
+        console.warn("[voice-sidecar] non-JSON line:", line.slice(0, 200));
+        continue;
+      }
+      dispatch(s, msg);
+    }
+  });
+  s.proc.stderr?.on("data", (chunk: Buffer) => {
+    const text = chunk.toString("utf-8");
+    s.stderr += text;
+    console.log("[voice-sidecar]", text.trimEnd());
+  });
+  s.proc.on("error", (e) => {
+    s.finished = true;
+    settleAll(s, e instanceof Error ? e : new Error(String(e)));
+  });
+  s.proc.on("close", (code) => {
+    s.finished = true;
+    onClose?.();
+    settleAll(
+      s,
+      new Error(
+        `Voice sidecar exited (${code ?? "unknown"}). ${s.stderr
+          .slice(-200)
+          .trim()}`.trim(),
+      ),
+    );
+  });
+}
+
 function send(s: RecordingSession, command: string): void {
   s.proc.stdin?.write(`${command}\n`);
 }
+
+// ---------------------------------------------------------------------------
+// Резидентный сайдкар (--serve).
+//
+// Зачем: старт процесса и открытие микрофона занимают ощутимое время. Для
+// кнопки в чате это незаметно — человек нажимает и начинает говорить. Для
+// диктовки по горячей клавише («зажал, сказал, отпустил») это смертельно:
+// ожидание приходится ровно на момент, когда говорить уже закончили. Поэтому
+// один процесс поднимается при старте приложения и обслуживает сколько
+// угодно записей.
+//
+// Саму модель резидентный процесс в памяти НЕ держит: 215MB весов висели бы
+// в RAM всё время работы приложения ради нескольких секунд диктовки в день.
+// Сессия onnxruntime поднимается на команду `start` — параллельно записи —
+// и освобождается сразу после `stop`/`cancel`. К моменту, когда человек
+// договорил, она уже готова, так что задержки это не добавляет.
+//
+// Микрофон при этом открыт только между `start` и `stop`: в простое
+// резидентный процесс к устройству не обращается.
+
+let daemon: RecordingSession | null = null;
+let daemonStarting: Promise<RecordingSession | null> | null = null;
+
+function spawnDaemon(language: string): Promise<RecordingSession | null> {
+  const bin = voiceSidecarBinary();
+  if (!bin) return Promise.resolve(null);
+
+  let proc: ChildProcess;
+  try {
+    proc = spawn(bin, ["--serve", "--language", language], {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+      env: { ...process.env, HERMES_VOICE_MODEL_DIR: modelCacheDir() },
+    });
+  } catch (e) {
+    console.warn("[voice-sidecar] resident spawn failed:", e);
+    return Promise.resolve(null);
+  }
+
+  const s: RecordingSession = {
+    proc,
+    waiters: [],
+    stdout: "",
+    stderr: "",
+    finished: false,
+  };
+  attachSidecarStreams(s);
+  proc.on("close", () => {
+    if (daemon === s) daemon = null;
+  });
+
+  // Модель грузится до первой команды; ждём подтверждения.
+  return waitFor(s, (m) => m.status === "ready")
+    .then(() => {
+      daemon = s;
+      console.log("[voice-sidecar] resident process ready");
+      return s;
+    })
+    .catch((e) => {
+      console.warn("[voice-sidecar] resident sidecar never became ready:", e);
+      try {
+        s.proc.kill();
+      } catch {
+        /* уже мог умереть сам */
+      }
+      return null;
+    });
+}
+
+/**
+ * Поднимает резидентный сайдкар, если он ещё не поднят. Возвращает null, если
+ * бинаря нет или он не смог стартовать — вызывающий код должен откатиться на
+ * разовый запуск.
+ */
+function ensureDaemon(language = "ru"): Promise<RecordingSession | null> {
+  if (daemon && !daemon.finished) return Promise.resolve(daemon);
+  if (!daemonStarting) {
+    daemonStarting = spawnDaemon(language).finally(() => {
+      daemonStarting = null;
+    });
+  }
+  return daemonStarting;
+}
+
+/** Запускает резидентный сайдкар заранее, при старте приложения. */
+export function warmVoiceDaemon(language = "ru"): void {
+  void ensureDaemon(language).catch(() => undefined);
+}
+
+/** Останавливает резидентный процесс (выход из приложения). */
+export function stopVoiceDaemon(): void {
+  const s = daemon;
+  daemon = null;
+  if (!s) return;
+  try {
+    send(s, "quit");
+    s.proc.kill();
+  } catch {
+    /* уже мог умереть сам */
+  }
+}
+
+/** Идёт ли запись через резидентный сайдкар. */
+function daemonIsRecording(): boolean {
+  return daemonRecording;
+}
+
+let daemonRecording = false;
 
 /**
  * Запускает запись: поднимает сайдкар в режиме --record и ждёт подтверждения,
@@ -262,7 +422,7 @@ function send(s: RecordingSession, command: string): void {
  * или устройство открыть не удалось — вызывающий код должен откатиться на
  * getUserMedia/MediaRecorder.
  */
-export function startLocalRecording(language = "ru"): Promise<void> {
+function startOneShotRecording(language: string): Promise<void> {
   const bin = voiceSidecarBinary();
   if (!bin) {
     return Promise.reject(
@@ -291,56 +451,48 @@ export function startLocalRecording(language = "ru"): Promise<void> {
     finished: false,
   };
   session = s;
-
-  proc.stdout?.on("data", (chunk: Buffer) => {
-    s.stdout += chunk.toString("utf-8");
-    // Сайдкар пишет по одному JSON-объекту на строку; хвост без \n
-    // оставляем в буфере до следующего чанка.
-    const lines = s.stdout.split(/\r?\n/);
-    s.stdout = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let msg: SidecarMessage | null = null;
-      try {
-        msg = JSON.parse(line) as SidecarMessage;
-      } catch {
-        console.warn("[voice-sidecar] non-JSON line:", line.slice(0, 200));
-        continue;
-      }
-      dispatch(s, msg);
-    }
-  });
-  proc.stderr?.on("data", (chunk: Buffer) => {
-    const text = chunk.toString("utf-8");
-    s.stderr += text;
-    console.log("[voice-sidecar]", text.trimEnd());
-  });
-  proc.on("error", (e) => {
-    s.finished = true;
-    settleAll(s, e instanceof Error ? e : new Error(String(e)));
-  });
-  proc.on("close", (code) => {
-    s.finished = true;
+  attachSidecarStreams(s, () => {
     if (session === s) session = null;
-    settleAll(
-      s,
-      new Error(
-        `Voice sidecar exited (${code ?? "unknown"}). ${s.stderr
-          .slice(-200)
-          .trim()}`.trim(),
-      ),
-    );
   });
 
   return waitFor(s, (m) => m.status === "recording").then(() => undefined);
 }
 
 /**
- * Промежуточный текст «на лету»: сайдкар прогоняет через Whisper всё, что
+ * Начинает запись. Сначала пробуем резидентный процесс — у него модель уже в
+ * памяти, поэтому финальная расшифровка приходит почти мгновенно. Если его
+ * нет или он отказался, откатываемся на разовый запуск: там модель грузится
+ * заново, но запись всё равно состоится.
+ */
+export async function startLocalRecording(language = "ru"): Promise<void> {
+  try {
+    const d = await ensureDaemon(language);
+    if (d && !d.finished) {
+      send(d, "start");
+      await waitFor(d, (m) => m.status === "recording");
+      daemonRecording = true;
+      return;
+    }
+  } catch (e) {
+    console.warn("[voice-sidecar] resident start failed, falling back:", e);
+    daemonRecording = false;
+  }
+  return startOneShotRecording(language);
+}
+
+/**
+ * Промежуточный текст «на лету»: сайдкар прогоняет через модель всё, что
  * записано на данный момент, не прерывая запись. Пустая строка — нормальный
  * ответ (модель ещё грузится или человек пока молчит).
  */
 export function partialLocalTranscript(): Promise<string> {
+  if (daemonIsRecording() && daemon && !daemon.finished) {
+    const d = daemon;
+    send(d, "partial");
+    return waitFor(d, (m) => typeof m.partial === "string").then((m) =>
+      (m.partial || "").trim(),
+    );
+  }
   const s = session;
   if (!s || s.finished) return Promise.reject(new Error("Not recording."));
   send(s, "partial");
@@ -351,6 +503,14 @@ export function partialLocalTranscript(): Promise<string> {
 
 /** Останавливает запись и отдаёт финальную расшифровку. */
 export function stopLocalRecording(): Promise<string> {
+  if (daemonIsRecording() && daemon && !daemon.finished) {
+    const d = daemon;
+    daemonRecording = false;
+    send(d, "stop");
+    return waitFor(d, (m) => typeof m.text === "string").then((m) =>
+      (m.text || "").trim(),
+    );
+  }
   const s = session;
   if (!s || s.finished) return Promise.reject(new Error("Not recording."));
   send(s, "stop");
@@ -361,7 +521,52 @@ export function stopLocalRecording(): Promise<string> {
 }
 
 /** Прерывает запись без расшифровки (закрытие окна, смена вкладки, ошибка). */
+/**
+ * Просит резидентный сайдкар последить за комбинацией и сказать, когда её
+ * отпустят.
+ *
+ * Почему не силами Electron: регистрируя глобальную комбинацию, Windows
+ * перехватывает её целиком, и отпускание не доходит ни до одного окна. Опрос
+ * состояния конкретных клавиш — единственный способ узнать, что человек
+ * договорил и разжал пальцы. Наблюдатель живёт только на время диктовки.
+ *
+ * Возвращает "released" (отпустили — пора заканчивать), "absent" (зажать не
+ * успели, удержания не было) или null, если резидентного процесса нет.
+ */
+export async function watchHotkeyRelease(
+  vks: number[],
+): Promise<"released" | "absent" | null> {
+  if (vks.length === 0) return null;
+  // Наблюдателю резидентный процесс нужен сам по себе, а не потому, что через
+  // него идёт запись: он только опрашивает клавиши. Поэтому поднимаем его и в
+  // том случае, если сама запись почему-то ушла на разовый запуск.
+  const d = daemon && !daemon.finished ? daemon : await ensureDaemon();
+  if (!d || d.finished) {
+    console.warn("[voice-sidecar] no resident process to watch the hotkey");
+    return null;
+  }
+  send(d, `watchkeys ${vks.join(",")}`);
+  try {
+    const msg = await waitFor(d, (m) => typeof m.hold === "string");
+    const result = msg.hold === "released" ? "released" : "absent";
+    console.log("[voice-sidecar] hotkey watch:", result);
+    return result;
+  } catch (e) {
+    console.warn("[voice-sidecar] hotkey watch failed:", e);
+    return null;
+  }
+}
+
 export function cancelLocalRecording(): void {
+  if (daemonIsRecording() && daemon && !daemon.finished) {
+    daemonRecording = false;
+    try {
+      send(daemon, "cancel");
+    } catch {
+      /* процесс мог умереть — следующая запись поднимет новый */
+    }
+    return;
+  }
   const s = session;
   if (!s) return;
   session = null;
@@ -376,5 +581,6 @@ export function cancelLocalRecording(): void {
 
 /** Идёт ли сейчас запись через сайдкар. */
 export function isLocalRecordingActive(): boolean {
+  if (daemonIsRecording()) return true;
   return session !== null && !session.finished;
 }
