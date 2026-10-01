@@ -28,7 +28,7 @@ import { setGatewayPromptParent } from "../gatewayPrompt";
 import { showChatContextMenu } from "./context-menu";
 import { buildMenu } from "./menu";
 import { attachWindowHotkeys } from "./window-hotkeys";
-import { shouldStartHidden } from "../autostart";
+import { initAutostartDefault, shouldStartHidden } from "../autostart";
 import { setupUpdater } from "./updater";
 import { startCompanion, stopCompanion } from "../companion";
 import { warmVoiceDaemon, stopVoiceDaemon } from "../voice-sidecar";
@@ -153,6 +153,10 @@ export function startMainProcess(): void {
     createWindow();
     buildMenu({ getMainWindow: () => mainWindow, openExternalUrl });
     createTray();
+    // Автозапуск включается сам при первом запуске: приложение резидентное, и
+    // искать для этого галочку человек не должен. Дальше решает он — отметка
+    // о первом запуске не даёт нам вернуть снятую галочку.
+    initAutostartDefault();
     // Фоновые уведомления по доске «ИИ-сотрудники» (Фаза B).
     startStaffWatcher(() => mainWindow);
     registerQuickCallShortcut();
