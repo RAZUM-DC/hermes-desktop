@@ -6,10 +6,52 @@ import {
   runIdAtPosition,
   switcherLabel,
   type SwitcherItem,
+  tabOrder,
 } from "./runSwitcher";
 
 const items = (...ids: string[]): SwitcherItem[] =>
   ids.map((id) => ({ id, title: id.toUpperCase() }));
+
+describe("tabOrder", () => {
+  it("ставит диалоги перед разделами, как рисует полоса", () => {
+    expect(tabOrder(["r1", "r2"], ["notes", "kanban"])).toEqual([
+      "r1",
+      "r2",
+      "notes",
+      "kanban",
+    ]);
+  });
+
+  it("работает, когда разделов нет", () => {
+    expect(tabOrder(["r1"], [])).toEqual(["r1"]);
+  });
+
+  it("работает, когда нет ни того ни другого", () => {
+    expect(tabOrder([], [])).toEqual([]);
+  });
+});
+
+describe("стрелки по всем вкладкам", () => {
+  const tabs = tabOrder(["r1", "r2"], ["notes", "staff"]);
+
+  it("из последнего диалога уходят в первый раздел, а не по кругу диалогов", () => {
+    // Ровно та жалоба: раньше список состоял из одних диалогов, и стрелка с
+    // «r2» возвращалась на «r1», минуя открытые разделы.
+    expect(neighbourRunId(tabs, "r2")).toBe("notes");
+  });
+
+  it("из первого раздела назад возвращаются в последний диалог", () => {
+    expect(neighbourRunId(tabs, "notes", true)).toBe("r2");
+  });
+
+  it("с последнего раздела по кругу уходят в первый диалог", () => {
+    expect(neighbourRunId(tabs, "staff")).toBe("r1");
+  });
+
+  it("цифрой добираются и до раздела", () => {
+    expect(runIdAtPosition(tabs, 3)).toBe("notes");
+  });
+});
 
 describe("runIdAtPosition", () => {
   it("берёт вкладку по её месту в верхней строке", () => {
