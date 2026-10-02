@@ -25,6 +25,7 @@ import SidebarRecentSessions from "./SidebarRecentSessions";
 import {
   advance,
   neighbourRunId,
+  tabOrder,
   openSwitcher,
   runIdAtPosition,
   SWITCHER_LIMIT,
@@ -726,8 +727,50 @@ function Layout({
   sidebarSessionsRef.current = switcherItems;
   const currentSessionIdRef = useRef<string | null>(currentSessionId);
   currentSessionIdRef.current = currentSessionId;
+  const goToRef = useRef(goTo);
+  goToRef.current = goTo;
   const activateRunRef = useRef(handleActivateRun);
   activateRunRef.current = handleActivateRun;
+
+  /**
+   * Вкладки верхней строки одним списком и в том же порядке, в каком они
+   * нарисованы: цифры и стрелки должны вести туда, куда показывает глаз.
+   */
+  const openSectionsRef = useRef<View[]>(openSections);
+  openSectionsRef.current = openSections;
+  const viewRef = useRef<View>(view);
+  viewRef.current = view;
+
+  const tabIds = useCallback(
+    (): string[] =>
+      tabOrder(
+        runsRef.current.map((r) => r.runId),
+        openSectionsRef.current,
+      ),
+    [],
+  );
+
+  /**
+   * Что сейчас выбрано в верхней строке.
+   *
+   * На вкладке раздела активным остаётся и диалог — вкладки смонтированы все
+   * разом, — поэтому спрашивать один `activeRunId` нельзя: стрелка уводила бы
+   * от диалога, которого человек не видит.
+   */
+  const activeTabId = useCallback(
+    (): string =>
+      viewRef.current === "chat" ? activeRunIdRef.current : viewRef.current,
+    [],
+  );
+
+  /** Переходит на вкладку независимо от того, диалог это или раздел. */
+  const activateTab = useCallback((id: string): void => {
+    if (openSectionsRef.current.includes(id as View)) {
+      goToRef.current(id as View);
+      return;
+    }
+    activateRunRef.current(id);
+  }, []);
   // Присваивается ниже, сразу после объявления handleResumeSession: тот
   // объявлен позже по файлу, и взять его здесь напрямую нельзя.
   const resumeSessionRef = useRef<(sessionId: string) => Promise<void>>(
@@ -1003,18 +1046,18 @@ function Layout({
         return;
       }
       const target = neighbourRunId(
-        runsRef.current.map((r) => r.runId),
-        activeRunIdRef.current,
+        tabIds(),
+        activeTabId(),
         action === "prevChat",
       );
-      if (target && target !== activeRunIdRef.current) {
-        activateRunRef.current(target);
+      if (target && target !== activeTabId()) {
+        activateTab(target);
       }
     });
-  }, [insertDraft]);
+  }, [insertDraft, tabIds, activeTabId, activateTab]);
 
   useEffect(() => {
-    const runIds = (): string[] => runsRef.current.map((r) => r.runId);
+    const runIds = tabIds;
 
     const onKeyDown = (event: KeyboardEvent): void => {
       // Цифра — прямой переход к вкладке с этим номером в верхней строке.
@@ -1031,7 +1074,7 @@ function Layout({
         const target = runIdAtPosition(runIds(), Number(digit[1]));
         if (!target) return;
         event.preventDefault();
-        activateRunRef.current(target);
+        activateTab(target);
         return;
       }
 
@@ -1039,15 +1082,15 @@ function Layout({
       const forward = matchesAccelerator(event, nextChatHotkey);
       const back = !forward && matchesAccelerator(event, prevChatHotkey);
       if (forward || back) {
-        const target = neighbourRunId(runIds(), activeRunIdRef.current, back);
-        if (!target || target === activeRunIdRef.current) {
+        const target = neighbourRunId(runIds(), activeTabId(), back);
+        if (!target || target === activeTabId()) {
           // Одна вкладка — гасим нажатие всё равно: иначе Alt+стрелка уедет
           // в поле ввода и подвинет там каретку.
           event.preventDefault();
           return;
         }
         event.preventDefault();
-        activateRunRef.current(target);
+        activateTab(target);
         return;
       }
 
@@ -1095,7 +1138,14 @@ function Layout({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [switchHotkey, nextChatHotkey, prevChatHotkey]);
+  }, [
+    switchHotkey,
+    nextChatHotkey,
+    prevChatHotkey,
+    tabIds,
+    activeTabId,
+    activateTab,
+  ]);
 
   // Close a conversation tab: stop it if it's running, drop it from the list,
   // and (if it was active) move to a neighbour. Always keep at least one chat
