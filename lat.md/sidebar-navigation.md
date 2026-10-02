@@ -16,6 +16,14 @@ The expanded sidebar renders the RAZUM SVG as a real image, preventing a failed 
 
 [[src/renderer/src/components/common/SidebarBrand.tsx#SidebarBrand]] owns the accessible image. CSS filters the black source to white on dark themes and black on light themes without placing a coloured rectangle behind it.
 
+### Empty chat brand mark
+
+The empty chat screen shows the standalone RAZUM mark in the active theme colour without relying on a CSS mask or bundled data URL.
+
+[[src/renderer/src/screens/Chat/ChatEmptyState.tsx#ChatEmptyState]] renders the mark as inline SVG with `currentColor`. This keeps it visible in light and dark themes and prevents a malformed `mask-image` from becoming a solid rectangle.
+
+[[src/renderer/src/screens/Chat/ChatEmptyState.test.tsx]] guards the rendering contract by requiring an inline SVG path with theme-driven colour and no CSS mask.
+
 ## Infinite sidebar list
 
 The inline list lazily loads cached sessions in pages as the user scrolls, so the sidebar can expose the full chat history without a fixed inline cap.
