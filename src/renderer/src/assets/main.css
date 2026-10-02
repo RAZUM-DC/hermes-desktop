@@ -3833,21 +3833,13 @@ body {
   }
 }
 
-/* Знак РАЗУМ в пустом чате.
-   Кружка под ним больше нет: он стоял здесь ради белой надписи HERMES ONE,
-   которая на светлой теме пропала бы без тёмной подложки. Знак кладётся
-   маской и красится цветом темы, поэтому читается на любом фоне сам. */
+/* Знак РАЗУМ в пустом чате следует цвету активной темы. */
 .chat-empty-logo {
   width: 60px;
   height: 72px;
   margin-bottom: 14px;
-  background-color: var(--text-primary);
-  mask-repeat: no-repeat;
-  mask-position: center;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  -webkit-mask-size: contain;
+  color: var(--text-primary);
+  display: block;
 }
 
 .chat-empty-text {
