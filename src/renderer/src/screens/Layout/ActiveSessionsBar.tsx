@@ -1,10 +1,11 @@
-import { memo } from "react";
+import { memo, useEffect, useRef } from "react";
 import { Spinner, X, Plus } from "../../assets/icons";
 import type { LucideIcon } from "lucide-react";
 import { useI18n } from "../../components/useI18n";
 import ProfileAvatar from "../../components/common/ProfileAvatar";
 import { defaultColorForName } from "../../../../shared/profileColors";
 import type { ChatRun } from "./chatRuns";
+import { canScroll, scrollToReveal, wheelScrollDelta } from "./tabStripScroll";
 
 export interface ProfileAppearance {
   color?: string | null;
@@ -63,6 +64,53 @@ export const ActiveSessionsBar = memo(function ActiveSessionsBar({
   onCloseSection?: (view: string) => void;
 }): React.JSX.Element {
   const { t } = useI18n();
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // Колесо мыши прокручивает полосу вбок, как в браузере.
+  //
+  // Слушатель вешается вручную и непассивным: React раздаёт события колеса
+  // пассивно, а тогда preventDefault не работает и страница под полосой
+  // уезжает вместе с ней.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const onWheel = (event: WheelEvent): void => {
+      if (!canScroll(strip.scrollWidth, strip.clientWidth)) return;
+      const delta = wheelScrollDelta(
+        event.deltaY,
+        event.deltaX,
+        event.deltaMode,
+      );
+      if (!delta) return;
+      event.preventDefault();
+      strip.scrollLeft += delta;
+    };
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Выбранная вкладка подтягивается в видимую часть. Без этого переключение
+  // стрелками уводило бы на вкладку за краем полосы: диалог меняется, а на
+  // экране ничего не происходит.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const tab = strip?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!strip || !tab) return;
+    const to = scrollToReveal(
+      tab.offsetLeft,
+      tab.offsetWidth,
+      strip.scrollLeft,
+      strip.clientWidth,
+    );
+    if (to === null) return;
+    // scrollTo есть не везде (его, например, нет в тестовой среде), а
+    // прокрутить надо в любом случае: без плавности, но до конца.
+    if (typeof strip.scrollTo === "function") {
+      strip.scrollTo({ left: to, behavior: "smooth" });
+    } else {
+      strip.scrollLeft = to;
+    }
+  }, [activeRunId, activeView, runs.length, sections.length]);
 
   const anyLoading = runs.some((r) => r.loading);
   const hasRealSession = runs.some((r) => r.sessionId || r.title);
@@ -73,7 +121,7 @@ export const ActiveSessionsBar = memo(function ActiveSessionsBar({
   const chatOnScreen = activeView === "chat";
 
   return (
-    <div className="active-sessions-bar" role="tablist">
+    <div className="active-sessions-bar" role="tablist" ref={stripRef}>
       {showChips &&
         runs.map((run) => {
           // Диалог активен только когда и вкладка чата на экране: иначе
