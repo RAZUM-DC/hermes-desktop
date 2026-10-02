@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Search, Clock, Mail, Code, ChartLine, Bell } from "lucide-react";
-import titleLine from "../../assets/title-line.svg";
+import razumMark from "../../assets/razum-mark.svg";
 import { useI18n } from "../../components/useI18n";
 
 interface Suggestion {
@@ -53,17 +53,19 @@ export const ChatEmptyState = memo(function ChatEmptyState({
 
   return (
     <div className="chat-empty">
-      <div className="chat-empty-icon">
-        <span
-          className="chat-empty-logo"
-          role="img"
-          aria-label="Hermes"
-          style={{
-            maskImage: `url(${titleLine})`,
-            WebkitMaskImage: `url(${titleLine})`,
-          }}
-        />
-      </div>
+      {/* Знак РАЗУМ вместо надписи HERMES ONE. Чёрного круга под ним нет:
+          он был нужен белым буквам, чтобы те не пропадали на светлой теме, а
+          знак кладётся маской и красится в --text-primary — то есть сам
+          следует за темой и остаётся читаемым на любом фоне. */}
+      <span
+        className="chat-empty-logo"
+        role="img"
+        aria-label="РАЗУМ"
+        style={{
+          maskImage: `url(${razumMark})`,
+          WebkitMaskImage: `url(${razumMark})`,
+        }}
+      />
       <div className="chat-empty-text">{t("chat.emptyTitle")}</div>
       <div className="chat-empty-hint">{t("chat.emptyHint")}</div>
       <div className="chat-empty-suggestions">
