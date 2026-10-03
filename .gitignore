@@ -50,3 +50,5 @@ build-artifacts/
 /*-portable.zip
 mic-log*.txt
 electron.vite.config.*.mjs
+# Папка, которую передаём на тестирование: архив сборки и сертификат.
+для-коллеги/
