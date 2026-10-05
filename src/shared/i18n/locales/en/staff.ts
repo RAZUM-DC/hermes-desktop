@@ -14,7 +14,8 @@ export default {
   reject: "Reject",
   loadFailed: "Couldn't load the staff list.",
   boardFailed: "Couldn't load the board.",
-  createFailed: "The agent did not accept the task — this is a fault on its side, not in the app.",
+  createFailed:
+    "The agent did not accept the task — this is a fault on its side, not in the app.",
   /** Вердикт уходит комментарием в задачу сотрудника. */
   verdict: {
     approve: "✅ Approved",

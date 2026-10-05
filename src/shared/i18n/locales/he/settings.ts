@@ -3,7 +3,6 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "מראה",
-    startup: "הפעלה",
     privacy: "פרטיות",
     credentialPool: "מאגר אישורים",
   },
@@ -13,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "מראה",
+    startup: "הפעלה",
     language: "שפה",
     privacy: "פרטיות",
     connection: "חיבור",
@@ -201,6 +201,7 @@ export default {
     label: "הפעלה יחד עם Windows",
     hint: "האפליקציה עולה בכניסה למערכת וממתינה במגש.",
     unsupported: "הפעלה אוטומטית זמינה רק באפליקציה בנויה, לא בהרצה מהקוד.",
-    trayNote: "עולה ממוזערת בכוונה: אחרת החלון היה קופץ בכל כניסה. הכתבה, צילומי מסך והתראות על משימות פועלים מהמגש.",
+    trayNote:
+      "עולה ממוזערת בכוונה: אחרת החלון היה קופץ בכל כניסה. הכתבה, צילומי מסך והתראות על משימות פועלים מהמגש.",
   },
 } as const;

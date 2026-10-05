@@ -3,7 +3,6 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Tampilan",
-    startup: "Startup",
     privacy: "Privasi",
     credentialPool: "Kumpulan Kredensial",
   },
@@ -13,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "Tampilan",
+    startup: "Startup",
     language: "Bahasa",
     privacy: "Privasi",
     connection: "Koneksi",
@@ -137,7 +137,9 @@ export default {
   autostart: {
     label: "Jalankan bersama Windows",
     hint: "Aplikasi berjalan saat Anda masuk dan menunggu di baki sistem.",
-    unsupported: "Autostart hanya tersedia di aplikasi hasil build, bukan saat dijalankan dari sumber.",
-    trayNote: "Sengaja dimulai terminimalkan: kalau tidak, jendela akan muncul setiap kali masuk. Dikte, tangkapan layar, dan notifikasi tugas tetap jalan dari baki.",
+    unsupported:
+      "Autostart hanya tersedia di aplikasi hasil build, bukan saat dijalankan dari sumber.",
+    trayNote:
+      "Sengaja dimulai terminimalkan: kalau tidak, jendela akan muncul setiap kali masuk. Dikte, tangkapan layar, dan notifikasi tugas tetap jalan dari baki.",
   },
 } as const;

@@ -14,7 +14,8 @@ export default {
   reject: "Tolak",
   loadFailed: "Gagal memuat daftar.",
   boardFailed: "Gagal memuat papan.",
-  createFailed: "Agen tidak menerima tugas — masalahnya ada di sisi agen, bukan di aplikasi.",
+  createFailed:
+    "Agen tidak menerima tugas — masalahnya ada di sisi agen, bukan di aplikasi.",
   /** Вердикт уходит комментарием в задачу сотрудника. */
   verdict: {
     approve: "✅ Disetujui",

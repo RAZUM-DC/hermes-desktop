@@ -14,7 +14,8 @@ export default {
   reject: "Reddet",
   loadFailed: "Liste yüklenemedi.",
   boardFailed: "Pano yüklenemedi.",
-  createFailed: "Ajan görevi kabul etmedi — sorun uygulamada değil, onun tarafında.",
+  createFailed:
+    "Ajan görevi kabul etmedi — sorun uygulamada değil, onun tarafında.",
   /** Вердикт уходит комментарием в задачу сотрудника. */
   verdict: {
     approve: "✅ Onaylandı",

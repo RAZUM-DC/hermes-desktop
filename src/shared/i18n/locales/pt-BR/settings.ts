@@ -3,7 +3,6 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Aparência",
-    startup: "Inicialização",
     privacy: "Privacidade",
     credentialPool: "Pool de Credenciais",
   },
@@ -13,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "Aparência",
+    startup: "Inicialização",
     language: "Idioma",
     privacy: "Privacidade",
     connection: "Conexão",
@@ -140,7 +140,9 @@ export default {
   autostart: {
     label: "Iniciar com o Windows",
     hint: "O aplicativo inicia ao entrar e aguarda na bandeja.",
-    unsupported: "A inicialização automática só existe no aplicativo compilado, não ao rodar do código-fonte.",
-    trayNote: "Inicia minimizado de propósito: caso contrário a janela apareceria a cada login. Ditado, capturas e avisos de tarefas funcionam pela bandeja.",
+    unsupported:
+      "A inicialização automática só existe no aplicativo compilado, não ao rodar do código-fonte.",
+    trayNote:
+      "Inicia minimizado de propósito: caso contrário a janela apareceria a cada login. Ditado, capturas e avisos de tarefas funcionam pela bandeja.",
   },
 } as const;

@@ -3,7 +3,6 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "外觀",
-    startup: "啟動",
     privacy: "隱私",
     credentialPool: "憑證池",
   },
@@ -13,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "外觀",
+    startup: "啟動",
     language: "語言",
     privacy: "隱私",
     connection: "連線",
@@ -126,6 +126,7 @@ export default {
     label: "隨 Windows 一起啟動",
     hint: "登入時自動啟動，在系統匣中待命。",
     unsupported: "開機自動啟動只在打包後的應用中可用，從原始碼執行時沒有。",
-    trayNote: "特意以最小化方式啟動：否則每次登入視窗都會跳到最前。語音輸入、螢幕擷取和任務通知在系統匣狀態下照常運作。",
+    trayNote:
+      "特意以最小化方式啟動：否則每次登入視窗都會跳到最前。語音輸入、螢幕擷取和任務通知在系統匣狀態下照常運作。",
   },
 } as const;

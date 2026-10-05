@@ -3,7 +3,6 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Wygląd",
-    startup: "Uruchamianie",
     privacy: "Prywatność",
     credentialPool: "Pula poświadczeń",
   },
@@ -13,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "Wygląd",
+    startup: "Uruchamianie",
     language: "Język",
     privacy: "Prywatność",
     connection: "Połączenie",
@@ -139,7 +139,9 @@ export default {
   autostart: {
     label: "Uruchamiaj razem z Windows",
     hint: "Aplikacja startuje przy logowaniu i czeka w zasobniku.",
-    unsupported: "Autostart działa tylko w zbudowanej aplikacji, nie przy uruchamianiu ze źródeł.",
-    trayNote: "Startuje zminimalizowana celowo: inaczej okno pojawiałoby się przy każdym logowaniu. Dyktowanie, zrzuty ekranu i powiadomienia działają z zasobnika.",
+    unsupported:
+      "Autostart działa tylko w zbudowanej aplikacji, nie przy uruchamianiu ze źródeł.",
+    trayNote:
+      "Startuje zminimalizowana celowo: inaczej okno pojawiałoby się przy każdym logowaniu. Dyktowanie, zrzuty ekranu i powiadomienia działają z zasobnika.",
   },
 } as const;

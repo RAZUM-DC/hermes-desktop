@@ -3,7 +3,6 @@ export default {
   sections: {
     hermesAgent: "Agente Hermes",
     appearance: "Aparência",
-    startup: "Arranque",
     privacy: "Privacidade",
     credentialPool: "Pool de Credenciais",
   },
@@ -13,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "Aparência",
+    startup: "Arranque",
     language: "Idioma",
     privacy: "Privacidade",
     connection: "Ligação",
@@ -132,7 +132,9 @@ export default {
   autostart: {
     label: "Iniciar com o Windows",
     hint: "A aplicação arranca ao iniciar sessão e espera na área de notificação.",
-    unsupported: "O arranque automático só existe na aplicação compilada, não ao correr a partir do código.",
-    trayNote: "Arranca minimizada de propósito: caso contrário a janela apareceria em cada sessão. Ditado, capturas e avisos de tarefas funcionam a partir da área de notificação.",
+    unsupported:
+      "O arranque automático só existe na aplicação compilada, não ao correr a partir do código.",
+    trayNote:
+      "Arranca minimizada de propósito: caso contrário a janela apareceria em cada sessão. Ditado, capturas e avisos de tarefas funcionam a partir da área de notificação.",
   },
 } as const;

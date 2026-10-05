@@ -14,7 +14,8 @@ export default {
   reject: "Odrzuć",
   loadFailed: "Nie udało się wczytać listy.",
   boardFailed: "Nie udało się wczytać tablicy.",
-  createFailed: "Agent nie przyjął zadania — usterka jest po jego stronie, nie w aplikacji.",
+  createFailed:
+    "Agent nie przyjął zadania — usterka jest po jego stronie, nie w aplikacji.",
   /** Вердикт уходит комментарием в задачу сотрудника. */
   verdict: {
     approve: "✅ Zatwierdzone",

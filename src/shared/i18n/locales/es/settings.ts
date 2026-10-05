@@ -3,7 +3,6 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Apariencia",
-    startup: "Inicio",
     privacy: "Privacidad",
     credentialPool: "Grupo de credenciales",
   },
@@ -13,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "Apariencia",
+    startup: "Inicio",
     language: "Idioma",
     privacy: "Privacidad",
     connection: "Conexión",
@@ -141,7 +141,9 @@ export default {
   autostart: {
     label: "Iniciar con Windows",
     hint: "La aplicación se inicia al entrar y espera en la bandeja.",
-    unsupported: "El inicio automático solo está disponible en una app compilada, no al ejecutar desde el código.",
-    trayNote: "Se inicia minimizada a propósito: de lo contrario la ventana aparecería en cada inicio de sesión. El dictado, las capturas y los avisos de tareas funcionan desde la bandeja.",
+    unsupported:
+      "El inicio automático solo está disponible en una app compilada, no al ejecutar desde el código.",
+    trayNote:
+      "Se inicia minimizada a propósito: de lo contrario la ventana aparecería en cada inicio de sesión. El dictado, las capturas y los avisos de tareas funcionan desde la bandeja.",
   },
 } as const;
