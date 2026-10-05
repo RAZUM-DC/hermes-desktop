@@ -3,7 +3,6 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "外観",
-    startup: "起動",
     privacy: "プライバシー",
     credentialPool: "認証情報プール",
   },
@@ -13,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "外観",
+    startup: "起動",
     language: "言語",
     privacy: "プライバシー",
     connection: "接続",
@@ -135,7 +135,9 @@ export default {
   autostart: {
     label: "Windows と一緒に起動",
     hint: "サインイン時に起動し、通知領域で待機します。",
-    unsupported: "自動起動はビルド済みのアプリでのみ使えます。ソースから起動した場合は使えません。",
-    trayNote: "あえて最小化で起動します。そうしないとサインインのたびにウィンドウが前面に出ます。音声入力・スクリーンショット・タスク通知は通知領域からでも動きます。",
+    unsupported:
+      "自動起動はビルド済みのアプリでのみ使えます。ソースから起動した場合は使えません。",
+    trayNote:
+      "あえて最小化で起動します。そうしないとサインインのたびにウィンドウが前面に出ます。音声入力・スクリーンショット・タスク通知は通知領域からでも動きます。",
   },
 } as const;

@@ -3,7 +3,6 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Görünüm",
-    startup: "Başlangıç",
     privacy: "Gizlilik",
     credentialPool: "Kimlik Bilgisi Havuzu",
   },
@@ -13,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "Görünüm",
+    startup: "Başlangıç",
     language: "Dil",
     privacy: "Gizlilik",
     connection: "Bağlantı",
@@ -206,7 +206,9 @@ export default {
   autostart: {
     label: "Windows ile birlikte başlat",
     hint: "Uygulama oturum açınca başlar ve sistem tepsisinde bekler.",
-    unsupported: "Otomatik başlatma yalnızca derlenmiş uygulamada çalışır, kaynaktan çalıştırırken değil.",
-    trayNote: "Bilerek simge durumunda başlar: aksi halde pencere her oturum açışta öne çıkardı. Dikte, ekran görüntüsü ve görev bildirimleri tepsiden çalışır.",
+    unsupported:
+      "Otomatik başlatma yalnızca derlenmiş uygulamada çalışır, kaynaktan çalıştırırken değil.",
+    trayNote:
+      "Bilerek simge durumunda başlar: aksi halde pencere her oturum açışta öne çıkardı. Dikte, ekran görüntüsü ve görev bildirimleri tepsiden çalışır.",
   },
 } as const;

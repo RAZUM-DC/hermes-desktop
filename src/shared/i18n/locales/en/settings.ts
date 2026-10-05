@@ -3,7 +3,6 @@ export default {
   sections: {
     hermesAgent: "Hermes Agent",
     appearance: "Appearance",
-    startup: "Startup",
     privacy: "Privacy",
     credentialPool: "Credential Pool",
   },
@@ -13,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "Appearance",
+    startup: "Startup",
     language: "Language",
     hotkeys: "Hotkeys",
     privacy: "Privacy",
@@ -273,7 +273,8 @@ export default {
       "modifier-only": "Add a key to the modifiers.",
       "needs-modifier":
         "Use Ctrl, Alt or Win — otherwise the combination would swallow ordinary typing.",
-      unsupported: "Autostart is only available in a built app, not when running from source.",
+      unsupported:
+        "Autostart is only available in a built app, not when running from source.",
       reserved: "This combination is already used by Hermes One itself.",
       taken: "Another application already holds this combination.",
     },
@@ -283,6 +284,7 @@ export default {
     label: "Start with Windows",
     hint: "The app starts when you sign in and waits in the tray.",
     unsupported: "Autostart is unavailable in this build.",
-    trayNote: "It starts minimised on purpose: the window would otherwise jump up at every sign-in. Dictation, screenshots and task notifications work from the tray, without the window open.",
+    trayNote:
+      "It starts minimised on purpose: the window would otherwise jump up at every sign-in. Dictation, screenshots and task notifications work from the tray, without the window open.",
   },
 } as const;

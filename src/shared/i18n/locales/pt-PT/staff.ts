@@ -14,7 +14,8 @@ export default {
   reject: "Rejeitar",
   loadFailed: "Não foi possível carregar a lista.",
   boardFailed: "Não foi possível carregar o quadro.",
-  createFailed: "O agente não aceitou a tarefa — a falha é do lado dele, não da aplicação.",
+  createFailed:
+    "O agente não aceitou a tarefa — a falha é do lado dele, não da aplicação.",
   /** Вердикт уходит комментарием в задачу сотрудника. */
   verdict: {
     approve: "✅ Aprovado",
