@@ -21,6 +21,7 @@ win:
   target:
     - nsis
     - portable
+    - msi
   # Подпись кода. Помимо привычного «неизвестный издатель» в Windows, без неё
   # корпоративные средства защиты не дают приложению доступ к устройствам:
   # Kaspersky Endpoint Security блокирует неподписанным программам микрофон
@@ -52,6 +53,32 @@ nsis:
   createDesktopShortcut: always
   oneClick: true
   perMachine: false
+msi:
+  artifactName: ${name}-${version}.${ext}
+  # MSI нужен ровно для одного: централизованной установки. Групповые политики
+  # Active Directory, SCCM и Intune разворачивают только .msi — установщик NSIS
+  # таким способом раскатать нельзя. Для «скачал и запустил» остаётся nsis, и
+  # именно он остаётся основным артефактом релиза.
+  #
+  # perMachine здесь намеренно true, в отличие от nsis-профиля:
+  #   • раскатка политикой идёт от имени SYSTEM, прав хватает;
+  #   • приложение ложится в %ProgramFiles%\hermes-desktop — фиксированный путь,
+  #     под который можно написать правило Kaspersky «Предотвращение вторжений»
+  #     (то же рассуждение, что в комментарии к nsis-профилю);
+  #   • при perMachine: false WiX ставит в профиль пользователя и валится на
+  #     ICE38/ICE64 — у light включён -pedantic -wx, предупреждение станет
+  #     ошибкой сборки.
+  #
+  # Имя каталога установки WiX берёт не из productName (кириллица не проходит
+  # его фильтр ^[-_+0-9a-zA-Z .]+$), а из package.json name — hermes-desktop.
+  # Путь остаётся ASCII, это нас устраивает.
+  #
+  # Если light всё-таки упрётся в предупреждение, которое нам не важно,
+  # отключать стоит не весь -wx, а конкретный код: additionalLightArgs:
+  # ["-swNNNN"]. warningsAsErrors: false глушит разом всё, включая настоящие
+  # проблемы с манифестом.
+  perMachine: true
+
 mac:
   artifactName: ${name}-${version}-${arch}-${os}.${ext}
   icon: build/icon.icns
