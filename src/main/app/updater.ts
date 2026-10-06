@@ -36,6 +36,46 @@ function setAutoUpgradeEnabled(enabled: boolean): void {
   writeFileSync(file, `${JSON.stringify({ autoUpgrade: enabled }, null, 2)}\n`);
 }
 
+/**
+ * Установка «на всю машину» — это MSI, и только MSI. Профиль nsis собран с
+ * `perMachine: false` и всегда ложится в профиль пользователя
+ * (%LOCALAPPDATA%\Programs), portable вообще распаковывается во временную
+ * папку. Поэтому каталог внутри %ProgramFiles% однозначно означает msi-пакет.
+ *
+ * Зачем это знать апдейтеру: electron-updater умеет обновлять только nsis.
+ * Из MSI-установки он скачал бы setup.exe и поставил рядом вторую копию
+ * приложения — в профиле пользователя, мимо записи MSI в списке установленных
+ * программ. Человек получил бы две версии, и ни одна не знала бы о другой.
+ * Машины, раскатанные политикой, обновляет администратор следующим .msi.
+ *
+ * Сравнение по префиксу пути, а не по равенству: приложение лежит в подкаталоге
+ * (%ProgramFiles%\hermes-desktop\...). Разделитель в конце обязателен, иначе
+ * «C:\Program Files Custom\...» тоже прошло бы проверку.
+ */
+export function isPerMachineInstall(
+  execPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform !== "win32") {
+    return false;
+  }
+
+  const target = execPath.replace(/\//g, "\\").toLowerCase();
+  return [env.ProgramFiles, env["ProgramFiles(x86)"], env.ProgramW6432]
+    .filter(
+      (root): root is string =>
+        typeof root === "string" && root.trim().length > 0,
+    )
+    .some((root) => {
+      const normalized = root
+        .replace(/\//g, "\\")
+        .replace(/\\+$/, "")
+        .toLowerCase();
+      return target.startsWith(`${normalized}\\`);
+    });
+}
+
 export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
   ipcMain.handle("get-app-version", () => app.getVersion());
   ipcMain.handle("get-auto-upgrade-enabled", () => getAutoUpgradeEnabled());
@@ -56,7 +96,15 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
   const hasUpdateFeed = existsSync(
     join(process.resourcesPath || "", "app-update.yml"),
   );
-  if (!app.isPackaged || isPortableBuild || !hasUpdateFeed) {
+  // MSI-установку обновляет администратор, не приложение — см. комментарий к
+  // isPerMachineInstall.
+  const isManagedInstall = isPerMachineInstall(process.execPath);
+  if (
+    !app.isPackaged ||
+    isPortableBuild ||
+    isManagedInstall ||
+    !hasUpdateFeed
+  ) {
     autoUpdaterInstance = null;
     ipcMain.handle("check-for-updates", async () => null);
     ipcMain.handle("download-update", () => true);
