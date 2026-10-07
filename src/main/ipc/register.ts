@@ -39,10 +39,14 @@ import {
   setSessionModelOverride,
 } from "../session-model-override-store";
 import {
+  imageMimeForPath,
   materializeDataUrlToTemp,
+  promptSaveDestination,
   readMediaAsDataUrl,
   saveMedia,
   mediaFileExists,
+  tempMediaPath,
+  writeMediaToPath,
 } from "../media";
 import { openTerminalInDirectory } from "../terminal-launcher";
 import {
@@ -215,6 +219,13 @@ import {
   remoteUpdateSessionTitle,
   type RemoteSessionConfig,
 } from "../remote-sessions";
+import {
+  remoteDownloadFile,
+  remoteFileExists,
+  remoteReadFile,
+  type RemoteFileFailure,
+} from "../remote-files";
+import { t as translate } from "../../shared/i18n";
 import {
   remoteGetHermesHome,
   remoteGetHermesVersion,
@@ -512,13 +523,60 @@ async function getActiveDashboardMediaConfig(): Promise<RemoteSessionBridgeConfi
   return null;
 }
 
+/** Inline images are read whole into memory; anything larger is offered as a download instead. */
+const REMOTE_INLINE_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
+const REMOTE_FILE_PROBE_TTL_MS = { found: 60_000, missing: 10_000 };
+const REMOTE_FILE_PROBE_CACHE_LIMIT = 500;
+const remoteFileProbeCache = new Map<
+  string,
+  { exists: boolean; expires: number }
+>();
+
+/**
+ * Extensions the OS would run rather than display. A file fetched from the
+ * server is never handed to the shell with one of these — it can only be saved.
+ */
+const UNSAFE_TO_OPEN_EXTENSIONS = new Set([
+  ".bat",
+  ".cmd",
+  ".com",
+  ".exe",
+  ".hta",
+  ".jar",
+  ".js",
+  ".jse",
+  ".lnk",
+  ".msi",
+  ".ps1",
+  ".reg",
+  ".scr",
+  ".vbs",
+  ".wsf",
+]);
+
+function isDirectMediaSource(src: string): boolean {
+  return src.startsWith("data:") || /^https?:\/\//i.test(src);
+}
+
 async function readMediaForCurrentConnection(
   filePath: string,
 ): Promise<string | null> {
   const local = readMediaAsDataUrl(filePath);
   if (local) return local;
   const remote = await getActiveDashboardMediaConfig();
-  return remote ? remoteReadMediaAsDataUrl(remote, filePath) : null;
+  if (!remote) return null;
+  const viaMedia = await remoteReadMediaAsDataUrl(remote, filePath);
+  if (viaMedia) return viaMedia;
+  // /api/media only serves the gateway's own media folders; an image the agent
+  // saved next to its other results comes through the managed-files API.
+  const mime = imageMimeForPath(filePath);
+  if (!mime) return null;
+  const buffer = await remoteReadFile(
+    remote,
+    filePath,
+    REMOTE_INLINE_IMAGE_MAX_BYTES,
+  );
+  return buffer ? `data:${mime};base64,${buffer.toString("base64")}` : null;
 }
 
 async function mediaFileExistsForCurrentConnection(
@@ -527,12 +585,135 @@ async function mediaFileExistsForCurrentConnection(
   if (mediaFileExists(filePath)) return true;
   const remote = await getActiveDashboardMediaConfig();
   if (!remote) return false;
-  return (await remoteReadMediaAsDataUrl(remote, filePath)) !== null;
+  // A chat row asks again every time it is mounted, and the transcript is
+  // re-read often; remember the answer briefly instead of probing each time.
+  const key = `${remote.remoteUrl}\n${filePath}`;
+  const cached = remoteFileProbeCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.exists;
+  const exists =
+    (await remoteFileExists(remote, filePath)) ||
+    (await remoteReadMediaAsDataUrl(remote, filePath)) !== null;
+  if (remoteFileProbeCache.size >= REMOTE_FILE_PROBE_CACHE_LIMIT) {
+    remoteFileProbeCache.clear();
+  }
+  remoteFileProbeCache.set(key, {
+    exists,
+    expires:
+      Date.now() +
+      (exists
+        ? REMOTE_FILE_PROBE_TTL_MS.found
+        : REMOTE_FILE_PROBE_TTL_MS.missing),
+  });
+  return exists;
 }
 
-async function resolveMediaForSave(src: string): Promise<string> {
-  if (src.startsWith("data:") || /^https?:\/\//i.test(src)) return src;
-  return (await readMediaForCurrentConnection(src)) ?? src;
+/** Tell the user why a file from the server could not be fetched, instead of failing silently. */
+function reportRemoteFileFailure(
+  win: BrowserWindow | null,
+  name: string,
+  failure: RemoteFileFailure,
+): void {
+  const locale = getAppLocale();
+  const reason =
+    failure.status === 403
+      ? translate("chat.media.downloadForbidden", locale)
+      : failure.status === 404
+        ? translate("chat.media.downloadNotFound", locale)
+        : failure.status === null
+          ? translate("chat.media.downloadInterrupted", locale)
+          : "";
+  const technical =
+    failure.status === null
+      ? failure.message
+      : `${failure.message} (HTTP ${failure.status})`.trim();
+  const options = {
+    type: "error" as const,
+    message: translate("chat.media.downloadFailed", locale, { name }),
+    detail: [reason, technical].filter(Boolean).join("\n"),
+  };
+  void (win
+    ? dialog.showMessageBox(win, options)
+    : dialog.showMessageBox(options));
+}
+
+/**
+ * Save a media source to a place the user picks. Data URLs, web URLs and files
+ * on this machine go the direct way; a path that only exists on the remote
+ * Hermes server is streamed down through the managed-files API.
+ */
+async function saveMediaForCurrentConnection(
+  src: string,
+  name: string,
+  win: BrowserWindow | null,
+): Promise<boolean> {
+  if (isDirectMediaSource(src) || mediaFileExists(src)) {
+    return saveMedia(src, name, win);
+  }
+  const remote = await getActiveDashboardMediaConfig();
+  if (!remote) return saveMedia(src, name, win);
+
+  let dest: string | null;
+  try {
+    dest = await promptSaveDestination(name, win);
+  } catch {
+    return false;
+  }
+  if (!dest) return false;
+
+  const result = await remoteDownloadFile(remote, src, dest);
+  if (result.ok) return true;
+  // Older servers, and images kept in the gateway's media folders, are only
+  // reachable through /api/media.
+  const dataUrl = await remoteReadMediaAsDataUrl(remote, src);
+  if (dataUrl && (await writeMediaToPath(dataUrl, dest))) return true;
+  reportRemoteFileFailure(win, name, result);
+  return false;
+}
+
+/** Open a media source with the OS default handler, fetching it from the server first when needed. */
+async function openMediaForCurrentConnection(
+  src: string,
+  name: string,
+  win: BrowserWindow | null,
+): Promise<void> {
+  let target: string | null = null;
+  if (src.startsWith("data:")) {
+    target = materializeDataUrlToTemp(src, name);
+  } else if (mediaFileExists(src)) {
+    target = src;
+  } else {
+    const remote = await getActiveDashboardMediaConfig();
+    if (!remote) {
+      target = src;
+    } else if (UNSAFE_TO_OPEN_EXTENSIONS.has(extname(name).toLowerCase())) {
+      const locale = getAppLocale();
+      const options = {
+        type: "warning" as const,
+        message: name,
+        detail: translate("chat.media.openBlocked", locale),
+      };
+      void (win
+        ? dialog.showMessageBox(win, options)
+        : dialog.showMessageBox(options));
+      return;
+    } else {
+      const tempPath = tempMediaPath(src, name);
+      const result = await remoteDownloadFile(remote, src, tempPath);
+      if (result.ok) {
+        target = tempPath;
+      } else {
+        const dataUrl = await remoteReadMediaAsDataUrl(remote, src);
+        target = dataUrl ? materializeDataUrlToTemp(dataUrl, name) : null;
+        if (!target) {
+          reportRemoteFileFailure(win, name, result);
+          return;
+        }
+      }
+    }
+  }
+  if (!target) return;
+  const err = await shell.openPath(target);
+  if (err) console.error("[media] open failed:", err);
 }
 
 /**
@@ -1528,9 +1709,9 @@ export function registerIpcHandlers(context: IpcContext): void {
   ipcMain.handle("read-media-file", (_event, filePath: string) =>
     readMediaForCurrentConnection(filePath),
   );
-  ipcMain.handle("save-media-file", async (event, src: string, name: string) =>
-    saveMedia(
-      await resolveMediaForSave(src),
+  ipcMain.handle("save-media-file", (event, src: string, name: string) =>
+    saveMediaForCurrentConnection(
+      src,
       name,
       BrowserWindow.fromWebContents(event.sender),
     ),
@@ -1554,7 +1735,6 @@ export function registerIpcHandlers(context: IpcContext): void {
       const win = BrowserWindow.fromWebContents(event.sender);
       if (!win || !src) return;
       const isUrl = /^https?:\/\//i.test(src);
-      const isData = src.startsWith("data:");
       const template: Electron.MenuItemConstructorOptions[] = [];
       template.push({
         label: labels.open,
@@ -1564,17 +1744,13 @@ export function registerIpcHandlers(context: IpcContext): void {
             return;
           }
 
-          const target = isData ? materializeDataUrlToTemp(src, name) : src;
-          if (!target) return;
-          shell.openPath(target).then((err) => {
-            if (err) console.error("[media] open failed:", err);
-          });
+          void openMediaForCurrentConnection(src, name, win);
         },
       });
       template.push({
         label: labels.saveAs,
         click: () => {
-          void saveMedia(src, name, win);
+          void saveMediaForCurrentConnection(src, name, win);
         },
       });
       Menu.buildFromTemplate(template).popup({ window: win });

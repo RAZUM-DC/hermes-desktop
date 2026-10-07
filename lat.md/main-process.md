@@ -87,3 +87,9 @@ The default and named profiles resolve to separate `.env` paths, while every sec
 ### Failure preservation
 
 Read, validation, fsync, metadata, and replacement failures leave the original credential file unchanged, clean temporary files, and propagate an error to the caller.
+
+## Remote File Delivery
+
+Files the agent produced on a remote Hermes server are fetched through the dashboard's managed-files API, because `/api/media` only serves images from the gateway's own media folders.
+
+[[src/main/remote-files.ts#remoteDownloadFile]] streams `/api/files/download` into `<dest>.part` and renames it only after the whole body arrived, so a dropped connection never leaves a truncated document under the name the user chose. [[src/main/remote-files.ts#remoteFileExists]] probes with a one-byte range request, and [[src/main/remote-files.ts#remoteReadFile]] reads small images into memory for inline display. The save, open and exists handlers in [[src/main/ipc/register.ts]] try this machine's disk first, then this route, then `/api/media` for older servers, and show an error dialog instead of failing silently. The server hands over only files under its managed-files root, which a deployment sets with `HERMES_DASHBOARD_FILES_ROOT`.

@@ -163,6 +163,13 @@ export default {
     open: "Open",
     saveAs: "Save as…",
     saveImage: "Save image",
+    downloadFailed: "Could not download {{name}}",
+    downloadForbidden:
+      "The server refused to hand over this file. It is most likely outside the folder the agent shares files from.",
+    downloadNotFound: "The file is no longer on the server.",
+    downloadInterrupted: "The connection to the server was interrupted.",
+    openBlocked:
+      "This file type is not opened straight from the chat. Save it first.",
   },
   commands: {
     new: "Start a new chat",
