@@ -188,6 +188,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             return t("chat.attachReadFailed", { name: err.filename });
           case "remote-mode-binary":
             return t("chat.attachRemoteModeBinary", { name: err.filename });
+          case "upload-too-large":
+            return t("chat.attachUploadTooLarge", { name: err.filename });
+          case "upload-failed":
+            return t("chat.attachUploadFailed", {
+              name: err.filename,
+              detail: err.detail || "",
+            });
           default:
             return err.filename;
         }

@@ -644,6 +644,22 @@ const hermesAPI = {
   clearStagedAttachments: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke("clear-staged-attachments", sessionId),
 
+  // Remote Gateway mode: upload a binary attachment to the agent's server and
+  // get back the path the agent sees it under.
+  uploadRemoteAttachment: (
+    filename: string,
+    base64Bytes: string,
+    mime?: string,
+  ): Promise<
+    | { ok: true; path: string; id?: string; bytes?: number }
+    | {
+        ok: false;
+        reason: "unsupported" | "too-large" | "failed";
+        detail?: string;
+      }
+  > =>
+    ipcRenderer.invoke("upload-remote-attachment", filename, base64Bytes, mime),
+
   discoverProviderModels: (
     provider: string,
     baseUrl?: string,

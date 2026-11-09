@@ -490,6 +490,18 @@ interface HermesAPI {
     base64Bytes: string,
   ) => Promise<string>;
   clearStagedAttachments: (sessionId: string) => Promise<void>;
+  uploadRemoteAttachment: (
+    filename: string,
+    base64Bytes: string,
+    mime?: string,
+  ) => Promise<
+    | { ok: true; path: string; id?: string; bytes?: number }
+    | {
+        ok: false;
+        reason: "unsupported" | "too-large" | "failed";
+        detail?: string;
+      }
+  >;
   discoverProviderModels: (
     provider: string,
     baseUrl?: string,

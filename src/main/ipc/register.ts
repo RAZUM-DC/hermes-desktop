@@ -19,6 +19,7 @@ import type {
   DesktopSessionLocalError,
 } from "../../shared/session-continuation";
 import { stageAttachment, clearStagedAttachments } from "../attachment-staging";
+import { uploadRemoteAttachment } from "../remote-upload";
 import { persistPromptImageAttachments } from "../session-attachment-store";
 import { markAutoTitled, wasAutoTitled } from "../auto-title-store";
 import {
@@ -1767,6 +1768,12 @@ export function registerIpcHandlers(context: IpcContext): void {
   ipcMain.handle("clear-staged-attachments", (_event, sessionId: string) => {
     clearStagedAttachments(sessionId);
   });
+  // Remote Gateway: binary attachments are uploaded to the agent's server.
+  ipcMain.handle(
+    "upload-remote-attachment",
+    (_event, filename: string, base64Bytes: string, mime?: string) =>
+      uploadRemoteAttachment(filename, base64Bytes, mime),
+  );
 
   // Model discovery — fetch the provider's /v1/models for autocomplete.
   ipcMain.handle(

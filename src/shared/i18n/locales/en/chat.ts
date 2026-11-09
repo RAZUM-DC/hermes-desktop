@@ -136,6 +136,10 @@ export default {
   attachReadFailed: "{{name}}: could not be read",
   attachRemoteModeBinary:
     "{{name}}: PDF/binary attachments require local mode — images and text files still work.",
+  attachUploadTooLarge:
+    "{{name}}: file is too large to send to the assistant (max 30 MB)",
+  attachUploadFailed:
+    "{{name}}: could not upload to the assistant — {{detail}}",
   validation: {
     noModel: "No model selected. Pick one in the Chat picker below.",
     noProvider: "No provider set for the active model.",

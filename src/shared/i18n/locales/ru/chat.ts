@@ -137,6 +137,10 @@ export default {
   attachReadFailed: "{{name}}: не удалось прочитать",
   attachRemoteModeBinary:
     "{{name}}: вложения PDF/бинарные требуют локального режима — изображения и текстовые файлы работают.",
+  attachUploadTooLarge:
+    "{{name}}: файл слишком большой для отправки ассистенту (до 30 МБ)",
+  attachUploadFailed:
+    "{{name}}: не удалось загрузить файл ассистенту — {{detail}}",
   validation: {
     noModel: "Модель не выбрана. Выберите её в селекторе чата ниже.",
     noProvider: "Для активной модели не задан провайдер.",

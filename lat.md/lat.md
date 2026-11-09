@@ -17,3 +17,4 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[wallet-token-balances]] — profile-scoped Base mainnet wallets with encrypted recovery phrases, and on-chain ERC-20 token balance reads via ethers v6.
 - [[dashboard-clarify]] — interactive WebSocket clarification cards and safe answer delivery.
 - [[scheduled-jobs]] — terminal-state normalization for local, Remote API, and named SSH scheduled jobs.
+- [[remote-attachments]] — binary chat attachments in Remote Gateway mode are uploaded to the agent's server (`/v1/files`) and sent as a server-side path instead of being refused.
