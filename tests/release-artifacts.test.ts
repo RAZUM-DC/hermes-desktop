@@ -158,6 +158,7 @@ describe("release workflow safety", () => {
     expect(testWorkflow).toContain("contents: read");
     expect(testWorkflow).not.toMatch(/secrets\.|git push|action-gh-release/);
     expect(testWorkflow).toContain("--publish never");
+    expect(testWorkflow).toContain('CSC_FOR_PULL_REQUEST: "true"');
     expect(profile).toContain("publish: null");
     expect(profile).toContain('identity: "-"');
     expect(profile).toContain("notarize: false");

@@ -16,6 +16,8 @@ The `macOS Test Build (not notarized)` workflow builds x64 and arm64 without App
 
 It runs manually or on packaging-related pull requests to `main` and `release`. The PR trigger permits testing before the new workflow exists on the default branch, without requiring a merge.
 
+The PR job enables `CSC_FOR_PULL_REQUEST` because electron-builder otherwise skips even ad-hoc signing. The test profile fixes the identity to `-` and no signing secrets are supplied.
+
 `electron-builder.macos-test.yml` inherits the main profile but uses a test bundle ID, product name, output directory and artifact names. Ad-hoc signing supports Apple Silicon without Developer ID; notarization is disabled and `publish: null` removes the update feed.
 
 The native-module check discovers the actual `.app` bundle instead of assuming a historical product name. Test builds also verify the ad-hoc signature and absence of `app-update.yml`. A different app name does not isolate the shared Hermes engine home.
@@ -29,6 +31,8 @@ Apple notarization still requires `ASC_API_KEY` (base64 App Store Connect API ke
 ## Regression checks
 
 `tests/release-artifacts.test.ts` covers complete artifacts, every missing or empty required file, architecture collisions, macOS metadata hashes, publication ordering, dry-run behavior and the test workflow's safety boundaries.
+
+`tests/macos-native-arch.test.ts` exercises bundle discovery and the native-check script with tool fixtures, including lipo argument ordering, architecture mismatches, invalid signatures and forbidden test-app update feeds.
 
 Run `npm test -- tests/release-artifacts.test.ts` for focused checks. Real packaging and launch verification require the corresponding operating system; fixture tests do not establish macOS Gatekeeper acceptance.
 

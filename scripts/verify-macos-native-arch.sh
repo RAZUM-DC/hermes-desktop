@@ -20,7 +20,8 @@ node_file="${apps[0]}/Contents/Resources/app.asar.unpacked/node_modules/better-s
 test -f "$node_file"
 file "$node_file"
 # lipo validates a Mach-O binary and checks its architecture, not just its name.
-lipo -verify_arch "$expected" "$node_file"
+# -verify_arch consumes all following arguments as architecture names.
+lipo "$node_file" -verify_arch "$expected"
 
 if [ "${MACOS_TEST_BUILD:-false}" = "true" ]; then
   test ! -e "${apps[0]}/Contents/Resources/app-update.yml"

@@ -50,6 +50,8 @@ jobs:
       - name: Package test artifacts without Developer ID or notarization
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # The profile forces identity="-": permit only that ad-hoc signing on PRs.
+          CSC_FOR_PULL_REQUEST: "true"
         run: npx electron-builder --config electron-builder.macos-test.yml --mac dmg zip --${{ matrix.arch }} --publish never
 
       - name: Verify native architecture and test-only packaging

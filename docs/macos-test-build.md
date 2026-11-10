@@ -9,6 +9,8 @@ The workflow also runs automatically on pull requests targeting `main` or
 `release` when macOS packaging configuration, the dependency manifest/lockfile,
 the architecture-check script, or this workflow changes. This allows a new
 workflow to be validated on a draft PR without merging or publishing a release.
+The workflow explicitly permits ad-hoc signing on PRs (`CSC_FOR_PULL_REQUEST`);
+the test profile still forces identity `-` and does not receive signing secrets.
 
 After the workflow is on the repository's default branch, choose **Actions →
 macOS Test Build (not notarized) → Run workflow**, select the desired branch and
