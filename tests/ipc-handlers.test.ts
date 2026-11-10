@@ -3,18 +3,19 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 const ROOT = join(__dirname, "..");
-// After the app/ refactor, ipcMain.handle registrations live in the dedicated
-// IPC registration module plus the updater module, not in index.ts.
+// Registrations live in the main registry, updater, and voice-overlay setup,
+// all invoked by app/start.ts. Keep both directions of the preload contract.
 const indexSrc = [
   "src/main/ipc/register.ts",
   "src/main/app/updater.ts",
+  "src/main/app/voice-overlay.ts",
 ]
   .map((p) => readFileSync(join(ROOT, p), "utf-8"))
   .join("\n");
 const preloadSrc = readFileSync(join(ROOT, "src/preload/index.ts"), "utf-8");
 
 /**
- * Extract all IPC channel names registered in main/index.ts.
+ * Extract all IPC channel names registered in the main-process modules.
  */
 function extractIpcHandleChannels(src: string): string[] {
   const channels: string[] = [];

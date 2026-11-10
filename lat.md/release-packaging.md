@@ -31,3 +31,5 @@ Apple notarization still requires `ASC_API_KEY` (base64 App Store Connect API ke
 `tests/release-artifacts.test.ts` covers complete artifacts, every missing or empty required file, architecture collisions, macOS metadata hashes, publication ordering, dry-run behavior and the test workflow's safety boundaries.
 
 Run `npm test -- tests/release-artifacts.test.ts` for focused checks. Real packaging and launch verification require the corresponding operating system; fixture tests do not establish macOS Gatekeeper acceptance.
+
+CI also verifies the complete preload-to-main IPC contract, including voice-overlay handlers, and exact remote title-update payloads for both manual (`user`) and generated (`auto`) titles.

@@ -40,6 +40,8 @@ Renderer IPC handlers are isolated from app bootstrap so the registry can be spl
 
 [[src/main/ipc/register.ts#registerIpcHandlers]] currently preserves the existing handler behavior behind one registration function. It receives app-level callbacks for the main window, model-library notifications, connection-config notifications, external URL opening, and active chat abort handles.
 
+The preload contract test also scans updater and voice-overlay registrations, which startup initializes separately. It checks both directions so missing main handlers and unexposed preload channels remain failures.
+
 Wallet and token-balance handlers sit in the same registry: `list-wallets`, `create-wallet`, `import-wallet`, `rename-wallet`, `delete-wallet` (backed by [[wallet-token-balances#Wallet Store]]) and `get-token-balances` (backed by [[wallet-token-balances#Token Balances]]).
 
 ## Dotted configuration lookup
