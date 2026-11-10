@@ -1,0 +1,73 @@
+name: macOS Test Build (not notarized)
+
+# This workflow only creates expiring Actions artifacts, never a tag or release.
+on:
+  workflow_dispatch:
+  # A packaging PR can be tested before this workflow reaches the default branch.
+  pull_request:
+    branches: [main, release]
+    paths:
+      - .github/workflows/macos-test.yml
+      - electron-builder*.yml
+      - package.json
+      - package-lock.json
+      - scripts/verify-macos-native-arch.sh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test macOS (${{ matrix.arch }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native dependencies for target arch
+        run: npx electron-builder install-app-deps --arch=${{ matrix.arch }}
+
+      - name: Build app
+        run: npm run build
+
+      - name: Package test artifacts without Developer ID or notarization
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --config electron-builder.macos-test.yml --mac dmg zip --${{ matrix.arch }} --publish never
+
+      - name: Verify native architecture and test-only packaging
+        env:
+          MACOS_TEST_BUILD: "true"
+        run: bash scripts/verify-macos-native-arch.sh ${{ matrix.arch }} dist/macos-test
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-test-unnotarized-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/macos-test/*-test-unnotarized*.dmg
+            dist/macos-test/*-test-unnotarized*.zip
+
+      - name: Explain test-build limitations
+        run: |
+          echo '### Test build only' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Ad-hoc signed, not Developer ID signed or notarized. macOS may block opening downloaded artifacts. No production update feed is included. Use a separate test Hermes home; do not disable Gatekeeper globally.' >> "$GITHUB_STEP_SUMMARY"
