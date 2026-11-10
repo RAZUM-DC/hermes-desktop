@@ -11,13 +11,20 @@ import { fileURLToPath } from "node:url";
 
 // Keep this contract in sync with electron-builder.yml and the release matrix.
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-export function requiredReleaseArtifacts(name, version) {
+export function requiredReleaseArtifacts(name, version, includeMac = false) {
+  if (typeof includeMac !== "boolean") {
+    throw new Error("includeMac must be an explicit boolean");
+  }
   const prefix = `${name}-${version}`;
   return [
-    `${prefix}-x64.dmg`,
-    `${prefix}-arm64.dmg`,
-    `${prefix}-x64-mac.zip`,
-    `${prefix}-arm64-mac.zip`,
+    ...(includeMac
+      ? [
+          `${prefix}-x64.dmg`,
+          `${prefix}-arm64.dmg`,
+          `${prefix}-x64-mac.zip`,
+          `${prefix}-arm64-mac.zip`,
+        ]
+      : []),
     `${prefix}-x86_64.AppImage`,
     `${prefix}-arm64.AppImage`,
     `${name}_${version}_amd64.deb`,
@@ -34,8 +41,13 @@ export function requiredReleaseArtifacts(name, version) {
 
 // @lat: [[release-packaging#Release Packaging#Complete release artifacts]]
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-export function prepareReleaseArtifacts({ artifactsDir, name, version }) {
-  const required = requiredReleaseArtifacts(name, version);
+export function prepareReleaseArtifacts({
+  artifactsDir,
+  name,
+  version,
+  includeMac = false,
+}) {
+  const required = requiredReleaseArtifacts(name, version, includeMac);
   const present = readdirSync(artifactsDir);
   if (present.some((file) => file.includes("-test-unnotarized"))) {
     throw new Error(
@@ -53,7 +65,10 @@ export function prepareReleaseArtifacts({ artifactsDir, name, version }) {
     );
   }
 
-  // Both architectures are mandatory. Never silently publish a partial feed.
+  // Never infer macOS readiness from downloaded files or publish a stale feed.
+  if (!includeMac) return required;
+
+  // When enabled, both architectures are mandatory. Never publish a partial feed.
   const files = ["x64", "arm64"].map((arch) => {
     const url = `${name}-${version}-${arch}-mac.zip`;
     const bytes = readFileSync(join(artifactsDir, url));
@@ -91,7 +106,16 @@ if (
 ) {
   const { name, version } = JSON.parse(readFileSync("package.json", "utf8"));
   const artifactsDir = process.argv[2] || "artifacts";
-  const files = prepareReleaseArtifacts({ artifactsDir, name, version });
+  const flag = process.env.INCLUDE_MACOS;
+  if (flag !== "true" && flag !== "false") {
+    throw new Error("INCLUDE_MACOS must be explicitly set to true or false");
+  }
+  const files = prepareReleaseArtifacts({
+    artifactsDir,
+    name,
+    version,
+    includeMac: flag === "true",
+  });
   console.log(`Verified ${files.length} release files for ${version}`);
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(

@@ -72,8 +72,23 @@ Keep the existing Windows `CSC_LINK` and `CSC_KEY_PASSWORD` secrets as they are.
 The workflow maps them to `WIN_CSC_*`, while Apple uses separate `MAC_CSC_*`
 secrets. No secrets are created or changed by this patch.
 
-The signed `Release` workflow now waits for **all** platforms and verifies the
-complete artifact set before tagging. Missing Apple credentials therefore block
-a production release instead of silently publishing only Windows. Use the test
-workflow while Apple signing is not configured. `Release` with `dry_run=true`
-tests the full signed pipeline, including artifact validation, without publishing.
+The production `Release` workflow is **manual-only** and defaults to
+`dry_run=true`, `include_macos=false`. Merging into `release` does not publish.
+Windows and Linux can build and release without Apple credentials. To add
+production macOS later, configure the Apple credentials and explicitly select
+`include_macos=true`; both signed/notarized architectures must succeed. An
+unexpected macOS failure never silently falls back to a partial release.
+
+Use `dry_run=true` to build and validate the selected platforms without creating
+a tag or a GitHub Release, including for an existing version. A real release
+requires selecting the `release` branch and deliberately setting `dry_run=false`.
+The workflow validates local files, stages a draft, verifies every uploaded
+filename, size and SHA-256 digest, and only then makes it public. It does not
+cancel an in-flight publication when a newer run is requested.
+
+Existing tags are not changed or backfilled. To include macOS after a
+Windows/Linux-only version, use a new version. If a release fails after creating
+its tag, inspect the tag/draft manually before choosing a recovery action.
+Without macOS selected there is no `latest-mac.yml`; existing production macOS
+clients may report a missing update feed until a release includes macOS again.
+The test app has no production update feed and is unaffected.

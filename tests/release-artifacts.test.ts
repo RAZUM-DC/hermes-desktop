@@ -18,7 +18,7 @@ import {
 
 const name = "hermes-desktop";
 const version = "9.9.9";
-const required: string[] = requiredReleaseArtifacts(name, version);
+const required: string[] = requiredReleaseArtifacts(name, version, true);
 let artifactsDir: string;
 
 beforeEach(() => {
@@ -42,7 +42,12 @@ describe("release artifact contract", () => {
   it.each(required)("rejects a missing %s before writing metadata", (file) => {
     rmSync(join(artifactsDir, file));
     expect(() =>
-      prepareReleaseArtifacts({ artifactsDir, name, version }),
+      prepareReleaseArtifacts({
+        artifactsDir,
+        name,
+        version,
+        includeMac: true,
+      }),
     ).toThrow(file);
     expect(existsSync(join(artifactsDir, "latest-mac.yml"))).toBe(false);
   });
@@ -50,7 +55,12 @@ describe("release artifact contract", () => {
   it.each(required)("rejects an empty %s", (file) => {
     writeFileSync(join(artifactsDir, file), "");
     expect(() =>
-      prepareReleaseArtifacts({ artifactsDir, name, version }),
+      prepareReleaseArtifacts({
+        artifactsDir,
+        name,
+        version,
+        includeMac: true,
+      }),
     ).toThrow(file);
   });
 
@@ -58,7 +68,12 @@ describe("release artifact contract", () => {
     rmSync(join(artifactsDir, `${name}-${version}-arm64.AppImage`));
     writeFileSync(join(artifactsDir, `${name}-${version}.AppImage`), "old");
     expect(() =>
-      prepareReleaseArtifacts({ artifactsDir, name, version }),
+      prepareReleaseArtifacts({
+        artifactsDir,
+        name,
+        version,
+        includeMac: true,
+      }),
     ).toThrow("arm64.AppImage");
   });
 
@@ -69,12 +84,22 @@ describe("release artifact contract", () => {
       "wrong name",
     );
     expect(() =>
-      prepareReleaseArtifacts({ artifactsDir, name, version }),
+      prepareReleaseArtifacts({
+        artifactsDir,
+        name,
+        version,
+        includeMac: true,
+      }),
     ).toThrow("x86_64.AppImage");
   });
 
   it("writes both macOS ZIP hashes and sizes with x64 as the primary update", () => {
-    const result = prepareReleaseArtifacts({ artifactsDir, name, version });
+    const result = prepareReleaseArtifacts({
+      artifactsDir,
+      name,
+      version,
+      includeMac: true,
+    });
     expect(result).toEqual([...required, "latest-mac.yml"]);
     const metadata = readFileSync(join(artifactsDir, "latest-mac.yml"), "utf8");
     expect(metadata).toContain(`version: ${version}\n`);
@@ -93,7 +118,12 @@ describe("release artifact contract", () => {
     const blockmap = `${name}-${version}-arm64-mac.zip.blockmap`;
     writeFileSync(join(artifactsDir, blockmap), "blockmap");
     writeFileSync(join(artifactsDir, "unrelated.zip"), "unrelated");
-    const result = prepareReleaseArtifacts({ artifactsDir, name, version });
+    const result = prepareReleaseArtifacts({
+      artifactsDir,
+      name,
+      version,
+      includeMac: true,
+    });
     expect(result).toContain(blockmap);
     expect(result).not.toContain("unrelated.zip");
   });
@@ -104,8 +134,80 @@ describe("release artifact contract", () => {
       "test",
     );
     expect(() =>
-      prepareReleaseArtifacts({ artifactsDir, name, version }),
+      prepareReleaseArtifacts({
+        artifactsDir,
+        name,
+        version,
+        includeMac: true,
+      }),
     ).toThrow("Test macOS artifacts");
+  });
+});
+
+describe("Windows/Linux-only release", () => {
+  const baseFiles: string[] = requiredReleaseArtifacts(name, version, false);
+  const macFiles = required.filter((file) => !baseFiles.includes(file));
+  const prepare = (): string[] =>
+    prepareReleaseArtifacts({ artifactsDir, name, version, includeMac: false });
+
+  beforeEach(() => {
+    for (const file of macFiles) rmSync(join(artifactsDir, file));
+  });
+
+  it("publishes the complete Windows/Linux set without macOS files or feed", () => {
+    expect(prepare()).toEqual(baseFiles);
+    expect(baseFiles).toHaveLength(11);
+    expect(existsSync(join(artifactsDir, "latest-mac.yml"))).toBe(false);
+    expect(prepareReleaseArtifacts({ artifactsDir, name, version })).toEqual(
+      baseFiles,
+    );
+  });
+
+  it.each(baseFiles)("still rejects a missing required %s", (file) => {
+    rmSync(join(artifactsDir, file));
+    expect(prepare).toThrow(file);
+  });
+
+  it("never publishes stale macOS installers, feed or blockmaps", () => {
+    for (const file of [
+      ...macFiles,
+      "latest-mac.yml",
+      `${name}-${version}-arm64-mac.zip.blockmap`,
+    ]) {
+      writeFileSync(join(artifactsDir, file), "stale mac artifact");
+    }
+    expect(prepare()).toEqual(baseFiles);
+    expect(readFileSync(join(artifactsDir, "latest-mac.yml"), "utf8")).toBe(
+      "stale mac artifact",
+    );
+  });
+
+  it("does not silently fall back when macOS was requested", () => {
+    expect(() =>
+      prepareReleaseArtifacts({
+        artifactsDir,
+        name,
+        version,
+        includeMac: true,
+      }),
+    ).toThrow("x64.dmg");
+  });
+
+  it.each(["false", "true", "", null, 0, 1])(
+    "rejects an ambiguous platform flag %s",
+    (includeMac) => {
+      expect(() =>
+        prepareReleaseArtifacts({ artifactsDir, name, version, includeMac }),
+      ).toThrow("explicit boolean");
+    },
+  );
+
+  it("also rejects test artifacts in a Windows/Linux-only release", () => {
+    writeFileSync(
+      join(artifactsDir, `${name}-${version}-arm64-test-unnotarized.dmg`),
+      "test",
+    );
+    expect(prepare).toThrow("Test macOS artifacts");
   });
 });
 
@@ -114,6 +216,29 @@ describe("release workflow safety", () => {
   const publish = workflow
     .split("\n  publish:\n")[1]
     .split("\n  rebuild_landing_page:")[0];
+
+  it("only releases by explicit dispatch, dry-runs by default, and never cancels publication", () => {
+    const triggers = workflow.split("\npermissions:")[0];
+    expect(triggers).toContain("workflow_dispatch:");
+    expect(triggers).not.toMatch(/\n {2}(push|pull_request|workflow_run):/);
+    expect(triggers).toMatch(/dry_run:[\s\S]*?default: true/);
+    expect(triggers).toMatch(/include_macos:[\s\S]*?default: false/);
+    expect(workflow).toContain("cancel-in-progress: false");
+    expect(workflow).toContain('"$GITHUB_REF" != "refs/heads/release"');
+  });
+
+  it("only promotes a draft after verifying every uploaded asset", () => {
+    expect(publish).toContain("draft: true");
+    expect(
+      publish.indexOf("node scripts/verify-release-assets.mjs"),
+    ).toBeGreaterThan(publish.indexOf("uses: softprops/action-gh-release@v2"));
+    expect(publish.indexOf("--draft=false")).toBeGreaterThan(
+      publish.indexOf("node scripts/verify-release-assets.mjs"),
+    );
+    expect(publish).toContain(
+      "INCLUDE_MACOS: ${{ needs.prepare.outputs.include_macos }}",
+    );
+  });
 
   it("waits for every platform and validates artifacts before creating a tag", () => {
     expect(publish).toContain(
@@ -128,11 +253,11 @@ describe("release workflow safety", () => {
 
   it("allows existing tags only in dry runs and guards both publication steps", () => {
     expect(publish).toContain(
-      "if: needs.prepare.outputs.tag_exists == 'false' || needs.prepare.outputs.is_dry_run == 'true'",
+      "needs.prepare.outputs.tag_exists == 'false' || needs.prepare.outputs.is_dry_run == 'true'",
     );
     expect(
       publish.match(/if: needs\.prepare\.outputs\.is_dry_run == 'false'/g),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   });
 
   it("keeps Apple and Windows signing credentials separate", () => {

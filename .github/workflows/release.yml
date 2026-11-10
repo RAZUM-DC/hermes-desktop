@@ -1,22 +1,25 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - release
+  # Publishing is deliberate: merging into release never starts a release.
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Run all build jobs but skip publish (no tag, no GitHub Release)"
+        description: "Build selected platforms and validate only (no tag, no GitHub Release)"
+        type: boolean
+        default: true
+      include_macos:
+        description: "Include signed and notarized macOS (requires Apple release credentials)"
         type: boolean
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
-  cancel-in-progress: true
+  # Never cancel a run between creating its tag and publishing its assets.
+  cancel-in-progress: false
 
 jobs:
   prepare:
@@ -27,6 +30,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       tag_exists: ${{ steps.check.outputs.exists }}
       is_dry_run: ${{ steps.mode.outputs.is_dry_run }}
+      include_macos: ${{ steps.mode.outputs.include_macos }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -49,21 +53,27 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Compute dry-run flag
+      - name: Select release mode
         id: mode
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          INCLUDE_MACOS: ${{ inputs.include_macos }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "is_dry_run=true" >> "$GITHUB_OUTPUT"
-            echo "Dry run: builds will run, publish will be skipped."
-          else
-            echo "is_dry_run=false" >> "$GITHUB_OUTPUT"
-            echo "Real release: publish will run if tag does not exist."
+          set -euo pipefail
+          case "$DRY_RUN" in true|false) ;; *) exit 1 ;; esac
+          case "$INCLUDE_MACOS" in true|false) ;; *) exit 1 ;; esac
+          if [ "$DRY_RUN" = "false" ] && [ "$GITHUB_REF" != "refs/heads/release" ]; then
+            echo "Real releases must run from the release branch." >&2
+            exit 1
           fi
+          echo "is_dry_run=$DRY_RUN" >> "$GITHUB_OUTPUT"
+          echo "include_macos=$INCLUDE_MACOS" >> "$GITHUB_OUTPUT"
+          echo "Dry run: $DRY_RUN; include signed macOS: $INCLUDE_MACOS"
 
   release_mac:
     name: Build macOS (${{ matrix.arch }})
     needs: prepare
-    if: needs.prepare.outputs.tag_exists == 'false' || needs.prepare.outputs.is_dry_run == 'true'
+    if: needs.prepare.outputs.include_macos == 'true' && (needs.prepare.outputs.tag_exists == 'false' || needs.prepare.outputs.is_dry_run == 'true')
     runs-on: macos-latest
     strategy:
       matrix:
@@ -282,8 +292,17 @@ jobs:
   publish:
     name: Validate and Publish Release
     needs: [prepare, release_mac, release_linux, release_windows]
-    # Dry runs validate the same complete artifact set, including existing versions.
-    if: needs.prepare.outputs.tag_exists == 'false' || needs.prepare.outputs.is_dry_run == 'true'
+    # Override implicit success() for an intentionally skipped macOS job, but
+    # never accept a failed/cancelled build or a skipped required platform.
+    if: >-
+      ${{ !cancelled() && needs.prepare.result == 'success' &&
+          needs.release_linux.result == 'success' &&
+          needs.release_windows.result == 'success' &&
+          ((needs.prepare.outputs.include_macos == 'false' && needs.release_mac.result == 'skipped') ||
+           (needs.prepare.outputs.include_macos == 'true' && needs.release_mac.result == 'success')) &&
+          (needs.prepare.outputs.tag_exists == 'false' || needs.prepare.outputs.is_dry_run == 'true') }}
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -301,11 +320,13 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Verify complete artifacts and generate macOS update metadata
+      - name: Verify selected artifacts and generate selected update metadata
         id: artifacts
+        env:
+          INCLUDE_MACOS: ${{ needs.prepare.outputs.include_macos }}
         run: node scripts/prepare-release-artifacts.mjs artifacts
 
-      # No tag is created until every platform has built and all files are present.
+      # No tag is created until every selected platform and required file passes.
       - name: Create tag
         if: needs.prepare.outputs.is_dry_run == 'false'
         run: |
@@ -314,15 +335,30 @@ jobs:
           git tag ${{ needs.prepare.outputs.tag }}
           git push origin ${{ needs.prepare.outputs.tag }}
 
-      - name: Publish GitHub release
+      - name: Stage GitHub release as draft
+        id: draft
         if: needs.prepare.outputs.is_dry_run == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: Hermes Desktop ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true
+          draft: true
           fail_on_unmatched_files: true
           files: ${{ steps.artifacts.outputs.files }}
+
+      - name: Verify uploaded assets and publish the complete draft
+        if: needs.prepare.outputs.is_dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_ID: ${{ steps.draft.outputs.id }}
+          RELEASE_FILES: ${{ steps.artifacts.outputs.files }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$RUNNER_TEMP/release.json"
+          node scripts/verify-release-assets.mjs "$RUNNER_TEMP/release.json"
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
 
   rebuild_landing_page:
     name: Rebuild landing page
