@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import type { AppUpdater } from "electron-updater";
 import { dirname, join } from "path";
 import { updaterLogger } from "../updater-log";
+import { verifyPinnedUpdateSignature } from "./update-signature";
 
 interface UpdaterDeps {
   getMainWindow: () => BrowserWindow | null;
@@ -76,6 +77,13 @@ export function isPerMachineInstall(
     });
 }
 
+/** Ошибки апдейтера бывают многострочными (сырой JSON подписи и т.п.);
+ *  в подсказку кнопки идёт только первая строка, полный текст — в updater.log. */
+export function firstLine(message: string): string {
+  const line = (message || "").split(/\r?\n/)[0].trim();
+  return line.length > 300 ? `${line.slice(0, 297)}...` : line;
+}
+
 export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
   ipcMain.handle("get-app-version", () => app.getVersion());
   ipcMain.handle("get-auto-upgrade-enabled", () => getAutoUpgradeEnabled());
@@ -121,8 +129,29 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
   autoUpdater.logger = updaterLogger;
   autoUpdater.autoDownload = getAutoUpgradeEnabled();
   autoUpdater.autoInstallOnAppQuit = true;
+  if (process.platform === "win32") {
+    // Релизы подписаны самоподписанным сертификатом: штатная проверка требует
+    // доверия Windows и отвергает их. Доверяем закреплённому отпечатку —
+    // см. update-signature.ts (BUG-080).
+    (
+      autoUpdater as AppUpdater & {
+        verifyUpdateCodeSignature?: (
+          publisherNames: string[],
+          file: string,
+        ) => Promise<string | null>;
+      }
+    ).verifyUpdateCodeSignature = (publisherNames, file) =>
+      verifyPinnedUpdateSignature(publisherNames, file, updaterLogger);
+  }
+
+  // Идёт ли загрузка, которую пользователь не запускал сам (autoDownload).
+  // Её сбой иначе виден только в логе, а кнопка в интерфейсе навсегда
+  // застывает на «Загрузка 100%» (BUG-080).
+  let backgroundDownload = false;
+  let explicitDownload = false;
 
   autoUpdater.on("update-available", (info) => {
+    backgroundDownload = autoUpdater.autoDownload && !explicitDownload;
     getMainWindow()?.webContents.send("update-available", {
       version: info.version,
       releaseNotes: info.releaseNotes,
@@ -134,6 +163,7 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
     });
   });
   autoUpdater.on("update-downloaded", () => {
+    backgroundDownload = false;
     getMainWindow()?.webContents.send("update-downloaded");
   });
   // Background checks run on a timer that the user never asked for, so their
@@ -143,6 +173,10 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
   // answer and silence would be worse.
   autoUpdater.on("error", (err) => {
     updaterLogger.warn(`update check failed: ${err.message}`);
+    if (backgroundDownload && !explicitDownload) {
+      backgroundDownload = false;
+      getMainWindow()?.webContents.send("update-error", firstLine(err.message));
+    }
   });
 
   ipcMain.handle("check-for-updates", async () => {
@@ -154,13 +188,17 @@ export function setupUpdater({ getMainWindow }: UpdaterDeps): void {
     }
   });
   ipcMain.handle("download-update", async () => {
+    explicitDownload = true;
+    backgroundDownload = false;
     try {
       await autoUpdater.downloadUpdate();
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      getMainWindow()?.webContents.send("update-error", message);
+      getMainWindow()?.webContents.send("update-error", firstLine(message));
       return false;
+    } finally {
+      explicitDownload = false;
     }
   });
   ipcMain.handle("install-update", () => {

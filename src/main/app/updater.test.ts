@@ -7,7 +7,7 @@ vi.mock("electron", () => ({
   ipcMain: { handle: () => {} },
 }));
 
-import { isPerMachineInstall } from "./updater";
+import { firstLine, isPerMachineInstall } from "./updater";
 
 const WIN_ENV: NodeJS.ProcessEnv = {
   ProgramFiles: "C:\\Program Files",
@@ -110,5 +110,21 @@ describe("isPerMachineInstall", () => {
     expect(isPerMachineInstall("/opt/hermes/hermes", WIN_ENV, "linux")).toBe(
       false,
     );
+  });
+});
+
+describe("firstLine", () => {
+  it("оставляет первую строку многострочной ошибки апдейтера", () => {
+    expect(
+      firstLine(
+        'New version 0.7.15 is not signed by the application owner: publisherNames: Razum, raw info: {\n  "Status": 1\n}',
+      ),
+    ).toBe(
+      "New version 0.7.15 is not signed by the application owner: publisherNames: Razum, raw info: {",
+    );
+  });
+
+  it("обрезает слишком длинную строку", () => {
+    expect(firstLine("x".repeat(500))).toHaveLength(300);
   });
 });

@@ -18,3 +18,4 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[dashboard-clarify]] — interactive WebSocket clarification cards and safe answer delivery.
 - [[scheduled-jobs]] — terminal-state normalization for local, Remote API, and named SSH scheduled jobs.
 - [[remote-attachments]] — binary chat attachments in Remote Gateway mode are uploaded to the agent's server (`/v1/files`) and sent as a server-side path instead of being refused.
+- [[update-signature]] — Windows auto-update accepts installers signed by the pinned `CN=Razum` certificate even though Windows does not trust its root; background download errors reach the UI.
