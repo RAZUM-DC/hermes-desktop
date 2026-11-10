@@ -514,12 +514,29 @@ describe("remote session REST bridge", () => {
       method: "PATCH",
       url: "/api/sessions/sess-title",
       token: "test-token",
-      body: JSON.stringify({ title: "New title" }),
+      body: JSON.stringify({ title: "New title", title_source: "user" }),
     });
     expect(requests[1]).toMatchObject({
       method: "DELETE",
       url: "/api/sessions/sess-delete",
       token: "test-token",
+    });
+  });
+
+  it("preserves the explicit automatic title source in remote updates", async () => {
+    await remoteUpdateSessionTitle(
+      config(),
+      "sess-title",
+      "Generated title",
+      "auto",
+    );
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      method: "PATCH",
+      url: "/api/sessions/sess-title",
+      token: "test-token",
+      body: JSON.stringify({ title: "Generated title", title_source: "auto" }),
     });
   });
 });
