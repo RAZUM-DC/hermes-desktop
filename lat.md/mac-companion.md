@@ -10,6 +10,12 @@ The binaries are cross-compiled from the companion repo and `razum-hermes` (`GOO
 
 On macOS the companion keeps the device secret in the login Keychain (via `/usr/bin/security`, secret never in process arguments); if the Keychain is unavailable it falls back to a 0600 file.
 
+## Companion lifecycle
+
+Outside Windows there is no Job Object, so the companion manages its own lifetime: it replaces a hung predecessor and exits when the app that started it is gone.
+
+On a busy single-instance port the companion probes the previous instance's agent shim; if it does not answer within 3 s and the pid in `companion.pid` is a `companion`, it sends CONT, TERM and finally KILL, then takes the port. It watches its parent pid and stops (with its connectors) when the app disappears, writes its log to `companion.log` in its data directory, and never blocks on a stderr pipe nobody reads. The app restarts a companion that crashed ([[src/main/companion.ts#companionRestartDelay]]: 2 s → 60 s, gives up after repeated crashes in 10 minutes); exit code 0 means another instance already serves and is not restarted.
+
 ## Menu bar icon
 
 macOS gets a monochrome template image (`resources/trayTemplate.png`, 18 pt with an @2x variant) instead of the 1024 px app icon, which stretched the status item across the menu bar.

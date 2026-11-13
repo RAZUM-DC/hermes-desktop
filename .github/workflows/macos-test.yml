@@ -12,6 +12,8 @@ on:
       - package.json
       - package-lock.json
       - scripts/verify-macos-native-arch.sh
+      - resources/bin/mac-*/**
+      - src/main/companion.ts
 
 permissions:
   contents: read
