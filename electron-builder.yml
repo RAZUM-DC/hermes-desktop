@@ -10,6 +10,9 @@ files:
   - "!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
   - "!{.env,.env.*,.npmrc,pnpm-lock.yaml}"
   - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
+  # Нативные бинари companion/коннекторов едут через extraResources своей
+  # платформы (win/mac), а не копией внутри app.asar.unpacked.
+  - "!resources/bin/**"
 asarUnpack:
   - resources/**
   - node_modules/better-sqlite3/build/Release/*.node
@@ -84,11 +87,21 @@ mac:
   icon: build/icon.icns
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
+  # Companion и коннекторы (Go, darwin) под архитектуру сборки — как
+  # resources/bin/win у Windows. Без них на Mac нет входа (BUG-086).
+  extraResources:
+    - from: resources/bin/mac-${arch}
+      to: bin
+      filter:
+        - companion
+        - tool-connector
+        - cdp-connector
   extendInfo:
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+    - NSDesktopFolderUsageDescription: Application requests access to the user's Desktop folder.
   hardenedRuntime: true
   gatekeeperAssess: false
   notarize: true

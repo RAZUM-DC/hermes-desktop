@@ -11,6 +11,29 @@ import { HERMES_HOME } from "./installer";
 
 const IS_WINDOWS = process.platform === "win32";
 let proc: ChildProcess | null = null;
+// Перезапуск companion, если он упал во время работы приложения (BUG-086).
+// Не перезапускаем после штатной остановки (stopCompanion) и после выхода с
+// кодом 0 — так companion завершается, когда уже работает другой экземпляр.
+let stopping = false;
+let restartTimer: NodeJS.Timeout | null = null;
+let recentCrashes: number[] = [];
+export const COMPANION_RESTART_DELAYS_MS = [
+  2_000, 5_000, 15_000, 30_000, 60_000,
+];
+const CRASH_WINDOW_MS = 10 * 60_000;
+
+/** Задержка перед перезапуском после аварийного выхода, или null — не
+ *  перезапускать (штатный выход либо слишком много падений подряд). */
+export function companionRestartDelay(
+  code: number | null,
+  crashesInWindow: number,
+): number | null {
+  if (code === 0) return null;
+  if (crashesInWindow > COMPANION_RESTART_DELAYS_MS.length) return null;
+  return COMPANION_RESTART_DELAYS_MS[
+    Math.min(crashesInWindow, COMPANION_RESTART_DELAYS_MS.length) - 1
+  ];
+}
 
 // ── Яндекс OAuth (системный браузер) ─────────────────────────────────────────
 // Companion в режиме enroll пишет authURL в status.json (поле auth_url,
@@ -98,6 +121,7 @@ export function startCompanion(
   _getMainWindow?: () => BrowserWindow | null,
 ): void {
   if (proc) return;
+  stopping = false;
   if (process.env.HERMES_DISABLE_COMPANION === "1") return;
   const bin = companionBinary();
   if (!bin) {
@@ -121,9 +145,29 @@ export function startCompanion(
     proc.stderr?.on("data", (d) =>
       console.log("[companion]", String(d).trimEnd()),
     );
-    proc.on("exit", (code) => {
-      console.log("[companion] exited", code);
+    proc.on("exit", (code, signal) => {
+      console.log("[companion] exited", code, signal ?? "");
       proc = null;
+      if (stopping) return;
+      const now = Date.now();
+      recentCrashes = recentCrashes.filter((t) => now - t < CRASH_WINDOW_MS);
+      if (code !== 0) recentCrashes.push(now);
+      const delay = companionRestartDelay(code, recentCrashes.length);
+      if (delay === null) {
+        if (code !== 0) {
+          console.error(
+            "[companion] падает слишком часто — перезапуск остановлен",
+          );
+        }
+        return;
+      }
+      console.warn(
+        `[companion] аварийный выход — перезапуск через ${delay} мс`,
+      );
+      restartTimer = setTimeout(() => {
+        restartTimer = null;
+        if (!stopping) startCompanion(_getMainWindow);
+      }, delay);
     });
     console.log("[companion] started:", bin);
     // Поллер status.json: открывает OAuth в системном браузере при enrolling.
@@ -152,6 +196,11 @@ export function writeReenrollFlag(): { ok: boolean; error?: string } {
 }
 
 export function stopCompanion(): void {
+  stopping = true;
+  if (restartTimer) {
+    clearTimeout(restartTimer);
+    restartTimer = null;
+  }
   stopStatusPoller();
   if (!proc) return;
   try {

@@ -11,6 +11,8 @@ import {
 import { join } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import icon from "../../../resources/icon.png?asset";
+import trayTemplate from "../../../resources/trayTemplate.png?asset";
+import trayTemplate2x from "../../../resources/trayTemplate@2x.png?asset";
 import { getPublicConnectionConfig } from "../config";
 import { stopHealthPolling } from "../hermes";
 import { stopAllDashboards } from "../dashboard";
@@ -223,11 +225,30 @@ function showMainWindow(): void {
   mainWindow.focus();
 }
 
+/**
+ * macOS: иконка строки меню — монохромный шаблон 18 pt (+@2x), система сама
+ * красит её под светлую/тёмную тему. Цветная иконка приложения 1024×1024
+ * растягивала элемент строки меню на пол-экрана (BUG-086).
+ */
+export function macTrayImage(): Electron.NativeImage {
+  const img = nativeImage.createFromPath(trayTemplate);
+  const hi = nativeImage.createFromPath(trayTemplate2x);
+  if (!hi.isEmpty()) {
+    img.addRepresentation({ scaleFactor: 2, buffer: hi.toPNG() });
+  }
+  img.setTemplateImage(true);
+  return img;
+}
+
 function createTray(): void {
   if (tray) return;
   try {
-    const img = nativeImage.createFromPath(icon);
-    tray = new Tray(img.isEmpty() ? icon : img);
+    if (process.platform === "darwin") {
+      tray = new Tray(macTrayImage());
+    } else {
+      const img = nativeImage.createFromPath(icon);
+      tray = new Tray(img.isEmpty() ? icon : img);
+    }
   } catch {
     tray = new Tray(icon);
   }

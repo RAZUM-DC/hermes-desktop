@@ -1,7 +1,13 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -46,8 +52,15 @@ function bundle(arch: string, binaryArch: string): string {
   );
   mkdirSync(nativeDir, { recursive: true });
   writeFileSync(join(nativeDir, "better_sqlite3.node"), binaryArch);
+  // Companion и коннекторы (BUG-086): без них на Mac нет входа.
+  mkdirSync(join(resources, "bin"));
+  for (const name of COMPANION_BINARIES) {
+    writeFileSync(join(resources, "bin", name), binaryArch, { mode: 0o755 });
+  }
   return resources;
 }
+
+const COMPANION_BINARIES = ["companion", "tool-connector", "cdp-connector"];
 
 function verify(
   arch: string,
@@ -79,6 +92,20 @@ describe.skipIf(process.platform === "win32")(
         expect(result.status, String(result.stderr)).toBe(0);
       },
     );
+
+    it.each(COMPANION_BINARIES)("rejects a bundle without %s", (name) => {
+      const resources = bundle("arm64", "arm64");
+      unlinkSync(join(resources, "bin", name));
+      expect(verify("arm64").status).not.toBe(0);
+    });
+
+    it("rejects a companion built for the wrong architecture", () => {
+      const resources = bundle("arm64", "arm64");
+      writeFileSync(join(resources, "bin", "companion"), "x86_64", {
+        mode: 0o755,
+      });
+      expect(verify("arm64").status).not.toBe(0);
+    });
 
     it("rejects a native module built for the wrong architecture", () => {
       bundle("arm64", "x86_64");
