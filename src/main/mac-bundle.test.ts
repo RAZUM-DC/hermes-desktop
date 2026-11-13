@@ -4,7 +4,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
 
-// BUG-082: без companion в Mac-пакете вход невозможен. Проверяем, что для обеих
+// BUG-086: без companion в Mac-пакете вход невозможен. Проверяем, что для обеих
 // архитектур лежат darwin-бинари нужной архитектуры, совпадающие с SHA256SUMS,
 // и что electron-builder берёт их в секции mac.
 

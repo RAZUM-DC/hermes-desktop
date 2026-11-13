@@ -23,7 +23,7 @@ file "$node_file"
 # -verify_arch consumes all following arguments as architecture names.
 lipo "$node_file" -verify_arch "$expected"
 
-# Companion и коннекторы: без них на Mac нет входа (BUG-082). Тот же контроль
+# Companion и коннекторы: без них на Mac нет входа (BUG-086). Тот же контроль
 # архитектуры и подписи (osx-sign подписывает вложенные Mach-O).
 for bin in companion tool-connector cdp-connector; do
   f="${apps[0]}/Contents/Resources/bin/$bin"

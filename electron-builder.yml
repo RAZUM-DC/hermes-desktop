@@ -88,7 +88,7 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
   # Companion и коннекторы (Go, darwin) под архитектуру сборки — как
-  # resources/bin/win у Windows. Без них на Mac нет входа (BUG-082).
+  # resources/bin/win у Windows. Без них на Mac нет входа (BUG-086).
   extraResources:
     - from: resources/bin/mac-${arch}
       to: bin

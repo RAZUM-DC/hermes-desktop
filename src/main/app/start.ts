@@ -228,7 +228,7 @@ function showMainWindow(): void {
 /**
  * macOS: иконка строки меню — монохромный шаблон 18 pt (+@2x), система сама
  * красит её под светлую/тёмную тему. Цветная иконка приложения 1024×1024
- * растягивала элемент строки меню на пол-экрана (BUG-082).
+ * растягивала элемент строки меню на пол-экрана (BUG-086).
  */
 export function macTrayImage(): Electron.NativeImage {
   const img = nativeImage.createFromPath(trayTemplate);
