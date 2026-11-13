@@ -23,6 +23,15 @@ file "$node_file"
 # -verify_arch consumes all following arguments as architecture names.
 lipo "$node_file" -verify_arch "$expected"
 
+# Companion и коннекторы: без них на Mac нет входа (BUG-082). Тот же контроль
+# архитектуры и подписи (osx-sign подписывает вложенные Mach-O).
+for bin in companion tool-connector cdp-connector; do
+  f="${apps[0]}/Contents/Resources/bin/$bin"
+  test -x "$f" || { echo "missing $f" >&2; exit 1; }
+  lipo "$f" -verify_arch "$expected"
+  codesign --verify --strict "$f"
+done
+
 if [ "${MACOS_TEST_BUILD:-false}" = "true" ]; then
   test ! -e "${apps[0]}/Contents/Resources/app-update.yml"
   codesign --verify --deep --strict "${apps[0]}"
