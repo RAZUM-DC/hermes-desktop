@@ -2,6 +2,7 @@ import type { AppLocale } from "../shared/i18n/types";
 import type { Attachment } from "../shared/attachments";
 import type { MemoryFact } from "../shared/memory-bank";
 import type { Note } from "../shared/notes";
+import type { BrowserExtensionStatus } from "../shared/browser-extension";
 import type { ScreenshotResponse } from "../shared/screenshot";
 import type { SessionModelOverride } from "../shared/model-override";
 import type { DesktopSessionContinuationItem } from "../shared/session-continuation";
@@ -1086,6 +1087,13 @@ interface HermesAPI {
   autostartGet: () => Promise<{ enabled: boolean; supported: boolean }>;
   /** Возвращает состояние после попытки — система может не дать его изменить. */
   autostartSet: (enabled: boolean) => Promise<boolean>;
+  /** Корпоративное расширение в Chrome/Яндекс.Браузере (BrowserExtensionBanner). */
+  browserExtensionStatus: () => Promise<BrowserExtensionStatus>;
+  /** Открыть страницу расширения в магазине в этом браузере; false — открыто в браузере по умолчанию. */
+  browserExtensionOpenStore: (browser: "chrome" | "yandex") => Promise<boolean>;
+  /** «Позже» — не напоминать неделю. */
+  browserExtensionSnooze: () => Promise<void>;
+  browserExtensionSetRemind: (remind: boolean) => Promise<boolean>;
   notesList: () => Promise<Note[]>;
   notesSave: (input: {
     id?: string;

@@ -287,4 +287,20 @@ export default {
     trayNote:
       "It starts minimised on purpose: the window would otherwise jump up at every sign-in. Dictation, screenshots and task notifications work from the tray, without the window open.",
   },
+  browserExtension: {
+    chrome: "Chrome",
+    yandex: "Yandex Browser",
+    and: " and ",
+    bannerMissing:
+      "Install the corporate extension “RAZUM AI Assistant” in {{browsers}} — it lets the assistant work with your browser pages.",
+    bannerDisabled:
+      "The corporate extension “RAZUM AI Assistant” is turned off ({{browsers}}) — turn it on in the browser's extension settings.",
+    install: "Install in {{browser}}",
+    open: "Open {{browser}}",
+    later: "Later",
+    never: "Don't remind",
+    remindLabel: "Remind about the browser extension",
+    remindHint:
+      "At launch the app checks Chrome and Yandex Browser for the corporate extension “RAZUM AI Assistant” and suggests installing it if it is missing.",
+  },
 } as const;

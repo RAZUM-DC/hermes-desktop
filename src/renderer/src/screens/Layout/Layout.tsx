@@ -65,6 +65,7 @@ import Schedules from "../Schedules/Schedules";
 import Kanban from "../Kanban/Kanban";
 import RemoteNotice from "../../components/RemoteNotice";
 import VerifyWarningBanner from "../../components/VerifyWarningBanner";
+import BrowserExtensionBanner from "../../components/BrowserExtensionBanner";
 import { useSettingsModal } from "../../components/settings/SettingsModalContext";
 import SidebarBrand from "../../components/common/SidebarBrand";
 import {
@@ -1427,6 +1428,7 @@ function Layout({
             onDismiss={onDismissVerifyWarning}
           />
         )}
+        <BrowserExtensionBanner />
         <div style={paneStyle("chat")}>
           {runs.map((run) => (
             <div
