@@ -11,12 +11,25 @@ import { fileURLToPath } from "node:url";
 
 // Keep this contract in sync with electron-builder.yml and the release matrix.
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-export function requiredReleaseArtifacts(name, version, includeMac = false) {
+export function requiredReleaseArtifacts(
+  name,
+  version,
+  includeMac = false,
+  macUnsigned = false,
+) {
   if (typeof includeMac !== "boolean") {
     throw new Error("includeMac must be an explicit boolean");
   }
+  if (typeof macUnsigned !== "boolean") {
+    throw new Error("macUnsigned must be an explicit boolean");
+  }
+  if (includeMac && macUnsigned) {
+    throw new Error("Signed and unsigned macOS cannot ship in one release");
+  }
   const prefix = `${name}-${version}`;
   return [
+    // Without Apple credentials: the ad-hoc test app, both architectures, no feed.
+    ...(macUnsigned ? unsignedMacArtifacts(name, version) : []),
     ...(includeMac
       ? [
           `${prefix}-x64.dmg`,
@@ -39,6 +52,15 @@ export function requiredReleaseArtifacts(name, version, includeMac = false) {
   ];
 }
 
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+export function unsignedMacArtifacts(name, version) {
+  const prefix = `${name}-${version}`;
+  return ["x64", "arm64"].flatMap((arch) => [
+    `${prefix}-${arch}-test-unnotarized.dmg`,
+    `${prefix}-${arch}-test-unnotarized-mac.zip`,
+  ]);
+}
+
 // @lat: [[release-packaging#Release Packaging#Complete release artifacts]]
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 export function prepareReleaseArtifacts({
@@ -46,12 +68,24 @@ export function prepareReleaseArtifacts({
   name,
   version,
   includeMac = false,
+  macUnsigned = false,
 }) {
-  const required = requiredReleaseArtifacts(name, version, includeMac);
+  const required = requiredReleaseArtifacts(
+    name,
+    version,
+    includeMac,
+    macUnsigned,
+  );
   const present = readdirSync(artifactsDir);
-  if (present.some((file) => file.includes("-test-unnotarized"))) {
+  // Never mix the test app into a signed macOS release. Otherwise leftover test
+  // files (e.g. one architecture of a failed unsigned build) are simply not on
+  // the explicit allowlist below.
+  if (
+    includeMac &&
+    present.some((file) => file.includes("-test-unnotarized"))
+  ) {
     throw new Error(
-      "Test macOS artifacts must never be published as a release",
+      "Test macOS artifacts must never be published in a signed macOS release",
     );
   }
   const invalid = required.filter((file) => {
@@ -110,11 +144,16 @@ if (
   if (flag !== "true" && flag !== "false") {
     throw new Error("INCLUDE_MACOS must be explicitly set to true or false");
   }
+  const unsigned = process.env.MACOS_UNSIGNED ?? "false";
+  if (unsigned !== "true" && unsigned !== "false") {
+    throw new Error("MACOS_UNSIGNED must be true or false");
+  }
   const files = prepareReleaseArtifacts({
     artifactsDir,
     name,
     version,
     includeMac: flag === "true",
+    macUnsigned: unsigned === "true",
   });
   console.log(`Verified ${files.length} release files for ${version}`);
   if (process.env.GITHUB_OUTPUT) {

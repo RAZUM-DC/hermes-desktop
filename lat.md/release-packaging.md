@@ -1,6 +1,6 @@
 # Release Packaging
 
-Release publication requires every artifact for the explicitly selected platforms. macOS experiments use a separate manual workflow that cannot publish a production update.
+Release publication requires every artifact for the explicitly selected platforms. Unsigned macOS rides along with every release as a test app without an update feed; PR test builds use a separate workflow that cannot publish.
 
 ## Complete release artifacts
 
@@ -19,6 +19,12 @@ The publish job overrides Actions' implicit success condition so a deliberately 
 With macOS disabled, no macOS installers, blockmaps or `latest-mac.yml` enter the publication allowlist, even if stale files exist. Previously installed macOS clients may report a missing update feed on a newer Windows/Linux-only release; this is not a separate macOS update channel.
 
 Existing version tags are immutable to this workflow. Enabling macOS later requires a new version; it never silently adds macOS to an already published release. Test macOS builds remain isolated from this production choice.
+
+## Unsigned macOS in every release
+
+Until Apple credentials exist, every Windows/Linux release also ships macOS as the ad-hoc signed, not notarized test app.
+
+`release_mac_unsigned` builds both architectures with `electron-builder.macos-test.yml` (separate "РАЗУМ Ассистент Test" app, `-test-unnotarized` file names, no update feed) whenever signed macOS is not selected. When both architectures succeed, `MACOS_UNSIGNED=true` adds their DMGs and ZIPs to the allowlist (`unsignedMacArtifacts` in `scripts/prepare-release-artifacts.mjs`); no `latest-mac.yml` is written, so installed Mac apps never try to auto-update. The job is optional: if it fails, Windows/Linux publish without macOS, and leftover test files stay off the allowlist. A signed macOS release still refuses any test artifact.
 
 ## Publication boundary
 

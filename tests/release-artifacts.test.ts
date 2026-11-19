@@ -14,6 +14,7 @@ import { join } from "node:path";
 import {
   prepareReleaseArtifacts,
   requiredReleaseArtifacts,
+  unsignedMacArtifacts,
 } from "../scripts/prepare-release-artifacts.mjs";
 
 const name = "hermes-desktop";
@@ -202,12 +203,63 @@ describe("Windows/Linux-only release", () => {
     },
   );
 
-  it("also rejects test artifacts in a Windows/Linux-only release", () => {
+  it("leaves leftover test artifacts off a Windows/Linux-only release", () => {
     writeFileSync(
       join(artifactsDir, `${name}-${version}-arm64-test-unnotarized.dmg`),
       "test",
     );
-    expect(prepare).toThrow("Test macOS artifacts");
+    expect(prepare()).toEqual(baseFiles);
+  });
+});
+
+describe("Windows/Linux release with unsigned macOS", () => {
+  const baseFiles: string[] = requiredReleaseArtifacts(name, version, false);
+  const unsigned: string[] = unsignedMacArtifacts(name, version);
+  const signedMac = required.filter((file) => !baseFiles.includes(file));
+  const prepare = (): string[] =>
+    prepareReleaseArtifacts({
+      artifactsDir,
+      name,
+      version,
+      includeMac: false,
+      macUnsigned: true,
+    });
+
+  beforeEach(() => {
+    for (const file of signedMac) rmSync(join(artifactsDir, file));
+    for (const file of unsigned) writeFileSync(join(artifactsDir, file), "app");
+  });
+
+  // @lat: [[release-packaging#Release Packaging#Unsigned macOS in every release]]
+  it("publishes both architectures of the test app next to Windows/Linux, without a mac feed", () => {
+    expect(unsigned).toEqual([
+      `${name}-${version}-x64-test-unnotarized.dmg`,
+      `${name}-${version}-x64-test-unnotarized-mac.zip`,
+      `${name}-${version}-arm64-test-unnotarized.dmg`,
+      `${name}-${version}-arm64-test-unnotarized-mac.zip`,
+    ]);
+    expect(prepare()).toEqual([...unsigned, ...baseFiles]);
+    expect(existsSync(join(artifactsDir, "latest-mac.yml"))).toBe(false);
+  });
+
+  it.each(unsigned)("rejects a missing %s", (file) => {
+    rmSync(join(artifactsDir, file));
+    expect(prepare).toThrow(file);
+  });
+
+  it("never combines signed and unsigned macOS, and needs an explicit flag", () => {
+    expect(() => requiredReleaseArtifacts(name, version, true, true)).toThrow(
+      "Signed and unsigned",
+    );
+    expect(() =>
+      prepareReleaseArtifacts({
+        artifactsDir,
+        name,
+        version,
+        includeMac: false,
+        macUnsigned: "true",
+      }),
+    ).toThrow("explicit boolean");
   });
 });
 
@@ -243,7 +295,7 @@ describe("release workflow safety", () => {
 
   it("waits for every platform and validates artifacts before creating a tag", () => {
     expect(publish).toContain(
-      "needs: [prepare, release_mac, release_linux, release_windows]",
+      "needs: [prepare, release_mac, release_mac_unsigned, release_linux, release_windows]",
     );
     expect(
       publish.indexOf("node scripts/prepare-release-artifacts.mjs"),
@@ -269,6 +321,23 @@ describe("release workflow safety", () => {
     expect(mac).not.toContain("secrets.CSC_LINK");
     expect(workflow).toContain("WIN_CSC_LINK: ${{ secrets.CSC_LINK }}");
     expect(mac).not.toContain("Hermes One.app");
+  });
+
+  it("builds unsigned macOS without Apple credentials and never gates publication on it", () => {
+    const unsignedJob = workflow
+      .split("\n  release_mac_unsigned:\n")[1]
+      .split("\n  release_linux:")[0];
+    expect(unsignedJob).toContain(
+      "if: needs.prepare.outputs.include_macos == 'false'",
+    );
+    expect(unsignedJob).toContain("--config electron-builder.macos-test.yml");
+    expect(unsignedJob).toContain("--publish never");
+    expect(unsignedJob).not.toMatch(/MAC_CSC_LINK|ASC_API_KEY|CSC_LINK:/);
+    expect(publish).toContain(
+      "MACOS_UNSIGNED: ${{ needs.release_mac_unsigned.result == 'success' && 'true' || 'false' }}",
+    );
+    const gate = publish.split("\n    permissions:")[0];
+    expect(gate).not.toMatch(/release_mac_unsigned\.result/);
   });
 
   // @lat: [[release-packaging#Release Packaging#Test macOS builds]]

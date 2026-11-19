@@ -146,6 +146,59 @@ jobs:
             dist/*.zip
             dist/*.blockmap
 
+  # Without Apple credentials every release still ships macOS, as the ad-hoc
+  # signed, not notarized test build (separate "РАЗУМ Ассистент Test" app, no
+  # update feed). Optional: a failure here never blocks Windows/Linux.
+  release_mac_unsigned:
+    name: Build macOS unsigned (${{ matrix.arch }})
+    needs: prepare
+    if: needs.prepare.outputs.include_macos == 'false' && (needs.prepare.outputs.tag_exists == 'false' || needs.prepare.outputs.is_dry_run == 'true')
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native dependencies for target arch
+        run: npx electron-builder install-app-deps --arch=${{ matrix.arch }}
+
+      - name: Build app
+        env:
+          VITE_ANALYTICS_BASE_URL: ${{ vars.VITE_ANALYTICS_BASE_URL }}
+          VITE_ANALYTICS_API_KEY: ${{ secrets.VITE_ANALYTICS_API_KEY }}
+        run: npm run build
+
+      - name: Package unsigned macOS artifacts (ad-hoc, not notarized)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --config electron-builder.macos-test.yml --mac dmg zip --${{ matrix.arch }} --publish never
+
+      - name: Verify native architecture and test-only packaging
+        env:
+          MACOS_TEST_BUILD: "true"
+        run: bash scripts/verify-macos-native-arch.sh ${{ matrix.arch }} dist/macos-test
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-unsigned-${{ matrix.arch }}-artifacts
+          if-no-files-found: error
+          path: |
+            dist/macos-test/*-test-unnotarized*.dmg
+            dist/macos-test/*-test-unnotarized*.zip
+
   release_linux:
     name: Build Linux (${{ matrix.arch }})
     needs: prepare
@@ -297,9 +350,10 @@ jobs:
 
   publish:
     name: Validate and Publish Release
-    needs: [prepare, release_mac, release_linux, release_windows]
+    needs: [prepare, release_mac, release_mac_unsigned, release_linux, release_windows]
     # Override implicit success() for an intentionally skipped macOS job, but
     # never accept a failed/cancelled build or a skipped required platform.
+    # release_mac_unsigned is optional: its result never gates publication.
     if: >-
       ${{ !cancelled() && needs.prepare.result == 'success' &&
           needs.release_linux.result == 'success' &&
@@ -330,6 +384,7 @@ jobs:
         id: artifacts
         env:
           INCLUDE_MACOS: ${{ needs.prepare.outputs.include_macos }}
+          MACOS_UNSIGNED: ${{ needs.release_mac_unsigned.result == 'success' && 'true' || 'false' }}
         run: node scripts/prepare-release-artifacts.mjs artifacts
 
       # No tag is created until every selected platform and required file passes.

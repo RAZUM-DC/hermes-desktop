@@ -30,6 +30,7 @@ describe("release job selection", () => {
     expect(workflow.jobs.publish.needs).toEqual([
       "prepare",
       "release_mac",
+      "release_mac_unsigned",
       "release_linux",
       "release_windows",
     ]);
