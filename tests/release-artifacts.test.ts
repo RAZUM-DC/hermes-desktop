@@ -217,10 +217,11 @@ describe("release workflow safety", () => {
     .split("\n  publish:\n")[1]
     .split("\n  rebuild_landing_page:")[0];
 
-  it("only releases by explicit dispatch, dry-runs by default, and never cancels publication", () => {
+  it("releases on push to release or by dispatch, dry-runs manual runs by default, and never cancels publication", () => {
     const triggers = workflow.split("\npermissions:")[0];
     expect(triggers).toContain("workflow_dispatch:");
-    expect(triggers).not.toMatch(/\n {2}(push|pull_request|workflow_run):/);
+    expect(triggers).toMatch(/\n {2}push:\n {4}branches: \[release\]/);
+    expect(triggers).not.toMatch(/\n {2}(pull_request|workflow_run):/);
     expect(triggers).toMatch(/dry_run:[\s\S]*?default: true/);
     expect(triggers).toMatch(/include_macos:[\s\S]*?default: false/);
     expect(workflow).toContain("cancel-in-progress: false");

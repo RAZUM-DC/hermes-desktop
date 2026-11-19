@@ -16,6 +16,20 @@ export default function StartupPane(): React.JSX.Element {
   const [enabled, setEnabled] = useState(false);
   const [supported, setSupported] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [remindExt, setRemindExt] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    void window.hermesAPI
+      .browserExtensionStatus()
+      .then((s) => {
+        if (alive) setRemindExt(s.remind);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -77,6 +91,30 @@ export default function StartupPane(): React.JSX.Element {
       <div className="settings-field">
         <div className="settings-field-hint">
           {t("settings.autostart.trayNote")}
+        </div>
+      </div>
+      <div className="settings-field">
+        <div className="settings-theme-system">
+          <div>
+            <div className="settings-theme-system-label">
+              {t("settings.browserExtension.remindLabel")}
+            </div>
+            <div className="settings-theme-system-hint">
+              {t("settings.browserExtension.remindHint")}
+            </div>
+          </div>
+          <label className="tools-toggle" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={remindExt}
+              onChange={() =>
+                void window.hermesAPI
+                  .browserExtensionSetRemind(!remindExt)
+                  .then(setRemindExt)
+              }
+            />
+            <span className="tools-toggle-track" />
+          </label>
         </div>
       </div>
     </div>

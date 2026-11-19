@@ -3,6 +3,7 @@ import type { AppLocale } from "../shared/i18n/types";
 import type { Attachment } from "../shared/attachments";
 import type { MemoryFact } from "../shared/memory-bank";
 import type { Note } from "../shared/notes";
+import type { BrowserExtensionStatus } from "../shared/browser-extension";
 import type { ScreenshotResponse } from "../shared/screenshot";
 import type { SessionModelOverride } from "../shared/model-override";
 import type { DesktopSessionContinuationItem } from "../shared/session-continuation";
@@ -1555,6 +1556,14 @@ const hermesAPI = {
     ipcRenderer.invoke("autostart-get"),
   autostartSet: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke("autostart-set", enabled),
+  browserExtensionStatus: (): Promise<BrowserExtensionStatus> =>
+    ipcRenderer.invoke("browser-extension-status"),
+  browserExtensionOpenStore: (browser: "chrome" | "yandex"): Promise<boolean> =>
+    ipcRenderer.invoke("browser-extension-open-store", browser),
+  browserExtensionSnooze: (): Promise<void> =>
+    ipcRenderer.invoke("browser-extension-snooze"),
+  browserExtensionSetRemind: (remind: boolean): Promise<boolean> =>
+    ipcRenderer.invoke("browser-extension-set-remind", remind),
   notesList: (): Promise<Note[]> => ipcRenderer.invoke("notes-list"),
   notesSave: (input: {
     id?: string;

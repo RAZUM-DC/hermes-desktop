@@ -1,7 +1,13 @@
 name: Release
 
 on:
-  # Publishing is deliberate: merging into release never starts a release.
+  # Every push to release starts a real Windows/Linux release of the version in
+  # package.json. A push without a version bump is harmless: the version tag
+  # already exists, so prepare finishes and every build/publish job is skipped.
+  # Signed macOS is never part of an automatic release (no Apple credentials).
+  push:
+    branches: [release]
+  # Manual runs: dry runs (default) and releases that include signed macOS.
   workflow_dispatch:
     inputs:
       dry_run:
@@ -56,8 +62,8 @@ jobs:
       - name: Select release mode
         id: mode
         env:
-          DRY_RUN: ${{ inputs.dry_run }}
-          INCLUDE_MACOS: ${{ inputs.include_macos }}
+          DRY_RUN: ${{ github.event_name == 'push' && 'false' || inputs.dry_run }}
+          INCLUDE_MACOS: ${{ github.event_name == 'push' && 'false' || inputs.include_macos }}
         run: |
           set -euo pipefail
           case "$DRY_RUN" in true|false) ;; *) exit 1 ;; esac

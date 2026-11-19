@@ -8,7 +8,7 @@ import {
   dialog,
   clipboard,
 } from "electron";
-import { extname } from "path";
+import { extname, join } from "path";
 import { randomUUID } from "crypto";
 import { readdir, readFile, stat } from "fs/promises";
 import type { Attachment } from "../../shared/attachments";
@@ -348,6 +348,16 @@ import {
   agentMontageArtifact,
 } from "../kanban";
 import { getAppLocale, setAppLocale } from "../locale";
+import {
+  browsersToRemind,
+  detectBrowserExtension,
+  EXTENSION_STORE_URL,
+  openExtensionStore,
+  readReminderPrefs,
+  snoozedPrefs,
+  writeReminderPrefs,
+  type BrowserId,
+} from "../browser-extension";
 import {
   sshListInstalledSkills,
   sshGetSkillContent,
@@ -2882,6 +2892,43 @@ export function registerIpcHandlers(context: IpcContext): void {
   ipcMain.handle("autostart-set", (_event, enabled: boolean) =>
     setAutostart(Boolean(enabled)),
   );
+  // Корпоративное расширение «РАЗУМ ИИ-помощник» в Chrome/Яндекс.Браузере:
+  // проверка по файлам профиля и открытие страницы в магазине (установить
+  // приложение само не может — только пользователь кликом).
+  const extPrefsFile = (): string =>
+    join(app.getPath("userData"), "browser-extension.json");
+  ipcMain.handle("browser-extension-status", () => {
+    const prefs = readReminderPrefs(extPrefsFile());
+    const browsers = detectBrowserExtension();
+    return {
+      remind: prefs.remind,
+      browsers,
+      toRemind: browsersToRemind(browsers, prefs, Date.now()),
+    };
+  });
+  ipcMain.handle(
+    "browser-extension-open-store",
+    async (_event, browser: BrowserId) => {
+      if (browser === "chrome" || browser === "yandex") {
+        if (openExtensionStore(browser)) return true;
+      }
+      // Браузер не нашли — откроем в браузере по умолчанию.
+      await shell.openExternal(EXTENSION_STORE_URL);
+      return false;
+    },
+  );
+  ipcMain.handle("browser-extension-snooze", () => {
+    const file = extPrefsFile();
+    writeReminderPrefs(file, snoozedPrefs(readReminderPrefs(file), Date.now()));
+  });
+  ipcMain.handle("browser-extension-set-remind", (_event, remind: boolean) => {
+    const file = extPrefsFile();
+    writeReminderPrefs(file, {
+      remind: Boolean(remind),
+      snoozeUntil: 0,
+    });
+    return Boolean(remind);
+  });
   ipcMain.handle("notes-list", () => listNotes());
   ipcMain.handle("notes-save", (_event, input: NoteInput) => saveNote(input));
   ipcMain.handle("notes-delete", (_event, id: string) => deleteNote(id));
