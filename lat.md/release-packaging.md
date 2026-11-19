@@ -8,7 +8,7 @@ Linux AppImages include their architecture to prevent x64 and arm64 files overwr
 
 `scripts/prepare-release-artifacts.mjs` rejects missing or empty installers and update feeds, creates `latest-mac.yml` from both ZIPs with SHA-512 hashes only when macOS is selected, and returns an explicit publication allowlist. Linux ARM64 uses `latest-linux-arm64.yml`.
 
-`Release` is manual-only, defaults to `dry_run=true` and `include_macos=false`, and never publishes on merge. A dry run builds and validates even when the version tag exists, without creating a tag or release. Real releases require the `release` branch.
+`Release` runs on every push to `release` as a real Windows/Linux release (`dry_run=false`, `include_macos=false`) of the version in `package.json`; a push without a version bump finds the tag already present and skips every build. Manual runs default to `dry_run=true` and `include_macos=false`, and are how signed macOS is added. A dry run builds and validates even when the version tag exists, without creating a tag or release. Real releases require the `release` branch.
 
 ## Optional production macOS
 

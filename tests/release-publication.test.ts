@@ -104,6 +104,28 @@ describe("release job selection", () => {
   });
 });
 
+describe("release triggers", () => {
+  // @lat: [[release-packaging#Release Packaging#Complete release artifacts]]
+  it("a push to release is a real Windows/Linux release; manual runs keep their inputs", () => {
+    expect(workflow.on.push.branches).toEqual(["release"]);
+    expect(workflow.on.workflow_dispatch.inputs.dry_run.default).toBe(true);
+    const env = workflow.jobs.prepare.steps.find(
+      (s: { id?: string }) => s.id === "mode",
+    ).env;
+    const evalExpr = (expr: string, ctx: object): unknown =>
+      runInNewContext(expr.replace(/^\$\{\{\s*|\s*\}\}$/g, ""), ctx);
+    const push = { github: { event_name: "push" }, inputs: {} };
+    expect(evalExpr(env.DRY_RUN, push)).toBe("false");
+    expect(evalExpr(env.INCLUDE_MACOS, push)).toBe("false");
+    const manual = {
+      github: { event_name: "workflow_dispatch" },
+      inputs: { dry_run: true, include_macos: true },
+    };
+    expect(evalExpr(env.DRY_RUN, manual)).toBe(true);
+    expect(evalExpr(env.INCLUDE_MACOS, manual)).toBe(true);
+  });
+});
+
 describe("draft asset verification", () => {
   let dir: string;
   let files: string[];
