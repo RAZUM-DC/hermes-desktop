@@ -803,6 +803,10 @@ interface HermesAPI {
   ) => Promise<boolean>;
   onModelLibraryChanged: (callback: () => void) => () => void;
 
+  onDeepLinkOpenSession: (
+    callback: (sessionId: string) => void,
+  ) => () => void;
+
   // Claw3D
   claw3dStatus: () => Promise<{
     cloned: boolean;
