@@ -14,7 +14,7 @@
 - Разбор: чистая функция `parseDeepLink` в `src/main/deep-link.ts` (белый список).
 - Windows/Linux: ссылка приходит в argv при первом запуске и в событии `second-instance` (`pickDeepLinkFromArgv`). macOS: событие `open-url`.
 - Main буферизует последнюю ссылку, пока рендерер не подписался. Layout монтируется только после установки и настройки, поэтому подписка `window.hermesAPI.onDeepLinkOpenSession` служит сигналом готовности.
-- Каналы IPC: `deep-link:open-session` (main → renderer, payload: id), `deep-link:renderer-ready` и `deep-link:renderer-gone` (renderer → main).
+- Каналы IPC: `deep-link-open-session` (main → renderer, payload: id), `deep-link-renderer-ready` и `deep-link-renderer-gone` (renderer → main).
 - В рендерере Layout вызывает `handleResumeSession(id)` и переходит в чат.
 - Регистрация схемы: `protocols` в `electron-builder.yml` (установщик Windows, Info.plist macOS, MimeType для Linux) и `app.setAsDefaultProtocolClient` при старте (в dev передаётся путь к приложению).
 

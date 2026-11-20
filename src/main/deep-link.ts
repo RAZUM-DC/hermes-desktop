@@ -3,15 +3,16 @@
 // imports) so it can be unit-tested; wiring lives in app/start.ts.
 
 export const DEEP_LINK_PROTOCOL = "razum-assistant";
-export const DEEP_LINK_OPEN_SESSION_CHANNEL = "deep-link:open-session";
-export const DEEP_LINK_READY_CHANNEL = "deep-link:renderer-ready";
-export const DEEP_LINK_GONE_CHANNEL = "deep-link:renderer-gone";
+export const DEEP_LINK_OPEN_SESSION_CHANNEL = "deep-link-open-session";
+export const DEEP_LINK_READY_CHANNEL = "deep-link-renderer-ready";
+export const DEEP_LINK_GONE_CHANNEL = "deep-link-renderer-gone";
 
 // Whitelist: scheme + host `session` + exactly one path segment (an optional
 // trailing slash is tolerated, browsers/Windows append it). No query, hash,
 // credentials, port, percent-encoding or extra segments — the id is matched on
 // the raw string and never decoded.
-const SESSION_LINK_RE = /^razum-assistant:\/\/session\/([A-Za-z0-9_-]{1,128})\/?$/i;
+const SESSION_LINK_RE =
+  /^razum-assistant:\/\/session\/([A-Za-z0-9_-]{1,128})\/?$/i;
 
 export type DeepLinkAction = { type: "open-session"; sessionId: string };
 

@@ -1048,11 +1048,11 @@ const hermesAPI = {
     const handler = (_e: unknown, sessionId: unknown): void => {
       if (typeof sessionId === "string") callback(sessionId);
     };
-    ipcRenderer.on("deep-link:open-session", handler);
-    ipcRenderer.send("deep-link:renderer-ready");
+    ipcRenderer.on("deep-link-open-session", handler);
+    ipcRenderer.send("deep-link-renderer-ready");
     return () => {
-      ipcRenderer.removeListener("deep-link:open-session", handler);
-      ipcRenderer.send("deep-link:renderer-gone");
+      ipcRenderer.removeListener("deep-link-open-session", handler);
+      ipcRenderer.send("deep-link-renderer-gone");
     };
   },
 

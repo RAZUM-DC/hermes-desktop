@@ -23,7 +23,9 @@ describe("parseDeepLink", () => {
 
   it("accepts ids up to 128 chars and rejects longer", () => {
     const ok = "a".repeat(128);
-    expect(parseDeepLink(`razum-assistant://session/${ok}`)?.sessionId).toBe(ok);
+    expect(parseDeepLink(`razum-assistant://session/${ok}`)?.sessionId).toBe(
+      ok,
+    );
     expect(parseDeepLink(`razum-assistant://session/${ok}a`)).toBeNull();
   });
 
@@ -94,7 +96,11 @@ describe("pickDeepLinkFromArgv", () => {
   });
 
   it("returns the first candidate; validation stays in parseDeepLink", () => {
-    const argv = ["app.exe", "razum-assistant://bad/x", "razum-assistant://session/ok"];
+    const argv = [
+      "app.exe",
+      "razum-assistant://bad/x",
+      "razum-assistant://session/ok",
+    ];
     const picked = pickDeepLinkFromArgv(argv);
     expect(picked).toBe("razum-assistant://bad/x");
     expect(parseDeepLink(picked)).toBeNull();
@@ -105,7 +111,12 @@ describe("buildProtocolRegistration", () => {
   const resolvePath = (p: string): string => `/abs/${p}`;
   it("is null for packaged apps", () => {
     expect(
-      buildProtocolRegistration({ defaultApp: false, execPath: "x", argv: ["x"], resolvePath }),
+      buildProtocolRegistration({
+        defaultApp: false,
+        execPath: "x",
+        argv: ["x"],
+        resolvePath,
+      }),
     ).toBeNull();
   });
   it("passes the app path in dev mode", () => {
@@ -120,7 +131,12 @@ describe("buildProtocolRegistration", () => {
   });
   it("is null in dev mode without a script argument", () => {
     expect(
-      buildProtocolRegistration({ defaultApp: true, execPath: "electron", argv: ["electron"], resolvePath }),
+      buildProtocolRegistration({
+        defaultApp: true,
+        execPath: "electron",
+        argv: ["electron"],
+        resolvePath,
+      }),
     ).toBeNull();
   });
 });

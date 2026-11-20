@@ -38,7 +38,7 @@ Release builds keep a Help-menu Developer Tools toggle as a production diagnosti
 
 The `razum-assistant://session/<id>` link opens one Hermes session and does nothing else.
 
-[[src/main/deep-link.ts#parseDeepLink]] whitelists host `session` and an id of `[A-Za-z0-9_-]{1,128}`; [[src/main/deep-link.ts#pickDeepLinkFromArgv]] extracts it from Windows/Linux argv and `second-instance`, macOS uses `open-url`. [[src/main/deep-link.ts#createDeepLinkDispatcher]] buffers the latest link until the renderer's Layout subscribes via `deep-link:renderer-ready`, then sends `deep-link:open-session` with the bare id. See `docs/deep-link.md`.
+[[src/main/deep-link.ts#parseDeepLink]] whitelists host `session` and an id of `[A-Za-z0-9_-]{1,128}`; [[src/main/deep-link.ts#pickDeepLinkFromArgv]] extracts it from Windows/Linux argv and `second-instance`, macOS uses `open-url`. [[src/main/deep-link.ts#createDeepLinkDispatcher]] buffers the latest link until the renderer's Layout subscribes via `deep-link-renderer-ready`, then sends `deep-link-open-session` with the bare id. See `docs/deep-link.md`.
 
 ## IPC Registry
 
