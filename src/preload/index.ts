@@ -1041,6 +1041,21 @@ const hermesAPI = {
     return () => ipcRenderer.removeListener("model-library-changed", handler);
   },
 
+  // Deep link razum-assistant://session/<id>: main validates the id, the
+  // renderer only ever receives a bare session id. Subscribing announces
+  // readiness so main flushes a link buffered during startup.
+  onDeepLinkOpenSession: (callback: (sessionId: string) => void): (() => void) => {
+    const handler = (_e: unknown, sessionId: unknown): void => {
+      if (typeof sessionId === "string") callback(sessionId);
+    };
+    ipcRenderer.on("deep-link:open-session", handler);
+    ipcRenderer.send("deep-link:renderer-ready");
+    return () => {
+      ipcRenderer.removeListener("deep-link:open-session", handler);
+      ipcRenderer.send("deep-link:renderer-gone");
+    };
+  },
+
   // Claw3D
   claw3dStatus: (): Promise<{
     cloned: boolean;

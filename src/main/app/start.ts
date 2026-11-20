@@ -2,13 +2,14 @@ import {
   app,
   BrowserWindow,
   globalShortcut,
+  ipcMain,
   Menu,
   nativeImage,
   session,
   shell,
   Tray,
 } from "electron";
-import { join } from "path";
+import { join, resolve } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import icon from "../../../resources/icon.png?asset";
 import { getPublicConnectionConfig } from "../config";
@@ -29,6 +30,16 @@ import { showChatContextMenu } from "./context-menu";
 import { buildMenu } from "./menu";
 import { setupUpdater } from "./updater";
 import { startCompanion, stopCompanion } from "../companion";
+import {
+  DEEP_LINK_GONE_CHANNEL,
+  DEEP_LINK_OPEN_SESSION_CHANNEL,
+  DEEP_LINK_PROTOCOL,
+  DEEP_LINK_READY_CHANNEL,
+  buildProtocolRegistration,
+  createDeepLinkDispatcher,
+  parseDeepLink,
+  pickDeepLinkFromArgv,
+} from "../deep-link";
 import { startStaffWatcher, stopStaffWatcher } from "../staff-watcher";
 
 const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "РАЗУМ Ассистент";
@@ -43,13 +54,68 @@ const QUICK_CALL_SHORTCUT =
   process.env.HERMES_DESKTOP_HOTKEY?.trim() || "Control+Shift+Space";
 const activeRuns = new Map<string, () => void>();
 
+// Deep links (razum-assistant://session/<id>) are buffered until the renderer
+// (Layout, i.e. past install/setup) subscribes.
+const deepLinks = createDeepLinkDispatcher((sessionId) => {
+  mainWindow?.webContents.send(DEEP_LINK_OPEN_SESSION_CHANNEL, sessionId);
+});
+
+function handleDeepLinkUrl(raw: unknown): void {
+  const action = parseDeepLink(raw);
+  if (!action) {
+    // Never log the value: it comes from outside the app.
+    console.warn("[DEEP-LINK] Ignored unsupported link");
+    return;
+  }
+  deepLinks.enqueue(action.sessionId);
+  // Before app "ready" (launch via link / early open-url) the window is created
+  // by the normal startup path; the link stays buffered until Layout is ready.
+  if (app.isReady() && mainWindow) showMainWindow();
+}
+
+function registerProtocolClient(): void {
+  try {
+    const reg = buildProtocolRegistration({
+      defaultApp: Boolean(process.defaultApp),
+      execPath: process.execPath,
+      argv: process.argv,
+      resolvePath: resolve,
+    });
+    if (reg) app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL, reg.path, reg.args);
+    else app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
+  } catch (err) {
+    console.warn("[DEEP-LINK] Failed to register protocol client", err);
+  }
+}
+
 export function startMainProcess(): void {
   const gotSingleInstanceLock = app.requestSingleInstanceLock();
   if (!gotSingleInstanceLock) {
     app.quit();
     return;
   }
-  app.on("second-instance", () => {
+  // macOS delivers links via open-url (also before ready) — subscribe early.
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    handleDeepLinkUrl(url);
+  });
+  registerProtocolClient();
+  // Windows/Linux: first launch carries the link in argv.
+  const launchLink = pickDeepLinkFromArgv(process.argv);
+  if (launchLink) handleDeepLinkUrl(launchLink);
+
+  ipcMain.on(DEEP_LINK_READY_CHANNEL, (event) => {
+    if (event.sender !== mainWindow?.webContents) return;
+    deepLinks.markReady();
+  });
+  ipcMain.on(DEEP_LINK_GONE_CHANNEL, (event) => {
+    if (event.sender !== mainWindow?.webContents) return;
+    deepLinks.markNotReady();
+  });
+
+  app.on("second-instance", (_event, argv) => {
+    const link = pickDeepLinkFromArgv(argv);
+    if (link) handleDeepLinkUrl(link);
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       if (!mainWindow.isVisible()) mainWindow.show();
@@ -260,6 +326,8 @@ function createWindow(): void {
   });
 
   mainWindow.on("ready-to-show", () => mainWindow?.show());
+  // A (re)load drops the renderer's subscription; it re-announces itself.
+  mainWindow.webContents.on("did-start-loading", () => deepLinks.markNotReady());
   // Свернуть в трей вместо выхода: окно живёт в трее, quick-call хоткей
   // мгновенно его возвращает. Реальный выход — через меню трея / before-quit.
   mainWindow.on("close", (event) => {

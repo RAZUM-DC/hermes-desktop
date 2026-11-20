@@ -620,6 +620,19 @@ function Layout({
     [runs, activeRunId, handleActivateRun, activeProfile, goTo],
   );
 
+  // Deep link razum-assistant://session/<id> (from the browser extension).
+  // Layout only mounts after install/setup, so subscribing here doubles as the
+  // "ready" signal: main flushes a link that arrived during startup.
+  const resumeSessionRef = useRef(handleResumeSession);
+  resumeSessionRef.current = handleResumeSession;
+  useEffect(() => {
+    return window.hermesAPI.onDeepLinkOpenSession((sessionId) => {
+      void resumeSessionRef.current(sessionId).catch((err) => {
+        console.error("[deep-link] failed to open session", err);
+      });
+    });
+  }, []);
+
   // При запуске открываем последний диалог пользователя вместо пустого чата
   // (удалённые сессии живут на сервере; пустой run иначе их прячет). Один раз
   // и только если стартовый run ещё чистый.
