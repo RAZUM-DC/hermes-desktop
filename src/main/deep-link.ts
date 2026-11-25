@@ -6,6 +6,7 @@ export const DEEP_LINK_PROTOCOL = "razum-assistant";
 export const DEEP_LINK_OPEN_SESSION_CHANNEL = "deep-link-open-session";
 export const DEEP_LINK_READY_CHANNEL = "deep-link-renderer-ready";
 export const DEEP_LINK_GONE_CHANNEL = "deep-link-renderer-gone";
+export const DEEP_LINK_ACK_CHANNEL = "deep-link-ack";
 
 // Whitelist: scheme + host `session` + exactly one path segment (an optional
 // trailing slash is tolerated, browsers/Windows append it). No query, hash,
@@ -75,35 +76,55 @@ export function buildProtocolRegistration(opts: {
   return { kind: "default" };
 }
 
+/** One delivery attempt of a link to the renderer; seq identifies the link. */
+export interface DeepLinkDelivery {
+  sessionId: string;
+  seq: number;
+}
+
+/**
+ * Delivers links to the renderer with acknowledgement.
+ *
+ *   enqueue(id) ─► pending = {id, seq+1} (only the latest click matters)
+ *                   └─ ready? send now
+ *   markReady()  ─► ready; pending not acked yet? send (again)
+ *   ack(seq)     ─► the renderer took that link: drop it if still pending
+ *   markNotReady ─► stop sending until the next ready (unsubscribed, crashed,
+ *                   window closed)
+ *
+ * A link is dropped only after the renderer confirms it. A send that lands in
+ * a page being reloaded, or any other gap the ready/not-ready signals miss,
+ * just stays pending and is re-sent on the next ready — so delivery does not
+ * depend on catching every navigation event. A re-send of a link the renderer
+ * already took is recognised by its seq and only acknowledged again.
+ */
 export interface DeepLinkDispatcher {
-  /** Deliver now if the renderer is ready, otherwise keep the latest id. */
   enqueue(sessionId: string): void;
-  /** Renderer subscribed: flush the pending id (if any) and send directly after. */
   markReady(): void;
-  /** Renderer reloaded/unmounted: buffer again. */
   markNotReady(): void;
+  ack(seq: number): void;
 }
 
 export function createDeepLinkDispatcher(
-  send: (sessionId: string) => void,
+  send: (delivery: DeepLinkDelivery) => void,
 ): DeepLinkDispatcher {
   let ready = false;
-  let pending: string | null = null;
+  let seq = 0;
+  let pending: DeepLinkDelivery | null = null;
   return {
     enqueue(sessionId) {
-      if (ready) send(sessionId);
-      else pending = sessionId; // only the most recent click matters
+      pending = { sessionId, seq: ++seq };
+      if (ready) send(pending);
     },
     markReady() {
       ready = true;
-      if (pending !== null) {
-        const id = pending;
-        pending = null;
-        send(id);
-      }
+      if (pending) send(pending);
     },
     markNotReady() {
       ready = false;
+    },
+    ack(ackSeq) {
+      if (pending && pending.seq === ackSeq) pending = null;
     },
   };
 }

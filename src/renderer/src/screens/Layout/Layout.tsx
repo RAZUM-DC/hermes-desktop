@@ -89,8 +89,12 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useI18n } from "../../components/useI18n";
 import {
-  isRetryableSessionError,
+  latestAfterCancelLink,
   openSessionWithRetry,
+  pendingLinkOnResume,
+  resolveResumeLoad,
+  type ResumeErrorState,
+  type ResumeLoadResult,
   type ResumeOutcome,
 } from "./deepLinkOpen";
 
@@ -214,10 +218,7 @@ function Layout({
   // another agent, another section) — see supersedeResume.
   const latestResumeRef = useRef<string | null>(null);
   // Session the user tried to open and couldn't (banner with Retry).
-  const [resumeError, setResumeError] = useState<{
-    sessionId: string;
-    notFound: boolean;
-  } | null>(null);
+  const [resumeError, setResumeError] = useState<ResumeErrorState | null>(null);
   // Deep link waiting between retries (banner «Opening…» with Cancel).
   const [linkPendingId, setLinkPendingId] = useState<string | null>(null);
   // The user moved on: no loading session may take over the screen any more,
@@ -227,6 +228,15 @@ function Layout({
     setResumeError(null);
     setLinkPendingId(null);
   }, []);
+  // «Cancel» on the «Opening…» banner: give up that link only — if the user
+  // already opened something else, its load keeps the screen.
+  const cancelLinkOpening = useCallback((): void => {
+    latestResumeRef.current = latestAfterCancelLink(
+      latestResumeRef.current,
+      linkPendingId,
+    );
+    setLinkPendingId(null);
+  }, [linkPendingId]);
   const sidebarChatScrollRef = useRef<HTMLDivElement | null>(null);
   const sidebarScrollbarHideRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -1230,8 +1240,13 @@ function Layout({
       // The most recent request wins: a deep link or a click arriving while an
       // earlier resume is still loading must not be overridden when that older
       // load finishes (remote/SSH responses can come back out of order).
+      const quiet = Boolean(opts?.quiet);
+      const requireExisting = Boolean(opts?.requireExisting);
       latestResumeRef.current = sessionId;
       setResumeError(null);
+      // Another request takes the screen: a different link's «Opening…»
+      // banner (and its retries, which check latestResumeRef) are over.
+      setLinkPendingId((cur) => pendingLinkOnResume(cur, sessionId));
       // Already open as a live run? Re-attach to it (keeps live streaming).
       const live = findRunBySession(runs, sessionId);
       if (live) {
@@ -1246,33 +1261,33 @@ function Layout({
       resumingRef.current.add(sessionId);
       setResumingSessionId(sessionId);
       try {
-        let items: DbHistoryItem[];
+        let result: ResumeLoadResult<DbHistoryItem>;
         try {
-          items = (await window.hermesAPI.getSessionMessages(
-            sessionId,
-            undefined,
-            activeProfile,
-          )) as DbHistoryItem[];
+          result = {
+            items: (await window.hermesAPI.getSessionMessages(
+              sessionId,
+              undefined,
+              activeProfile,
+            )) as DbHistoryItem[],
+          };
         } catch (err) {
           console.error("[sessions] failed to open session", err);
-          if (latestResumeRef.current !== sessionId) return "superseded";
-          const retryable = isRetryableSessionError(err);
-          // A quiet attempt keeps a retryable error to itself (the caller will
-          // retry); a final error is shown at once.
-          if (!retryable || !opts?.quiet)
-            setResumeError({ sessionId, notFound: false });
-          return retryable ? "retryable" : "failed";
+          result = { error: err };
         }
-        // Superseded while loading: the newer request owns the screen.
-        if (latestResumeRef.current !== sessionId) return "superseded";
-        // A link carries an id from outside: an empty history means there is
-        // no such session here. Opening it would mount an empty chat bound to
-        // a foreign id, and the next message would "resume" it.
-        if (opts?.requireExisting && items.length === 0) {
-          setResumeError({ sessionId, notFound: true });
-          return "failed";
-        }
-        const run = mintRun(activeProfile, dbItemsToChatMessages(items));
+        // See resolveResumeLoad: superseded / retryable / not found / opened.
+        const decision = resolveResumeLoad({
+          sessionId,
+          latest: latestResumeRef.current,
+          quiet,
+          requireExisting,
+          result,
+        });
+        if (decision.error) setResumeError(decision.error);
+        if (decision.outcome !== "opened") return decision.outcome;
+        const run = mintRun(
+          activeProfile,
+          dbItemsToChatMessages([...decision.items]),
+        );
         run.sessionId = sessionId;
         run.fromHistory = true;
         setRuns(
@@ -1281,6 +1296,13 @@ function Layout({
         setActiveRunId(run.runId);
         goTo("chat");
         return "opened";
+      } catch (err) {
+        // Unexpected failure while building the chat (not the load itself):
+        // report it, never fail silently — not even on a quiet attempt.
+        console.error("[sessions] failed to show session", err);
+        if (latestResumeRef.current === sessionId)
+          setResumeError({ sessionId, kind: "failed", requireExisting });
+        return "failed";
       } finally {
         resumingRef.current.delete(sessionId);
         // Clear the spinner only if it is still ours: a newer request that
@@ -1538,7 +1560,7 @@ function Layout({
           <div className="verify-warning-banner" role="alert">
             <span className="verify-warning-text">
               {t(
-                resumeError.notFound
+                resumeError.kind === "notFound"
                   ? "chat.sessionNotFound"
                   : "chat.sessionOpenFailed",
               )}
@@ -1549,7 +1571,7 @@ function Layout({
                 type="button"
                 onClick={() =>
                   void handleResumeSession(resumeError.sessionId, {
-                    requireExisting: resumeError.notFound,
+                    requireExisting: resumeError.requireExisting,
                   })
                 }
               >
@@ -1573,7 +1595,7 @@ function Layout({
               <button
                 className="btn-ghost btn-sm"
                 type="button"
-                onClick={supersedeResume}
+                onClick={cancelLinkOpening}
               >
                 {t("common.cancel")}
               </button>

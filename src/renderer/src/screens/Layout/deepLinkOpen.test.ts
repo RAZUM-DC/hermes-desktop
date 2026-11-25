@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  isRetryableSessionError,
+  classifySessionError,
+  latestAfterCancelLink,
   openSessionWithRetry,
+  pendingLinkOnResume,
+  resolveResumeLoad,
   type ResumeOutcome,
 } from "./deepLinkOpen";
 
@@ -15,7 +18,7 @@ const outcomes = (...list: ResumeOutcome[]): ResumeMock => {
   return fn;
 };
 
-describe("isRetryableSessionError", () => {
+describe("classifySessionError", () => {
   it.each([
     "Error invoking remote method 'get-session-messages': Error: 503: companion: agent session not ready - /device/session -> HTTP 403: {}",
     "502: Bad Gateway",
@@ -23,21 +26,135 @@ describe("isRetryableSessionError", () => {
     "Error: 408: timeout",
     "connect ECONNREFUSED 127.0.0.1:18644",
     "Remote request timed out after 15000ms",
+    "Invalid JSON from https://x/api (status 200): <html>",
   ])("retries %s", (message) => {
-    expect(isRetryableSessionError(new Error(message))).toBe(true);
+    expect(classifySessionError(new Error(message))).toBe("retryable");
   });
 
-  it.each([
-    "Error invoking remote method 'get-session-messages': Error: 404: not found",
-    "Error: 403: forbidden",
-    "400: bad request",
-  ])("does not retry %s", (message) => {
-    expect(isRetryableSessionError(new Error(message))).toBe(false);
+  it("maps 404 to «not found»", () => {
+    expect(
+      classifySessionError(
+        new Error(
+          'Error invoking remote method \'get-session-messages\': Error: 404: {"detail":"Session not found"}',
+        ),
+      ),
+    ).toBe("notFound");
   });
 
-  it("treats non-Error values as retryable", () => {
-    expect(isRetryableSessionError(undefined)).toBe(true);
-    expect(isRetryableSessionError("404: x")).toBe(false);
+  it.each(["Error: 403: forbidden", "400: bad request", "401: no token"])(
+    "treats %s as final",
+    (message) => {
+      expect(classifySessionError(new Error(message))).toBe("failed");
+    },
+  );
+
+  it("handles non-Error values", () => {
+    expect(classifySessionError(undefined)).toBe("retryable");
+    expect(classifySessionError("404: x")).toBe("notFound");
+  });
+});
+
+describe("resolveResumeLoad", () => {
+  const base = {
+    sessionId: "a",
+    latest: "a" as string | null,
+    quiet: false,
+    requireExisting: false,
+  };
+
+  it("opens a loaded session", () => {
+    expect(resolveResumeLoad({ ...base, result: { items: [1] } })).toEqual({
+      outcome: "opened",
+      items: [1],
+      error: null,
+    });
+  });
+
+  it("drops a load another request superseded, whatever its result", () => {
+    for (const result of [{ items: [1] }, { error: new Error("503: x") }])
+      expect(resolveResumeLoad({ ...base, latest: "b", result }).outcome).toBe(
+        "superseded",
+      );
+    expect(
+      resolveResumeLoad({ ...base, latest: null, result: { items: [] } }),
+    ).toEqual({ outcome: "superseded", error: null });
+  });
+
+  it("keeps a retryable error quiet only on a quiet attempt", () => {
+    const result = { error: new Error("503: not ready") };
+    expect(resolveResumeLoad({ ...base, quiet: true, result })).toEqual({
+      outcome: "retryable",
+      error: null,
+    });
+    expect(resolveResumeLoad({ ...base, result })).toEqual({
+      outcome: "retryable",
+      error: { sessionId: "a", kind: "failed", requireExisting: false },
+    });
+  });
+
+  it("shows final errors at once, even on a quiet attempt", () => {
+    expect(
+      resolveResumeLoad({
+        ...base,
+        quiet: true,
+        requireExisting: true,
+        result: { error: new Error("404: gone") },
+      }),
+    ).toEqual({
+      outcome: "failed",
+      error: { sessionId: "a", kind: "notFound", requireExisting: true },
+    });
+    expect(
+      resolveResumeLoad({
+        ...base,
+        quiet: true,
+        result: { error: new Error("403: no") },
+      }).error?.kind,
+    ).toBe("failed");
+  });
+
+  it("treats an empty history as «not found» only when the id must exist", () => {
+    expect(
+      resolveResumeLoad({
+        ...base,
+        requireExisting: true,
+        result: { items: [] },
+      }),
+    ).toEqual({
+      outcome: "failed",
+      error: { sessionId: "a", kind: "notFound", requireExisting: true },
+    });
+    expect(resolveResumeLoad({ ...base, result: { items: [] } }).outcome).toBe(
+      "opened",
+    );
+  });
+
+  it("carries requireExisting into the banner so Retry keeps the check", () => {
+    const d = resolveResumeLoad({
+      ...base,
+      requireExisting: true,
+      result: { error: new Error("ECONNRESET") },
+    });
+    expect(d.error).toEqual({
+      sessionId: "a",
+      kind: "failed",
+      requireExisting: true,
+    });
+  });
+});
+
+describe("«Opening…» banner ownership", () => {
+  it("survives only its own link's resume", () => {
+    expect(pendingLinkOnResume("a", "a")).toBe("a");
+    expect(pendingLinkOnResume("a", "b")).toBeNull();
+    expect(pendingLinkOnResume(null, "b")).toBeNull();
+  });
+
+  it("Cancel gives up only the pending link, not a newer request", () => {
+    expect(latestAfterCancelLink("a", "a")).toBeNull();
+    expect(latestAfterCancelLink("b", "a")).toBe("b");
+    expect(latestAfterCancelLink("b", null)).toBe("b");
+    expect(latestAfterCancelLink(null, "a")).toBeNull();
   });
 });
 

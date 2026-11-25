@@ -1446,17 +1446,17 @@ for r in rows:
 print(json.dumps(items))
 conn.close()
 `;
-  try {
-    const out = await sshPython(
-      config,
-      script,
-      pythonJsonInput({ profile, sessionId }),
-    );
-    const items = JSON.parse(out.trim() || "[]") as HistoryItem[];
-    return hydrateSshPromptImageAttachments(config, items);
-  } catch {
-    return [];
-  }
+  const out = await sshPython(
+    config,
+    script,
+    pythonJsonInput({ profile, sessionId }),
+  );
+  // No catch-all here: an SSH/transport failure used to come back as [] —
+  // indistinguishable from an empty session, so a deep link reported «not
+  // found» instead of retrying, and a manual open showed an empty chat. The
+  // caller (Layout) tells transient failures from real ones.
+  const items = JSON.parse(out.trim() || "[]") as HistoryItem[];
+  return hydrateSshPromptImageAttachments(config, items);
 }
 
 function sshImageName(filePath: string): string {

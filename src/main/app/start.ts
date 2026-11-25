@@ -35,6 +35,7 @@ import { initAutostartDefault, shouldStartHidden } from "../autostart";
 import { setupUpdater } from "./updater";
 import { startCompanion, stopCompanion } from "../companion";
 import {
+  DEEP_LINK_ACK_CHANNEL,
   DEEP_LINK_GONE_CHANNEL,
   DEEP_LINK_OPEN_SESSION_CHANNEL,
   DEEP_LINK_PROTOCOL,
@@ -71,8 +72,8 @@ const activeRuns = new Map<string, () => void>();
 
 // Deep links (razum-assistant://session/<id>) are buffered until the renderer
 // (Layout, i.e. past install/setup) subscribes.
-const deepLinks = createDeepLinkDispatcher((sessionId) => {
-  mainWindow?.webContents.send(DEEP_LINK_OPEN_SESSION_CHANNEL, sessionId);
+const deepLinks = createDeepLinkDispatcher((delivery) => {
+  mainWindow?.webContents.send(DEEP_LINK_OPEN_SESSION_CHANNEL, delivery);
 });
 
 // A link that arrives before the window exists (cold start via link, or a
@@ -138,6 +139,10 @@ export function startMainProcess(): void {
   ipcMain.on(DEEP_LINK_GONE_CHANNEL, (event) => {
     if (event.sender !== mainWindow?.webContents) return;
     deepLinks.markNotReady();
+  });
+  ipcMain.on(DEEP_LINK_ACK_CHANNEL, (event, seq: unknown) => {
+    if (event.sender !== mainWindow?.webContents) return;
+    if (typeof seq === "number") deepLinks.ack(seq);
   });
 
   app.on("second-instance", (_event, argv) => {
@@ -399,14 +404,9 @@ function createWindow(): void {
     if (!startHidden || showWindowWhenReady) mainWindow?.show();
     showWindowWhenReady = false;
   });
-  // A main-frame (re)load drops the renderer's subscription; it re-announces
-  // itself. Not did-start-loading: that may also fire for loads inside the
-  // page, which would leave a still-subscribed Layout marked "not ready" and
-  // silently buffer every later link.
-  mainWindow.webContents.on("did-start-navigation", (details) => {
-    if (details.isMainFrame && !details.isSameDocument)
-      deepLinks.markNotReady();
-  });
+  // No readiness reset on navigation: a link sent while the page reloads is
+  // not acknowledged, stays pending and is re-sent when the new page's Layout
+  // announces itself (see createDeepLinkDispatcher).
   // The window really goes away only on quit (close hides it to the tray);
   // forget it so a late link recreates a window instead of touching a
   // destroyed one.

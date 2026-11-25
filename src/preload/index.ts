@@ -83,6 +83,11 @@ const electronAPI = {
   },
 };
 
+// Highest deep-link seq this page has handed to the app (see
+// onDeepLinkOpenSession). Page-wide, not per subscription: a re-subscribe
+// (React StrictMode, remount) must not open the same link twice.
+let lastHandledDeepLinkSeq = 0;
+
 const hermesAPI = {
   // Installation
   checkInstall: (): Promise<{
@@ -1319,9 +1324,20 @@ const hermesAPI = {
   // Deep link razum-assistant://session/<id>: main validates the id, the
   // renderer only ever receives a bare session id. Subscribing announces
   // readiness so main flushes a link buffered during startup.
-  onDeepLinkOpenSession: (callback: (sessionId: string) => void): (() => void) => {
-    const handler = (_e: unknown, sessionId: unknown): void => {
-      if (typeof sessionId === "string") callback(sessionId);
+  onDeepLinkOpenSession: (
+    callback: (sessionId: string) => void,
+  ): (() => void) => {
+    // Main re-sends a link until it is acknowledged; a re-send of one this
+    // page already handled (same seq) is only acknowledged again.
+    const handler = (_e: unknown, delivery: unknown): void => {
+      const d = delivery as { sessionId?: unknown; seq?: unknown } | null;
+      if (!d || typeof d.sessionId !== "string" || typeof d.seq !== "number")
+        return;
+      if (d.seq > lastHandledDeepLinkSeq) {
+        lastHandledDeepLinkSeq = d.seq;
+        callback(d.sessionId);
+      }
+      ipcRenderer.send("deep-link-ack", d.seq);
     };
     ipcRenderer.on("deep-link-open-session", handler);
     ipcRenderer.send("deep-link-renderer-ready");

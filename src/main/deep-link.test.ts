@@ -173,36 +173,68 @@ describe("buildProtocolRegistration", () => {
 });
 
 describe("createDeepLinkDispatcher", () => {
-  it("buffers until ready, then flushes once", () => {
+  const d1 = (
+    sessionId: string,
+    seq: number,
+  ): { sessionId: string; seq: number } => ({ sessionId, seq });
+
+  it("buffers until ready, then sends", () => {
     const send = vi.fn();
     const d = createDeepLinkDispatcher(send);
     d.enqueue("a");
     expect(send).not.toHaveBeenCalled();
     d.markReady();
-    expect(send).toHaveBeenCalledExactlyOnceWith("a");
-    d.markReady();
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledExactlyOnceWith(d1("a", 1));
   });
 
-  it("keeps only the latest buffered link", () => {
+  it("keeps only the latest link", () => {
     const send = vi.fn();
     const d = createDeepLinkDispatcher(send);
     d.enqueue("a");
     d.enqueue("b");
     d.markReady();
-    expect(send).toHaveBeenCalledExactlyOnceWith("b");
+    expect(send).toHaveBeenCalledExactlyOnceWith(d1("b", 2));
   });
 
-  it("sends immediately once ready and buffers again after markNotReady", () => {
+  it("re-sends an unacknowledged link on the next ready (e.g. after a reload)", () => {
+    const send = vi.fn();
+    const d = createDeepLinkDispatcher(send);
+    d.markReady();
+    d.enqueue("a"); // lands in a page that is reloading — never acked
+    d.markReady(); // the new page's Layout subscribes
+    expect(send.mock.calls).toEqual([[d1("a", 1)], [d1("a", 1)]]);
+  });
+
+  it("forgets a link once acknowledged", () => {
     const send = vi.fn();
     const d = createDeepLinkDispatcher(send);
     d.markReady();
     d.enqueue("a");
-    expect(send).toHaveBeenLastCalledWith("a");
+    d.ack(1);
+    d.markReady();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a stale ack for an older link", () => {
+    const send = vi.fn();
+    const d = createDeepLinkDispatcher(send);
+    d.markReady();
+    d.enqueue("a");
+    d.enqueue("b");
+    d.ack(1); // ack of "a" arrives after "b" was queued
+    d.markReady();
+    expect(send).toHaveBeenLastCalledWith(d1("b", 2));
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not send while not ready, delivers on the next ready", () => {
+    const send = vi.fn();
+    const d = createDeepLinkDispatcher(send);
+    d.markReady();
     d.markNotReady();
     d.enqueue("b");
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
     d.markReady();
-    expect(send).toHaveBeenLastCalledWith("b");
+    expect(send).toHaveBeenCalledExactlyOnceWith(d1("b", 1));
   });
 });
