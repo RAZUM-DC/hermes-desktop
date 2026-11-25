@@ -1271,7 +1271,12 @@ function Layout({
             )) as DbHistoryItem[],
           };
         } catch (err) {
-          console.error("[sessions] failed to open session", err);
+          // A quiet attempt is retried (deep link on a cold start): a warning,
+          // not an error, until the final attempt.
+          (quiet ? console.warn : console.error)(
+            "[sessions] failed to open session",
+            err,
+          );
           result = { error: err };
         }
         // See resolveResumeLoad: superseded / retryable / not found / opened.

@@ -98,7 +98,7 @@ export default {
   voiceTranscribing: "Распознавание…",
   dictationListening: "Говорите…",
   dictationHint: "Отпустите клавиши — текст вставится в чат",
-  sessionNotFound: "Диалог по ссылке не найден.",
+  sessionNotFound: "Диалог не найден.",
   sessionOpening: "Открываю диалог по ссылке…",
   sessionOpenFailed:
     "Не удалось открыть диалог. Проверьте подключение и попробуйте ещё раз.",
