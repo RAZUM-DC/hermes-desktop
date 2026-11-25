@@ -109,17 +109,36 @@ describe("pickDeepLinkFromArgv", () => {
 
 describe("buildProtocolRegistration", () => {
   const resolvePath = (p: string): string => `/abs/${p}`;
-  it("is null for packaged apps", () => {
+  const base = { execPath: "x", argv: ["x"], resolvePath };
+  it("lets Electron register the installed exe for packaged apps", () => {
+    expect(buildProtocolRegistration({ ...base, defaultApp: false })).toEqual({
+      kind: "default",
+    });
+  });
+  it("registers the real portable exe, not the temp unpack folder", () => {
     expect(
       buildProtocolRegistration({
+        ...base,
         defaultApp: false,
-        execPath: "x",
-        argv: ["x"],
-        resolvePath,
+        execPath: "C:\\Temp\\2abc\\hermes-agent.exe",
+        portableExecutable: "D:\\Apps\\hermes-portable.exe",
       }),
-    ).toBeNull();
+    ).toEqual({
+      kind: "explicit",
+      path: "D:\\Apps\\hermes-portable.exe",
+      args: [],
+    });
   });
-  it("passes the app path in dev mode", () => {
+  it("ignores a blank portable variable", () => {
+    expect(
+      buildProtocolRegistration({
+        ...base,
+        defaultApp: false,
+        portableExecutable: "  ",
+      }),
+    ).toEqual({ kind: "default" });
+  });
+  it("skips registration in dev unless opted in", () => {
     expect(
       buildProtocolRegistration({
         defaultApp: true,
@@ -127,17 +146,29 @@ describe("buildProtocolRegistration", () => {
         argv: ["electron", "."],
         resolvePath,
       }),
-    ).toEqual({ path: "electron", args: ["/abs/."] });
+    ).toEqual({ kind: "skip" });
   });
-  it("is null in dev mode without a script argument", () => {
+  it("passes the app path in dev mode when opted in", () => {
+    expect(
+      buildProtocolRegistration({
+        defaultApp: true,
+        execPath: "electron",
+        argv: ["electron", "."],
+        resolvePath,
+        registerInDev: true,
+      }),
+    ).toEqual({ kind: "explicit", path: "electron", args: ["/abs/."] });
+  });
+  it("skips in dev mode without a script argument", () => {
     expect(
       buildProtocolRegistration({
         defaultApp: true,
         execPath: "electron",
         argv: ["electron"],
         resolvePath,
+        registerInDev: true,
       }),
-    ).toBeNull();
+    ).toEqual({ kind: "skip" });
   });
 });
 

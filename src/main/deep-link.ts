@@ -35,19 +35,44 @@ export function pickDeepLinkFromArgv(argv: readonly string[]): string | null {
 }
 
 /**
- * Arguments for app.setAsDefaultProtocolClient. In dev (`electron .`) the
- * registry entry must launch electron with the app path, otherwise it would
- * start a bare Electron shell.
+ * How to call app.setAsDefaultProtocolClient (or whether to call it at all).
+ *
+ *   packaged, installed  → "default": Electron writes process.execPath — the
+ *                           installed exe;
+ *   packaged, portable   → "explicit" with the real portable .exe
+ *                           (PORTABLE_EXECUTABLE_FILE). process.execPath points
+ *                           into the temp folder the portable unpacks to and
+ *                           deletes on exit — registering it would break links
+ *                           for every build on the machine;
+ *   dev (`electron .`)   → "skip", unless explicitly opted in: otherwise every
+ *                           `npm run dev` hijacks the scheme from the installed
+ *                           app. Opted in → electron + the app path, or a bare
+ *                           Electron shell would start.
  */
+export type ProtocolRegistration =
+  | { kind: "skip" }
+  | { kind: "default" }
+  | { kind: "explicit"; path: string; args: string[] };
+
 export function buildProtocolRegistration(opts: {
   defaultApp: boolean;
   execPath: string;
   argv: readonly string[];
   resolvePath: (p: string) => string;
-}): { path: string; args: string[] } | null {
-  if (!opts.defaultApp) return null;
-  if (opts.argv.length < 2) return null;
-  return { path: opts.execPath, args: [opts.resolvePath(opts.argv[1])] };
+  portableExecutable?: string;
+  registerInDev?: boolean;
+}): ProtocolRegistration {
+  if (opts.defaultApp) {
+    if (!opts.registerInDev || opts.argv.length < 2) return { kind: "skip" };
+    return {
+      kind: "explicit",
+      path: opts.execPath,
+      args: [opts.resolvePath(opts.argv[1])],
+    };
+  }
+  const portable = opts.portableExecutable?.trim();
+  if (portable) return { kind: "explicit", path: portable, args: [] };
+  return { kind: "default" };
 }
 
 export interface DeepLinkDispatcher {

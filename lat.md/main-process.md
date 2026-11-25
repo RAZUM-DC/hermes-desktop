@@ -38,7 +38,11 @@ Release builds keep a Help-menu Developer Tools toggle as a production diagnosti
 
 The `razum-assistant://session/<id>` link opens one Hermes session and does nothing else.
 
-[[src/main/deep-link.ts#parseDeepLink]] whitelists host `session` and an id of `[A-Za-z0-9_-]{1,128}`; [[src/main/deep-link.ts#pickDeepLinkFromArgv]] extracts it from Windows/Linux argv and `second-instance`, macOS uses `open-url`. [[src/main/deep-link.ts#createDeepLinkDispatcher]] buffers the latest link until the renderer's Layout subscribes via `deep-link-renderer-ready`, then sends `deep-link-open-session` with the bare id; a reload or a renderer crash puts it back into buffering. In Layout the most recent resume request wins, so an older session load finishing late cannot override the linked one. See `docs/deep-link.md`.
+[[src/main/deep-link.ts#parseDeepLink]] whitelists host `session` and an id of `[A-Za-z0-9_-]{1,128}`; [[src/main/deep-link.ts#pickDeepLinkFromArgv]] extracts it from Windows/Linux argv and `second-instance`, macOS uses `open-url`. [[src/main/deep-link.ts#createDeepLinkDispatcher]] buffers the latest link until the renderer's Layout subscribes via `deep-link-renderer-ready`, then sends `deep-link-open-session` with the bare id; a reload or a renderer crash puts it back into buffering. Layout subscribes only after the saved profile is restored, so the session never opens under `default` by mistake. A link that arrives before the window exists shows it once ready, even after an autostart with `--hidden`.
+
+[[src/renderer/src/screens/Layout/deepLinkOpen.ts#openSessionWithRetry]] retries a failed load quietly (2, 5, 10 s — on a cold start the transport may still be coming up) and only the last failure shows the «could not open» banner with Retry, which manual opens share. The most recent action wins: another resume, «New chat» or a tab click supersedes a loading session and stops its retries.
+
+[[src/main/deep-link.ts#buildProtocolRegistration]] picks how to register the scheme: the installed exe, the real portable exe (never the temp unpack folder), or nothing in dev unless `HERMES_DEV_REGISTER_PROTOCOL=1`. On Windows the NSIS installer registers and removes it (`build/installer.nsh`); MSI relies on the first launch. See `docs/deep-link.md`.
 
 ## IPC Registry
 

@@ -75,6 +75,11 @@ const deepLinks = createDeepLinkDispatcher((sessionId) => {
   mainWindow?.webContents.send(DEEP_LINK_OPEN_SESSION_CHANNEL, sessionId);
 });
 
+// A link that arrives before the window exists (cold start via link, or a
+// link forwarded during an autostart with --hidden) must still bring the
+// window up once it is ready: startHidden alone would keep it in the tray.
+let showWindowWhenReady = false;
+
 function handleDeepLinkUrl(raw: unknown): void {
   const action = parseDeepLink(raw);
   if (!action) {
@@ -85,7 +90,10 @@ function handleDeepLinkUrl(raw: unknown): void {
   deepLinks.enqueue(action.sessionId);
   // Before app "ready" (launch via link / early open-url) the window is created
   // by the normal startup path; the link stays buffered until Layout is ready.
-  if (app.isReady() && mainWindow) showMainWindow();
+  if (!app.isReady() || !mainWindow) showWindowWhenReady = true;
+  // After "ready" this also recreates a closed window (macOS keeps the app
+  // alive without one); before "ready" the normal startup path creates it.
+  if (app.isReady()) showMainWindow();
 }
 
 function registerProtocolClient(): void {
@@ -95,10 +103,13 @@ function registerProtocolClient(): void {
       execPath: process.execPath,
       argv: process.argv,
       resolvePath: resolve,
+      portableExecutable: process.env.PORTABLE_EXECUTABLE_FILE,
+      registerInDev: process.env.HERMES_DEV_REGISTER_PROTOCOL === "1",
     });
-    if (reg)
+    if (reg.kind === "explicit")
       app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL, reg.path, reg.args);
-    else app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
+    else if (reg.kind === "default")
+      app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
   } catch (err) {
     console.warn("[DEEP-LINK] Failed to register protocol client", err);
   }
@@ -385,7 +396,8 @@ function createWindow(): void {
     // При скрытом старте окно остаётся незагруженным ровно до первого
     // показа — это и нужно: companion, горячие клавиши и наблюдатель доски
     // поднимаются отдельно от окна и работают без него.
-    if (!startHidden) mainWindow?.show();
+    if (!startHidden || showWindowWhenReady) mainWindow?.show();
+    showWindowWhenReady = false;
   });
   // A (re)load drops the renderer's subscription; it re-announces itself.
   mainWindow.webContents.on("did-start-loading", () =>

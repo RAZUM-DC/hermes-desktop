@@ -96,6 +96,8 @@ export default {
   voiceTranscribing: "Transcribing…",
   dictationListening: "Listening…",
   dictationHint: "Release the keys to insert the text",
+  sessionOpenFailed:
+    "Could not open the conversation. Check the connection and try again.",
   voiceBlocked:
     "Could not open the microphone: the system refused to hand the recording device to this app. That is usually an antivirus or a corporate security policy — Kaspersky's Host Intrusion Prevention, for one. Ask your administrator to allow this app access to sound recording devices.",
   voiceDenied:
