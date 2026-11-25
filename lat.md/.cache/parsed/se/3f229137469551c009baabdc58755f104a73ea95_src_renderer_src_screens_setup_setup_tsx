@@ -1,0 +1,2 @@
+v6:ac211d7eb8a371d719fd64828e3eee17eb20cf77
+{"path":"src/renderer/src/screens/Setup/Setup.tsx","symbols":[{"name":"SetupProps","kind":"interface","startLine":9,"endLine":16,"signature":"interface SetupProps {"},{"name":"Setup","kind":"function","startLine":18,"endLine":321,"signature":"function Setup({"}],"timings":{"readMs":0.18201599999997597,"hashMs":0.02493200000003526,"cacheReadMs":0.05812500000001819,"cacheStatus":"miss","cacheWriteMs":0,"parseMs":2.0374299999998584}}

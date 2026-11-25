@@ -11,6 +11,13 @@ After EVERY task, before responding to the user:
 - [ ] Run `lat check` — all wiki links and code refs must pass
 - [ ] Do not skip these steps. Do not consider your task done until both are complete.
 
+# Commits
+
+Do not add `Co-Authored-By`, `Claude-Session`, `Generated with` or any other
+attribution trailer to commit messages or pull request descriptions. This
+repository is public, and its history names the person who owns the change.
+Write the message and stop at the last line of prose.
+
 ---
 
 # What is lat.md?

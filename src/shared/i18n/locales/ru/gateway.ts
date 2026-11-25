@@ -16,7 +16,8 @@ export default {
   checkLog: "Проверьте лог шлюза:",
   gatewayHint:
     "Подключает Hermes к Telegram, Discord, Slack и другим платформам",
-  subtitle: "Управление платформами обмена сообщениями, к которым может подключаться Hermes Agent.",
+  subtitle:
+    "Управление платформами обмена сообщениями, к которым может подключаться Hermes Agent.",
   refreshTooltip: "Обновить статус платформ",
   refresh: "Обновить",
   configHint:

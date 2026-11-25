@@ -20,8 +20,9 @@ interface ProfileSwitcherProps {
   activeProfile: string;
   /** Called after a successful switch so the shell can reset chat state. */
   onSwitch: (name: string) => void;
-  /** Open the full Profiles management screen. */
-  onManage: () => void;
+  /** Открыть экран управления профилями. Не задан — пункт не показывается:
+   *  в гибриде профилями распоряжается организация. */
+  onManage?: () => void;
   /** Render as an icon-only sidebar footer affordance. */
   compact?: boolean;
 }
@@ -198,17 +199,19 @@ export default function ProfileSwitcher({
               </>
             );
           })()}
-          <button
-            className="profile-menu-manage"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onManage();
-            }}
-          >
-            <Settings size={14} />
-            {t("agents.manageProfiles")}
-          </button>
+          {onManage && (
+            <button
+              className="profile-menu-manage"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onManage();
+              }}
+            >
+              <Settings size={14} />
+              {t("agents.manageProfiles")}
+            </button>
+          )}
         </div>
       )}
 

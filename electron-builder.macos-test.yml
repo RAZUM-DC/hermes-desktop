@@ -1,0 +1,15 @@
+# Explicitly opt-in, local/CI test artifacts. Never use this profile for releases.
+extends: ./electron-builder.yml
+appId: tools.razum.hermes-desktop.test
+productName: РАЗУМ Ассистент Test
+directories:
+  output: dist/macos-test
+publish: null
+forceCodeSigning: false
+mac:
+  # Ad-hoc signing lets Apple Silicon load the app without Developer ID secrets.
+  identity: "-"
+  notarize: false
+  artifactName: ${name}-${version}-${arch}-test-unnotarized-${os}.${ext}
+dmg:
+  artifactName: ${name}-${version}-${arch}-test-unnotarized.${ext}

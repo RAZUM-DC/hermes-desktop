@@ -18,6 +18,13 @@ export interface ChatRun {
   title?: string;
   /** Seed transcript when the run was opened from history. */
   seed?: ChatMessage[];
+  /**
+   * Диалог открыт из истории, а не начат заново.
+   *
+   * Нужно, чтобы не переписывать его название автоматически: у такого чата имя
+   * уже есть, и оно вполне может быть задано человеком вручную.
+   */
+  fromHistory?: boolean;
 }
 
 /** A blank chat that can be reassigned to another profile without losing work. */
@@ -68,9 +75,7 @@ export function selectProfileRunTransition(
   if (isScratchRun(active)) {
     return {
       activeRunId,
-      runs: runs.map((r) =>
-        r.runId === activeRunId ? { ...r, profile } : r,
-      ),
+      runs: runs.map((r) => (r.runId === activeRunId ? { ...r, profile } : r)),
     };
   }
 
@@ -121,4 +126,21 @@ export function loadingSessionIds(runs: ChatRun[]): Set<string> {
     if (r.loading && r.sessionId) ids.add(r.sessionId);
   }
   return ids;
+}
+
+/**
+ * Можно ли записать диалогу название, придуманное приложением.
+ *
+ * Нельзя в двух случаях: диалог открыт из истории (имя у него уже есть и
+ * вполне может быть задано вручную) и название пустое. Именно отсутствие
+ * первой проверки приводило к тому, что переименованный чат терял имя при
+ * следующем запуске: приложение открывало его и записывало в заголовок
+ * первое сообщение.
+ */
+export function shouldPersistAutoTitle(
+  run: Pick<ChatRun, "fromHistory"> | undefined,
+  title: string,
+): boolean {
+  if (!title.trim()) return false;
+  return !run?.fromHistory;
 }

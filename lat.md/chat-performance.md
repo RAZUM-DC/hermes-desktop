@@ -1,8 +1,32 @@
 # Chat message-list rendering performance
 
-Typing in the composer must stay fast no matter how long the conversation is. The transcript is not virtualized in JS, so the layout cost is bounded with CSS containment plus a single batched textarea measurement (issue #748).
+Typing in the composer must stay fast no matter how long the conversation is. CSS containment bounds layout work, while transcript windowing bounds the mounted React tree (issue #748).
 
-The symptom this guards against: in conversations with many messages, each keystroke took up to ~2.6s with an empty JS profile — the cost was entirely in Chromium's layout engine, recalculating the whole transcript on every keystroke. CPU and memory were normal; new sessions were instant.
+The symptom this guards against: in conversations with many messages, each keystroke took up to ~2.6s because Chromium recalculated the transcript and React reconciled every row. CPU and memory were normal; new sessions were instant.
+
+## Transcript windowing
+
+Long conversations initially mount only the newest 100 transcript rows, keeping older history available without making every streaming update reconcile the entire session.
+
+[[src/renderer/src/screens/Chat/MessageList.tsx#TRANSCRIPT_WINDOW]] defines the default window. Earlier rows appear through a translated button and automatically load when its marker approaches the scroll viewport. Each expansion reveals one more effective window.
+
+The boundary preserves interaction and reading state: it never hides the newest bubble or an unresolved clarification, avoids splitting normal tool runs, consults the hidden preceding row for avatar grouping, and stays pinned while the user reads above the bottom.
+
+Before rows are prepended, the component records `scrollHeight` and `scrollTop`; a layout effect restores the same visible content before paint. Switching conversations resets the expansion budget. [[src/renderer/src/screens/Chat/MessageList.test.tsx]] covers these invariants.
+
+### Initial history position
+
+Opening an existing conversation must land at its newest messages without racing the automatic history expansion marker.
+
+[[src/renderer/src/screens/Chat/hooks/useChatScroll.ts#useChatScroll]] jumps to the bottom instantly on the first non-empty history paint. Later incoming messages retain smooth scrolling unless the reader has manually scrolled upward.
+
+## Streaming delta coalescing
+
+High-frequency dashboard deltas update the synchronous transcript immediately but publish to React at most once per animation frame, keeping input responsive without losing streamed text.
+
+[[src/renderer/src/screens/Chat/hooks/useDashboardChatTransport.ts#useDashboardChatTransport]] coalesces text, reasoning, and tool-progress deltas. Lifecycle boundaries such as start, completion, clarification, and background completion cancel any queued frame and commit immediately.
+
+The shared write-through state in [[src/renderer/src/screens/Chat/hooks/useTranscriptState.ts#useTranscriptState]] ensures every transcript writer builds on the newest streamed array. A delayed frame can therefore only republish or advance state; it cannot overwrite a concurrent user action or resurrect stale messages.
 
 ## Off-screen rows are skipped with content-visibility
 

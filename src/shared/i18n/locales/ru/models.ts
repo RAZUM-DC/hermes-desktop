@@ -20,7 +20,8 @@ export default {
   yes: "Да",
   no: "Нет",
   nameRequired: "Необходимо указать имя и ID модели",
-  customProviderHint: "Требуется только для пользовательских или локальных провайдеров",
+  customProviderHint:
+    "Требуется только для пользовательских или локальных провайдеров",
   contextWindowLabel: "Окно контекста (токены)",
   contextWindowPlaceholder: "напр. 65536",
   contextWindowHint:

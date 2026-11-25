@@ -1,0 +1,2 @@
+v6:adde32c20569c4306f5c2ce15b269efb652228f5
+{"path":"src/renderer/src/components/common/SidebarBrand.tsx","symbols":[{"name":"SidebarBrand","kind":"function","startLine":4,"endLine":13,"signature":"function SidebarBrand(): React.JSX.Element {"}],"timings":{"readMs":0.1479349999999613,"hashMs":0.014799999999922875,"cacheReadMs":0.0838579999999638,"cacheStatus":"miss","cacheWriteMs":0,"parseMs":0.14590500000008433}}

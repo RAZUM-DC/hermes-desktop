@@ -28,7 +28,7 @@ export default {
   close: "Закрыть",
   cannotLoadClaw3d: "Не удалось загрузить Claw3D",
   startingClaw3dService: "Запуск сервиса Claw3D...",
-  clickToStart: 'Нажмите «Запустить», чтобы запустить Claw3D',
+  clickToStart: "Нажмите «Запустить», чтобы запустить Claw3D",
   setupDesc1:
     "Claw3D — это среда 3D-визуализации для ваших агентов Hermes. Она позволяет видеть работу агентов в интерактивном офисном пространстве.",
   setupDesc2:

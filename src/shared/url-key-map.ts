@@ -35,12 +35,27 @@ export const URL_KEY_MAP: ReadonlyArray<UrlKeyMapping> = [
   { pattern: /api\.fireworks\.ai/i, envKey: "FIREWORKS_API_KEY" },
   { pattern: /api\.cerebras\.ai/i, envKey: "CEREBRAS_API_KEY" },
   { pattern: /atlascloud\.ai/i, envKey: "ATLASCLOUD_API_KEY" },
+  { pattern: /api\.novita\.ai/i, envKey: "NOVITA_API_KEY" },
   { pattern: /api\.mistral\.ai/i, envKey: "MISTRAL_API_KEY" },
   { pattern: /api\.perplexity\.ai/i, envKey: "PERPLEXITY_API_KEY" },
   { pattern: /api\.xiaomimimo\.com/i, envKey: "XIAOMI_API_KEY" },
 ];
 
 export const CUSTOM_API_KEY_ENV = "CUSTOM_API_KEY";
+
+/**
+ * Build the dedicated env-var name used by a saved custom provider.
+ *
+ * Keep this transform shared: the model importer writes this key, while
+ * readiness checks and the runtime must derive the exact same name.
+ */
+export function customProviderEnvKey(name: string): string {
+  return (
+    "CUSTOM_PROVIDER_" +
+    (name || "").replace(/[^A-Za-z0-9]/g, "_").toUpperCase() +
+    "_KEY"
+  );
+}
 
 /**
  * Resolve the env var name that should hold the API key for `url`.
@@ -108,5 +123,6 @@ export const OPENAI_COMPAT_PROVIDERS: ReadonlySet<string> = new Set([
   "fireworks",
   "cerebras",
   "atlascloud",
+  "novita",
   "mistral",
 ]);

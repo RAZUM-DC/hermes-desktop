@@ -880,36 +880,36 @@ export function reconcileStreamedWithDb(
   // landing *below* any agent content the gateway streamed after the user
   // answered (the reverse of what the user saw live). Re-anchor each card
   // immediately after the streamed message that preceded it.
-  return repositionClarifyCards(dedupeMessageIds(merged), streamed);
+  return repositionInteractiveCards(dedupeMessageIds(merged), streamed);
 }
 
 /**
- * Move `kind === "clarify"` cards from wherever the reconcile placed them back
+ * Move interactive cards from wherever the reconcile placed them back
  * to their streamed position: directly after the message that immediately
  * preceded them in `streamed`. Pure, order-preserving for all other rows.
  */
-function repositionClarifyCards(
+function repositionInteractiveCards(
   merged: ChatMessage[],
   streamed: ReadonlyArray<ChatMessage>,
 ): ChatMessage[] {
-  const isClarify = (m: ChatMessage): boolean =>
-    "kind" in m && m.kind === "clarify";
-  if (!streamed.some(isClarify)) return merged;
+  const isInteractive = (m: ChatMessage): boolean =>
+    "kind" in m && (m.kind === "clarify" || m.kind === "approval");
+  if (!streamed.some(isInteractive)) return merged;
 
-  // Pull clarify cards out of the merged list; remember each card's streamed
+  // Pull interactive cards out of the merged list; remember each card's streamed
   // predecessor id so we can re-anchor it.
-  const cards = merged.filter(isClarify);
+  const cards = merged.filter(isInteractive);
   if (cards.length === 0) return merged;
-  const without = merged.filter((m) => !isClarify(m));
+  const without = merged.filter((m) => !isInteractive(m));
 
   const predecessorIdByCardId = new Map<string, string | null>();
   for (let i = 0; i < streamed.length; i++) {
     const m = streamed[i];
-    if (!isClarify(m)) continue;
-    // Nearest preceding non-clarify message in the streamed order.
+    if (!isInteractive(m)) continue;
+    // Nearest preceding non-card message in the streamed order.
     let predId: string | null = null;
     for (let j = i - 1; j >= 0; j--) {
-      if (!isClarify(streamed[j])) {
+      if (!isInteractive(streamed[j])) {
         predId = streamed[j].id;
         break;
       }
@@ -947,4 +947,23 @@ function repositionClarifyCards(
   }
 
   return out;
+}
+
+/**
+ * Сколько картинок сейчас висит на пользовательских пузырях.
+ *
+ * Диагностика для одного конкретного класса поломок: вложение уходит агенту,
+ * тот его видит, а в переписке картинки нет. Считаем до и после слияния с
+ * базой — если число упало, слияние и виновато.
+ */
+export function countUserAttachments(
+  messages: ReadonlyArray<ChatMessage>,
+): number {
+  let total = 0;
+  for (const m of messages) {
+    if ("kind" in m) continue;
+    if (m.role !== "user") continue;
+    total += m.attachments?.length ?? 0;
+  }
+  return total;
 }

@@ -14,10 +14,14 @@ import {
 } from "./sessions";
 import type { Attachment } from "../shared/attachments";
 import { isImageMime, MAX_IMAGE_BYTES } from "../shared/attachments";
+import { isTransientUpstream, retryWhileNotReady } from "./transient-upstream";
+import { dashboardApiUrl } from "./remote-files";
 
 export interface RemoteSessionConfig {
   remoteUrl: string;
   apiKey: string;
+  /** Optional profile served by the unified dashboard. */
+  profile?: string;
 }
 
 type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
@@ -29,24 +33,6 @@ interface RemoteRequestOptions {
 }
 
 type RemoteRecord = Record<string, unknown>;
-
-function normalizeRemoteDashboardBaseUrl(value: string): string {
-  const raw = value.trim();
-  if (!raw) throw new Error("Remote Hermes dashboard URL is not configured.");
-  const url = new URL(raw);
-  url.hash = "";
-  url.search = "";
-  url.pathname = url.pathname.replace(/\/+$/, "");
-  if (url.pathname === "/v1" || url.pathname === "/api") {
-    url.pathname = "";
-  }
-  return url.toString().replace(/\/+$/, "");
-}
-
-function dashboardApiUrl(config: RemoteSessionConfig, path: string): string {
-  const base = normalizeRemoteDashboardBaseUrl(config.remoteUrl);
-  return new URL(path, `${base}/`).toString();
-}
 
 export function remoteRequestJson<T>(
   config: RemoteSessionConfig,
@@ -257,18 +243,38 @@ async function remoteSessionListPage(
   limit: number,
   offset: number,
 ): Promise<unknown> {
+  const profile = config.profile?.trim() || "all";
   const profileEndpoint =
     `/api/profiles/sessions?limit=${limit}&offset=${offset}` +
-    "&min_messages=0&archived=exclude&order=recent&profile=all";
+    `&min_messages=0&archived=exclude&order=recent&profile=${encodeURIComponent(profile)}`;
 
-  try {
-    return await remoteRequestJson(config, profileEndpoint);
-  } catch {
-    return remoteRequestJson(
-      config,
-      `/api/sessions?limit=${limit}&offset=${offset}&archived=exclude&order=recent`,
-    );
-  }
+  const fallbackEndpoint =
+    `/api/sessions?limit=${limit}&offset=${offset}` +
+    `&archived=exclude&order=recent`;
+
+  // Повтор снаружи обоих запросов, а не внутри каждого: причина отказа у них
+  // общая (не готов транспорт), и перебирать её дважды подряд значило бы
+  // удвоить ожидание на ровном месте.
+  //
+  // Запасной маршрут при этом пробуется ВСЕГДА, какой бы ни была ошибка
+  // основного. Заманчиво было пропускать его при временном отказе — мол, он
+  // уткнётся в то же самое, — но это ломает саму причину, по которой он здесь
+  // появился: /api/profiles/sessions есть не у каждого дашборда, и отвечать
+  // он может чем угодно, в том числе и 503. Пропустив запасной, мы бы
+  // навсегда потеряли список там, где он прекрасно отдаётся.
+  return retryWhileNotReady(async () => {
+    try {
+      return await remoteRequestJson(config, profileEndpoint);
+    } catch (primaryError) {
+      try {
+        return await remoteRequestJson(config, fallbackEndpoint);
+      } catch (fallbackError) {
+        // Решение о повторе принимаем по ошибке запасного: он последний, и
+        // именно его вердикт говорит, есть ли смысл ждать ещё.
+        throw isTransientUpstream(fallbackError) ? fallbackError : primaryError;
+      }
+    }
+  });
 }
 
 export async function remoteListSessions(
@@ -541,13 +547,20 @@ export async function remoteUpdateSessionTitle(
   config: RemoteSessionConfig,
   sessionId: string,
   title: string,
+  /**
+   * Кто задал название. Локальный путь проставляет в базе `title_source`,
+   * чтобы серверная автогенерация не переписывала ручное имя; через API до
+   * сих пор уходило одно название, и отличить ручное от автоматического на
+   * той стороне было нечем.
+   */
+  source: "user" | "auto" = "user",
 ): Promise<void> {
   await remoteRequestJson(
     config,
     `/api/sessions/${encodeURIComponent(sessionId)}`,
     {
       method: "PATCH",
-      body: { title },
+      body: { title, title_source: source },
     },
   );
 }

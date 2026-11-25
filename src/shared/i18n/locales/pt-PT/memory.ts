@@ -1,4 +1,19 @@
 export default {
+  bankReadOnly:
+    "Facts can't be added or deleted from the app — the server has it switched off. The assistant fills memory on its own as you talk.",
+  bankSubtitle: "What the assistant remembers about you between conversations.",
+  bankAddLabel: "Add a fact",
+  bankAddPlaceholder:
+    "For example: reports always in docx; Oleg K. is Konovalov",
+  bankAddAction: "Remember",
+  bankAddHint: "Ctrl+Enter to save",
+  bankEmpty: "Nothing remembered yet.",
+  bankCount: "Facts: {{count}}",
+  bankNoDelete:
+    "Facts can't be deleted from the app — the server forbids it. Ask an administrator.",
+  bankForbidden: "The server refused this operation.",
+  bankUnauthorized: "Could not confirm access to memory.",
+  bankUnavailable: "Memory is unavailable right now.",
   title: "Memória",
   subtitle: "O que o Hermes se lembra sobre si e o seu ambiente entre sessões.",
   sessions: "Sessões",

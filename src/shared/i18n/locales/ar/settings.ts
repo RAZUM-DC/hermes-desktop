@@ -12,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "المظهر",
+    startup: "بدء التشغيل",
     language: "اللغة",
     privacy: "الخصوصية",
     connection: "الاتصال",
@@ -73,8 +74,7 @@ export default {
   modelBaseUrlPlaceholder: "http://localhost:1234/v1",
   networkSection: "الشبكة",
   forceIpv4: "فرض IPv4",
-  forceIpv4Hint:
-    "تعطيل IPv6 لإصلاح مشاكل انتهاء مهلة الاتصال على بعض الشبكات",
+  forceIpv4Hint: "تعطيل IPv6 لإصلاح مشاكل انتهاء مهلة الاتصال على بعض الشبكات",
   httpProxy: "وكيل HTTP",
   httpProxyHint:
     "وكيل SOCKS أو HTTP لجميع الاتصالات الصادرة (اتركه فارغاً للكشف التلقائي)",
@@ -100,8 +100,7 @@ export default {
   keyLabel: "المفتاح",
   empty: "(فارغ)",
   dataSection: "البيانات",
-  dataHint:
-    "تصدير أو استيراد إعدادات Hermes وجلساته ومهاراته وذاكرته.",
+  dataHint: "تصدير أو استيراد إعدادات Hermes وجلساته ومهاراته وذاكرته.",
   backingUp: "جارٍ النسخ الاحتياطي...",
   exportBackup: "تصدير نسخة احتياطية",
   importing: "جارٍ الاستيراد...",
@@ -213,4 +212,13 @@ export default {
   remoteErrorRequiredSimple: "يرجى إدخال رابط",
   remoteErrorFailedSimple: "تعذر الوصول إلى الخادم",
   apiGenerated: "تم توليد مفتاح API — إعادة تشغيل البوابة...",
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "التشغيل مع Windows",
+    hint: "يبدأ التطبيق عند تسجيل الدخول وينتظر في شريط المهام.",
+    unsupported:
+      "بدء التشغيل التلقائي متاح في التطبيق المبني فقط، وليس عند التشغيل من المصدر.",
+    trayNote:
+      "يبدأ مصغَّرًا عن قصد: وإلا لظهرت النافذة عند كل تسجيل دخول. الإملاء ولقطات الشاشة وإشعارات المهام تعمل من شريط المهام.",
+  },
 } as const;

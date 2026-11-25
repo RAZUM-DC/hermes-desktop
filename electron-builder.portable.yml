@@ -1,0 +1,27 @@
+extends: ./electron-builder.yml
+
+# Local unsigned portable builds must work on a standard Windows account.
+# Resource editing/signing downloads the legacy winCodeSign archive, whose
+# macOS symlinks cannot be extracted without Developer Mode or admin rights.
+# Release/installer builds keep the normal signed configuration in the base
+# file; only this explicit portable profile disables that step.
+#
+# Mind what that costs: a build made with this profile is unsigned, and
+# corporate endpoint protection can deny an unsigned application access to
+# the microphone and other devices (Kaspersky Endpoint Security does exactly
+# that, and the app sees it as NotReadableError from getUserMedia). Voice
+# input therefore cannot be verified with a build from this profile — use a
+# signed build, see the signing notes in electron-builder.yml.
+# store = без LZMA-сжатия. Это портативной сборки для локальной проверки, не для
+# раздачи: несжатый exe собирается за секунды вместо нескольких минут и
+# укладывается в лимит времени одного вызова сборщика. В базовом конфиге этой
+# строки быть не должно — установщик, который скачивает человек, выходил бы
+# вдвое тяжелее без всякой причины.
+compression: store
+
+win:
+  signAndEditExecutable: false
+  signExts:
+    - "!.exe"
+  target:
+    - portable

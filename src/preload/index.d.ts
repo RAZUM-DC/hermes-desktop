@@ -1,5 +1,9 @@
 import type { AppLocale } from "../shared/i18n/types";
 import type { Attachment } from "../shared/attachments";
+import type { MemoryFact } from "../shared/memory-bank";
+import type { Note } from "../shared/notes";
+import type { BrowserExtensionStatus } from "../shared/browser-extension";
+import type { ScreenshotResponse } from "../shared/screenshot";
 import type { SessionModelOverride } from "../shared/model-override";
 import type { DesktopSessionContinuationItem } from "../shared/session-continuation";
 import type { DesktopSessionLocalError } from "../shared/session-continuation";
@@ -22,6 +26,10 @@ import type {
   MessagingPlatformUpdate,
 } from "../shared/messaging-platforms";
 import type { ChatToolEvent } from "../shared/chat-stream";
+import type {
+  ApprovalChoice,
+  ChatApprovalRequest,
+} from "../shared/chat-approval";
 
 interface ElectronAPI {
   process: {
@@ -255,7 +263,10 @@ interface HermesAPI {
   // Configuration (profile-aware)
   getEnv: (profile?: string) => Promise<Record<string, string>>;
   setEnv: (key: string, value: string, profile?: string) => Promise<boolean>;
-  validateChatReadiness: (profile?: string) => Promise<{
+  validateChatReadiness: (
+    profile?: string,
+    override?: { provider?: string; model?: string; baseUrl?: string },
+  ) => Promise<{
     ok: boolean;
     code?:
       | "NO_ACTIVE_MODEL"
@@ -384,6 +395,75 @@ interface HermesAPI {
     mimeType: string,
     profile?: string,
   ) => Promise<string>;
+  transcribeAudioLocal: (
+    audio: Uint8Array,
+    language?: string,
+  ) => Promise<string>;
+  isVoiceSidecarAvailable: () => Promise<boolean>;
+  startVoiceRecording: (language?: string) => Promise<void>;
+  partialVoiceTranscript: () => Promise<string>;
+  stopVoiceRecording: () => Promise<string>;
+  cancelVoiceRecording: () => Promise<void>;
+  takeScreenshot: () => Promise<ScreenshotResponse>;
+  takeScreenshotRegion: () => Promise<ScreenshotResponse>;
+  onDictationBegin: (
+    callback: (info: {
+      keys: string[];
+      codes: string[];
+      hotkey: string;
+      quiet?: boolean;
+    }) => void,
+  ) => () => void;
+  onDictationFinish: (callback: () => void) => () => void;
+  getHotkeys: () => Promise<{
+    voiceDictation: string;
+    screenshot: string;
+    region: string;
+    voiceDictationQuiet: string;
+    switchChat: string;
+    nextChat: string;
+    prevChat: string;
+    insertDraft: string;
+  }>;
+  checkHotkey: (
+    accelerator: string,
+  ) => Promise<{ ok: boolean; problem?: string }>;
+  setVoiceHotkey: (
+    accelerator: string,
+  ) => Promise<{ ok: boolean; problem?: string }>;
+  setVoiceQuietHotkey: (
+    accelerator: string,
+  ) => Promise<{ ok: boolean; problem?: string }>;
+  setScreenshotHotkey: (
+    accelerator: string,
+  ) => Promise<{ ok: boolean; problem?: string }>;
+  setRegionHotkey: (
+    accelerator: string,
+  ) => Promise<{ ok: boolean; problem?: string }>;
+  onWindowHotkey: (
+    callback: (action: "nextChat" | "prevChat" | "insertDraft") => void,
+  ) => () => void;
+  setInAppHotkey: (
+    action: "switchChat" | "nextChat" | "prevChat" | "insertDraft",
+    accelerator: string,
+  ) => Promise<{ ok: boolean; problem?: string }>;
+  onScreenshotCaptured: (
+    callback: (shot: { png: ArrayBuffer; name: string }) => void,
+  ) => () => void;
+  onDictationPending: (callback: () => void) => () => void;
+  onDictationText: (callback: (text: string) => void) => () => void;
+  watchDictationHold: () => Promise<"released" | "absent" | null>;
+  beginDictationHandoff: () => Promise<boolean>;
+  showDictationError: () => Promise<boolean>;
+  commitDictation: (text: string) => Promise<boolean>;
+  cancelDictation: () => Promise<boolean>;
+  closeDictation: () => Promise<boolean>;
+  onDictationDropped: (callback: () => void) => () => void;
+  persistPromptAttachments: (
+    sessionId: string,
+    promptText: string,
+    attachments?: Attachment[],
+  ) => Promise<boolean>;
   getApiServerKeyStatus: (
     profile?: string,
   ) => Promise<{ hasKey: boolean; providerId?: string; checkedAt?: number }>;
@@ -411,6 +491,18 @@ interface HermesAPI {
     base64Bytes: string,
   ) => Promise<string>;
   clearStagedAttachments: (sessionId: string) => Promise<void>;
+  uploadRemoteAttachment: (
+    filename: string,
+    base64Bytes: string,
+    mime?: string,
+  ) => Promise<
+    | { ok: true; path: string; id?: string; bytes?: number }
+    | {
+        ok: false;
+        reason: "unsupported" | "too-large" | "failed";
+        detail?: string;
+      }
+  >;
   discoverProviderModels: (
     provider: string,
     baseUrl?: string,
@@ -472,6 +564,14 @@ interface HermesAPI {
     ) => void,
   ) => () => void;
   respondClarify: (requestId: string, answer: string) => Promise<boolean>;
+  onApprovalRequest: (
+    callback: (runId: string, req: ChatApprovalRequest) => void,
+  ) => () => void;
+  respondApproval: (
+    requestId: string,
+    choice: ApprovalChoice,
+    runId: string,
+  ) => Promise<boolean>;
 
   // Gateway
   startGateway: () => Promise<GatewayStartResult>;
@@ -506,6 +606,8 @@ interface HermesAPI {
   listSessions: (
     limit?: number,
     offset?: number,
+    connectionId?: string,
+    profile?: string,
   ) => Promise<
     Array<{
       id: string;
@@ -518,7 +620,11 @@ interface HermesAPI {
       preview: string;
     }>
   >;
-  getSessionMessages: (sessionId: string) => Promise<
+  getSessionMessages: (
+    sessionId: string,
+    connectionId?: string,
+    profile?: string,
+  ) => Promise<
     Array<
       | {
           kind: "user";
@@ -707,6 +813,8 @@ interface HermesAPI {
   listCachedSessions: (
     limit?: number,
     offset?: number,
+    connectionId?: string,
+    profile?: string,
   ) => Promise<
     Array<{
       id: string;
@@ -718,7 +826,10 @@ interface HermesAPI {
       contextFolder: string | null;
     }>
   >;
-  syncSessionCache: () => Promise<
+  syncSessionCache: (
+    connectionId?: string,
+    profile?: string,
+  ) => Promise<
     Array<{
       id: string;
       title: string;
@@ -729,16 +840,30 @@ interface HermesAPI {
       contextFolder: string | null;
     }>
   >;
-  updateSessionTitle: (sessionId: string, title: string) => Promise<void>;
-  deleteSession: (sessionId: string) => Promise<void>;
+  updateSessionTitle: (
+    sessionId: string,
+    title: string,
+    connectionId?: string,
+    profile?: string,
+    auto?: boolean,
+  ) => Promise<void>;
+  deleteSession: (
+    sessionId: string,
+    connectionId?: string,
+    profile?: string,
+  ) => Promise<void>;
   deleteSessions: (
     sessionIds: string[],
+    connectionId?: string,
+    profile?: string,
   ) => Promise<{ requested: number; deleted: number }>;
 
   // Session search
   searchSessions: (
     query: string,
     limit?: number,
+    connectionId?: string,
+    profile?: string,
   ) => Promise<
     Array<{
       sessionId: string;
@@ -955,6 +1080,57 @@ interface HermesAPI {
     profile?: string,
   ) => Promise<{ success: boolean; data?: { id: string }; error?: string }>;
   selectFolder: () => Promise<string | null>;
+  /** Каталоги, которые видит tool-connector: Документы, Загрузки, Рабочий стол. */
+  localToolRoots: () => Promise<string[]>;
+  /** Факты из личного банка памяти (Hindsight через mem-shim). */
+  memoryBankList: (
+    limit?: number,
+    offset?: number,
+  ) => Promise<{ items: MemoryFact[]; total: number }>;
+  /** Запуск вместе с системой, свёрнутым в трей. */
+  autostartGet: () => Promise<{ enabled: boolean; supported: boolean }>;
+  /** Возвращает состояние после попытки — система может не дать его изменить. */
+  autostartSet: (enabled: boolean) => Promise<boolean>;
+  /** Корпоративное расширение в Chrome/Яндекс.Браузере (BrowserExtensionBanner). */
+  browserExtensionStatus: () => Promise<BrowserExtensionStatus>;
+  /** Открыть страницу расширения в магазине в этом браузере; false — открыто в браузере по умолчанию. */
+  browserExtensionOpenStore: (browser: "chrome" | "yandex") => Promise<boolean>;
+  /** «Позже» — не напоминать неделю. */
+  browserExtensionSnooze: () => Promise<void>;
+  browserExtensionSetRemind: (remind: boolean) => Promise<boolean>;
+  notesList: () => Promise<Note[]>;
+  notesSave: (input: {
+    id?: string;
+    title?: string;
+    text?: string;
+  }) => Promise<Note>;
+  notesDelete: (id: string) => Promise<void>;
+  /** Открывает системный диалог и прикладывает выбранные файлы к заметке. */
+  notesAttach: (noteId: string) => Promise<Note | null>;
+  /** Прикладывает файл, которого нет на диске: снимок экрана из карточки. */
+  notesAttachData: (
+    noteId: string,
+    name: string,
+    bytes: Uint8Array,
+  ) => Promise<Note | null>;
+  notesAttachmentRemove: (
+    noteId: string,
+    attachmentId: string,
+  ) => Promise<Note | null>;
+  /** Вложение целиком — чтобы пересобрать из него File для поля ввода. */
+  notesAttachmentBytes: (
+    noteId: string,
+    attachmentId: string,
+  ) => Promise<Uint8Array | null>;
+  /** data:-строка для картинки; null для крупных файлов и не-картинок. */
+  notesAttachmentData: (
+    noteId: string,
+    attachmentId: string,
+  ) => Promise<string | null>;
+  notesAttachmentOpen: (
+    noteId: string,
+    attachmentId: string,
+  ) => Promise<boolean>;
   readDirectory: (
     dirPath: string,
   ) => Promise<{ name: string; isDirectory: boolean }[] | null>;
@@ -1024,7 +1200,16 @@ interface HermesAPI {
   // Виртуальная доска ИИ-сотрудников (staff-мостик через identity-proxy)
   listStaffAgents: () => Promise<{
     success: boolean;
-    data?: { agents?: { runtime_id: string; email?: string; title?: string }[] };
+    data?: {
+      agents?: {
+        runtime_id: string;
+        email?: string;
+        title?: string;
+        display_name?: string;
+        role?: string;
+        subtitle?: string;
+      }[];
+    };
     error?: string;
   }>;
   agentKanbanRequest: (
@@ -1038,7 +1223,12 @@ interface HermesAPI {
     which: string,
   ) => Promise<{
     success: boolean;
-    data?: { dataUrl?: string; fileUrl?: string; filePath?: string; mime?: string };
+    data?: {
+      dataUrl?: string;
+      fileUrl?: string;
+      filePath?: string;
+      mime?: string;
+    };
     error?: string;
   }>;
 

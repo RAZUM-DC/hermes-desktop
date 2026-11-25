@@ -15,3 +15,9 @@ Per-model storage (set in the Models add/edit dialog) survives switching between
 The context gauge resolves its window size as: config override (active model) → provider `/models` `context_length` → static heuristic.
 
 [[src/main/model-discovery.ts#getModelContextWindow]] consults [[src/main/config.ts#getModelContextLengthOverride]] first, returning it only when it targets the model being asked about (so a stale value can't leak onto a different model id), before falling through to the authoritative `/models` lookup and finally the renderer's substring heuristic.
+
+## Dashboard default profile isolation
+
+An explicit `default` model-library query reads the root profile even if the Dashboard process currently serves a named profile.
+
+The desktop's Dashboard compatibility handler resolves named and default profile homes independently. It applies a context-local Hermes home override while reading model configuration and always resets it after success or failure. Remote model-library requests include the selected profile explicitly, including `default`, while omitted and `current` retain the Dashboard process profile.

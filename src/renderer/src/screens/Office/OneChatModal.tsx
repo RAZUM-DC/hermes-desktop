@@ -55,6 +55,8 @@ export default function OneChatModal({
       try {
         const items = (await window.hermesAPI.getSessionMessages(
           sessionId,
+          undefined,
+          selectedAgentId,
         )) as Array<{
           kind: "user" | "assistant";
           id: number;
@@ -141,6 +143,8 @@ export default function OneChatModal({
       // Reload persisted messages from the session
       const items = (await window.hermesAPI.getSessionMessages(
         sessionId,
+        undefined,
+        selectedAgentId,
       )) as Array<{
         kind: "user" | "assistant";
         id: number;
@@ -156,12 +160,15 @@ export default function OneChatModal({
         }));
       setMessages((prev) => ({ ...prev, [selectedAgentId]: loaded }));
     } catch (err) {
+      const errorText = `Error: ${(err as Error).message}`;
       // The response may have been persisted even though the promise rejected.
       // Try to reload from the database before showing a raw error.
       try {
         const reloadSessionId = `office-${selectedAgentId}`;
         const items = (await window.hermesAPI.getSessionMessages(
           reloadSessionId,
+          undefined,
+          selectedAgentId,
         )) as Array<{
           kind: "user" | "assistant";
           id: number;
@@ -178,7 +185,17 @@ export default function OneChatModal({
         if (loaded.length > 0) {
           setMessages((prev) => ({
             ...prev,
-            [selectedAgentId]: loaded,
+            [selectedAgentId]: (err as Error).message.includes("Approval flow")
+              ? [
+                  ...loaded,
+                  {
+                    id: `err-${Date.now()}`,
+                    role: "agent",
+                    text: errorText,
+                    timestamp: Date.now(),
+                  },
+                ]
+              : loaded,
           }));
           return;
         }
@@ -195,7 +212,7 @@ export default function OneChatModal({
             {
               id: `err-${Date.now()}`,
               role: "agent",
-              text: `Error: ${(err as Error).message}`,
+              text: errorText,
               timestamp: Date.now(),
             },
           ],

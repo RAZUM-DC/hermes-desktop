@@ -50,11 +50,21 @@ import { getProfilePort } from "./gateway-ports";
 import { promptSudoPassword, promptSecretValue } from "./gatewayPrompt";
 import { getSecret } from "./secrets";
 import { readModels } from "./models";
+import { normalizeModelEndpointUrl } from "../shared/model-endpoint";
 import { providerListSafe } from "./secrets";
 import { HIDDEN_SUBPROCESS_OPTIONS } from "./process-options";
 import { type Attachment, escapeXmlAttr } from "../shared/attachments";
 import { type SessionModelOverride } from "../shared/model-override";
-import { OPENAI_COMPAT_PROVIDERS } from "../shared/url-key-map";
+import {
+  gatewayApprovalRequestId,
+  normalizeApprovalRequest,
+  type ApprovalChoice,
+  type ChatApprovalRequest,
+} from "../shared/chat-approval";
+import {
+  customProviderEnvKey,
+  OPENAI_COMPAT_PROVIDERS,
+} from "../shared/url-key-map";
 import {
   chatToolEventFromPayload,
   chatToolProgressLabel,
@@ -805,6 +815,11 @@ class TuiGatewayClient {
     this.readyReject = null;
     this.readyResolve = null;
     this.token = "";
+    if (ws) {
+      for (const handler of this.handlers) {
+        handler({ type: "gateway.disconnected" });
+      }
+    }
   }
 }
 
@@ -1058,6 +1073,87 @@ export function clearPendingClarify(requestId: string): void {
   pendingClarify.delete(requestId);
 }
 
+interface PendingApproval {
+  choices: ReadonlySet<ApprovalChoice>;
+  ownerId?: number;
+  responding: boolean;
+  responder: (choice: ApprovalChoice) => Promise<boolean>;
+  runId?: string;
+}
+
+const pendingApprovals = new Map<string, PendingApproval>();
+
+export function registerPendingApproval(
+  choices: readonly ApprovalChoice[],
+  responder: (choice: ApprovalChoice) => Promise<boolean>,
+): string {
+  const requestId = `approval-${randomUUID()}`;
+  pendingApprovals.set(requestId, {
+    choices: new Set(choices),
+    responding: false,
+    responder,
+  });
+  return requestId;
+}
+
+export function bindPendingApproval(
+  requestId: string,
+  owner: { ownerId: number; runId: string },
+): boolean {
+  const pending = pendingApprovals.get(requestId);
+  if (
+    !pending ||
+    pending.ownerId !== undefined ||
+    pending.runId !== undefined
+  ) {
+    return false;
+  }
+  pending.ownerId = owner.ownerId;
+  pending.runId = owner.runId;
+  return true;
+}
+
+export async function resolvePendingApproval(
+  requestId: string,
+  choice: unknown,
+  owner?: { ownerId: number; runId: string },
+): Promise<boolean> {
+  const pending = pendingApprovals.get(requestId);
+  if (
+    !pending ||
+    (pending.ownerId !== undefined && pending.ownerId !== owner?.ownerId) ||
+    (pending.runId !== undefined && pending.runId !== owner?.runId) ||
+    typeof choice !== "string" ||
+    !pending.choices.has(choice as ApprovalChoice) ||
+    pending.responding
+  ) {
+    return false;
+  }
+
+  pending.responding = true;
+  try {
+    const acknowledged = await pending.responder(choice as ApprovalChoice);
+    if (!acknowledged || pendingApprovals.get(requestId) !== pending)
+      return false;
+    pendingApprovals.delete(requestId);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (pendingApprovals.get(requestId) === pending) {
+      pending.responding = false;
+    }
+  }
+}
+
+export function clearPendingApproval(requestId: string): void {
+  pendingApprovals.delete(requestId);
+}
+
+export function clearAllPendingApprovals(): void {
+  pendingApprovals.clear();
+}
+
 export interface ChatCallbacks {
   onChunk: (text: string) => void;
   /** Streaming reasoning / thinking tokens, when the provider emits them
@@ -1091,6 +1187,7 @@ export interface ChatCallbacks {
     question: string;
     choices: string[];
   }) => void;
+  onApproval?: (req: ChatApprovalRequest) => boolean | void;
 }
 
 type ChatContent =
@@ -1164,9 +1261,32 @@ export function buildUserContent(
  */
 export function contextFolderSystemMessage(
   contextFolder?: string,
+  mode: "local" | "remote" | "ssh" = "local",
 ): { role: "system"; content: string } | null {
   const folder = contextFolder?.trim();
   if (!folder) return null;
+
+  // В гибриде рабочая папка — на компьютере человека, а агент живёт на
+  // сервере. Прежний текст велел ему брать файловые, терминальные и
+  // исполняющие инструменты, и для серверной папки это верно, а для
+  // локальной — прямо противоположно тому, что требует системный промпт
+  // сервера: файлы пользователя только через local.*, ни в коем случае не
+  // через execute_code, shell и серверные файловые инструменты. Агент,
+  // получив windows-путь и указание работать серверными руками, будет
+  // честно пытаться и честно падать, а человек — не понимать, почему.
+  if (mode === "remote") {
+    return {
+      role: "system",
+      content:
+        `The working folder for this conversation is ${folder}, and it is ` +
+        `on the user's own computer, not on the server. Reach it only with ` +
+        `the local.* tools (local.fs_list, local.fs_read, local.fs_write), ` +
+        `using absolute paths under this folder. Do not use execute_code, ` +
+        `shell, or server-side file tools for it: they see the server ` +
+        `container, not the user's machine.`,
+    };
+  }
+
   return {
     role: "system",
     content:
@@ -1226,7 +1346,10 @@ function sendMessageViaApi(
   // there. Injected only at the request-build step — the renderer's visible
   // transcript stays clean, and getSessionMessages filters non-user/assistant
   // roles, so reloaded sessions stay clean too.
-  const ctxSystem = contextFolderSystemMessage(contextFolder);
+  const ctxSystem = contextFolderSystemMessage(
+    contextFolder,
+    getConnectionConfig().mode,
+  );
   if (ctxSystem) messages.unshift(ctxSystem);
 
   const reasoningEffort = reasoningEffortForProfile(profile);
@@ -1621,7 +1744,10 @@ function sendMessageViaRuns(
   const sessionId =
     resumeSessionId ||
     (headersForAuth.Authorization ? `desk-${Date.now()}-${randomUUID()}` : "");
-  const ctxSystem = contextFolderSystemMessage(contextFolder);
+  const ctxSystem = contextFolderSystemMessage(
+    contextFolder,
+    getConnectionConfig().mode,
+  );
   const bodyObj: Record<string, unknown> = {
     model: mc.model || "hermes-agent",
     input: message,
@@ -1654,12 +1780,14 @@ function sendMessageViaRuns(
   let startReq: http.ClientRequest | null = null;
   let eventsReq: http.ClientRequest | null = null;
   let fallbackHandle: ChatHandle | null = null;
-
+  let approvalInteraction = false;
   function finish(error?: string): void {
     if (finished || fallbackStarted) return;
     finished = true;
     if (error) {
-      cb.onError(error);
+      cb.onError(
+        approvalInteraction ? `Approval flow failed: ${error}` : error,
+      );
     } else {
       cb.onDone(sessionId || undefined);
     }
@@ -1667,6 +1795,12 @@ function sendMessageViaRuns(
 
   function fallbackToChatCompletions(): void {
     if (finished || fallbackStarted) return;
+    if (approvalInteraction) {
+      finish(
+        "Hermes lost the run after requesting approval. The prompt was not replayed.",
+      );
+      return;
+    }
     fallbackStarted = true;
     fallbackHandle = sendMessageViaApi(
       message,
@@ -1688,6 +1822,7 @@ function sendMessageViaRuns(
   }
 
   function handleRunEvent(raw: Record<string, unknown>): void {
+    if (finished || fallbackStarted) return;
     const eventName = typeof raw.event === "string" ? raw.event : "";
     if (eventName === "message.delta") {
       const delta = typeof raw.delta === "string" ? raw.delta : "";
@@ -1749,11 +1884,15 @@ function sendMessageViaRuns(
     }
 
     if (eventName === "approval.request") {
-      // The current renderer's approval controls are wired to the legacy chat
-      // flow and only appear after a response finishes. A run pauses before it
-      // can finish, so fall back to the existing path instead of deadlocking
-      // the user on a hidden approval request.
-      stopRunAndFallback();
+      approvalInteraction = true;
+      // The current upstream Runs endpoint ignores request_id and resolves
+      // FIFO. A stale card could approve a different command after a timeout.
+      // Keep ordinary Runs streaming, but never approve through that endpoint.
+      if (runId) postRunStop(apiUrl, profile, runId);
+      finish(
+        "Hermes stopped this run because its approval API cannot safely target a specific command. Use Dashboard chat for manual command approvals.",
+      );
+      eventsReq?.destroy();
     }
   }
 
@@ -1805,7 +1944,14 @@ function sendMessageViaRuns(
               }
             }
           }
-          if (!finished) finish();
+          if (!finished && approvalInteraction) {
+            if (runId) postRunStop(apiUrl, profile, runId);
+            finish(
+              "Run event stream ended while approval was pending. The run was stopped without approving.",
+            );
+          } else if (!finished) {
+            finish();
+          }
         });
       },
     );
@@ -1904,10 +2050,19 @@ async function sendMessageViaTuiGateway(
   let fallbackHandle: ChatHandle | null = null;
   let fallbackStarted = false;
   let promptSubmitted = false;
+  let approvalInteraction = false;
   let cleanup = (): void => undefined;
   // request_id of an in-flight clarify question, if the agent is awaiting an
   // answer. Cleared on turn end so an abandoned turn leaks no stale resolver.
   let pendingClarifyId: string | null = null;
+  const pendingApprovalIds = new Set<string>();
+
+  function clearApprovals(): void {
+    for (const requestId of pendingApprovalIds) {
+      clearPendingApproval(requestId);
+    }
+    pendingApprovalIds.clear();
+  }
 
   function finish(error?: string): void {
     if (finished) return;
@@ -1916,9 +2071,12 @@ async function sendMessageViaTuiGateway(
       clearPendingClarify(pendingClarifyId);
       pendingClarifyId = null;
     }
+    clearApprovals();
     cleanup();
     if (error) {
-      cb.onError(error);
+      cb.onError(
+        approvalInteraction ? `Approval flow failed: ${error}` : error,
+      );
     } else {
       cb.onDone(storedSessionId || undefined);
     }
@@ -1931,11 +2089,18 @@ async function sendMessageViaTuiGateway(
       clearPendingClarify(pendingClarifyId);
       pendingClarifyId = null;
     }
+    clearApprovals();
     cleanup();
   }
 
   function startApiFallback(reason: string): void {
     if (finished || fallbackStarted) return;
+    if (approvalInteraction) {
+      finish(
+        `${reason} The prompt was not replayed after the approval request.`,
+      );
+      return;
+    }
     fallbackStarted = true;
     cleanup();
     client.stop();
@@ -1962,6 +2127,13 @@ async function sendMessageViaTuiGateway(
   }
 
   cleanup = client.onEvent((event) => {
+    if (finished || fallbackStarted) return;
+    if (event.type === "gateway.disconnected" && approvalInteraction) {
+      finish(
+        "The gateway disconnected after requesting approval. The prompt was not replayed.",
+      );
+      return;
+    }
     if (event.session_id && event.session_id !== activeSessionId) return;
 
     const delta = gatewayMessageDelta(event);
@@ -2018,28 +2190,70 @@ async function sendMessageViaTuiGateway(
     }
 
     if (event.type === "approval.request") {
-      // Match the existing local chat posture: Hermes One does not expose a
-      // mid-stream approval dialog, so answer the dashboard protocol once and
-      // keep the transcript focused on the resulting tool call/result events.
-      void client
-        .request(
-          "approval.respond",
-          {
-            session_id: activeSessionId,
-            choice: "once",
-            all: false,
-          },
-          30_000,
-        )
-        .catch((error) => {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          if (!hasGatewayOutput) {
-            startApiFallback(message);
-            return;
+      approvalInteraction = true;
+      const gatewayRequestId = gatewayApprovalRequestId(event.payload);
+      if (!gatewayRequestId) {
+        void client
+          .request("session.interrupt", { session_id: activeSessionId }, 5_000)
+          .catch(() => undefined);
+        finish(
+          "Hermes did not provide an addressable approval request. The turn was stopped without approving.",
+        );
+        return;
+      }
+      let requestId = "";
+      const normalized = normalizeApprovalRequest(event.payload, "");
+      requestId = registerPendingApproval(
+        normalized.choices,
+        async (choice) => {
+          if (pendingApprovalIds.values().next().value !== requestId) {
+            return false;
           }
-          finish(message);
-        });
+          const result = await client.request<{ resolved?: unknown }>(
+            "approval.respond",
+            {
+              session_id: activeSessionId,
+              request_id: gatewayRequestId,
+              choice,
+              all: false,
+            },
+            30_000,
+          );
+          if (result?.resolved !== 1) {
+            void client
+              .request(
+                "session.interrupt",
+                { session_id: activeSessionId },
+                5_000,
+              )
+              .catch(() => undefined);
+            finish(
+              "Hermes could not confirm the selected approval request. The turn was stopped without replaying the prompt.",
+            );
+            return false;
+          }
+          pendingApprovalIds.delete(requestId);
+          return true;
+        },
+      );
+      pendingApprovalIds.add(requestId);
+      const request = { ...normalized, requestId };
+      let delivered = false;
+      try {
+        delivered = cb.onApproval?.(request) !== false && !!cb.onApproval;
+      } catch {
+        delivered = false;
+      }
+      if (!delivered) {
+        clearPendingApproval(requestId);
+        pendingApprovalIds.delete(requestId);
+        void client
+          .request("session.interrupt", { session_id: activeSessionId }, 5_000)
+          .catch(() => undefined);
+        finish(
+          "Hermes requested approval, but no approval listener is available. The turn was stopped without approving.",
+        );
+      }
       return;
     }
 
@@ -2200,11 +2414,18 @@ async function sendMessageViaTuiGateway(
       text: message,
     });
   } catch (error) {
-    cleanup();
-    if (!promptSubmitted) {
-      client.stop();
+    if (approvalInteraction) {
+      void client
+        .request("session.interrupt", { session_id: activeSessionId }, 5_000)
+        .catch(() => undefined);
+      finish(
+        "The gateway lost the prompt acknowledgment after requesting approval. The prompt was not replayed.",
+      );
+    } else {
+      cleanup();
+      if (!promptSubmitted) client.stop();
+      throw error;
     }
-    throw error;
   }
 
   return {
@@ -2413,7 +2634,9 @@ function sendMessageViaCli(
     let modelApiMode: string | null = null;
     try {
       const modelEntry = readModels().find(
-        (m) => m.baseUrl === mc.baseUrl && m.model === mc.model,
+        (m) =>
+          normalizeModelEndpointUrl(m.baseUrl) ===
+            normalizeModelEndpointUrl(mc.baseUrl) && m.model === mc.model,
       );
       if (modelEntry) modelApiMode = modelEntry.apiMode || null;
     } catch {
@@ -2457,14 +2680,20 @@ function sendMessageViaCli(
     if (!resolvedKey) {
       // Try custom provider auto-generated key from models.json
       try {
-        const models = readModels();
-        const matching = models.find((m) => m.baseUrl === mc.baseUrl);
-        if (matching) {
-          const envKey2 =
-            "CUSTOM_PROVIDER_" +
-            matching.name.replace(/[^A-Za-z0-9]/g, "_").toUpperCase() +
-            "_KEY";
-          resolvedKey = profileEnv[envKey2] || env[envKey2] || "";
+        const endpoint = normalizeModelEndpointUrl(mc.baseUrl);
+        for (const matching of readModels()) {
+          if (
+            matching.provider !== "custom" ||
+            normalizeModelEndpointUrl(matching.baseUrl) !== endpoint
+          )
+            continue;
+          const envKey2 = customProviderEnvKey(matching.name);
+          resolvedKey =
+            profileEnv[envKey2] ||
+            env[envKey2] ||
+            providerSecrets[envKey2] ||
+            "";
+          if (resolvedKey) break;
         }
       } catch {
         /* ignore */
@@ -2833,6 +3062,11 @@ async function sendMessageViaBestApiWithLocalRecovery(
       cb.onDone(sessionId);
     },
     onError: (error) => {
+      if (error.startsWith("Approval flow failed:")) {
+        settled = true;
+        cb.onError(error);
+        return;
+      }
       if (sawOutput) {
         recoverAfterPartialOutput(error);
         return;

@@ -93,7 +93,9 @@ describe("remote session REST bridge", () => {
 
         if (
           req.url ===
-          "/api/profiles/sessions?limit=2&offset=3&min_messages=0&archived=exclude&order=recent&profile=all"
+            "/api/profiles/sessions?limit=2&offset=3&min_messages=0&archived=exclude&order=recent&profile=all" ||
+          req.url ===
+            "/api/profiles/sessions?limit=2&offset=3&min_messages=0&archived=exclude&order=recent&profile=work%20profile"
         ) {
           res.end(
             JSON.stringify({
@@ -306,6 +308,14 @@ describe("remote session REST bridge", () => {
     ]);
   });
 
+  it("scopes remote session lists to the selected profile", async () => {
+    await remoteListSessions({ ...config(), profile: "work profile" }, 2, 3);
+
+    expect(requests[0]?.url).toBe(
+      "/api/profiles/sessions?limit=2&offset=3&min_messages=0&archived=exclude&order=recent&profile=work%20profile",
+    );
+  });
+
   it("falls back to the legacy session list endpoint for older dashboards", async () => {
     const originalHandler = server.listeners("request")[0];
     server.removeListener("request", originalHandler);
@@ -504,12 +514,29 @@ describe("remote session REST bridge", () => {
       method: "PATCH",
       url: "/api/sessions/sess-title",
       token: "test-token",
-      body: JSON.stringify({ title: "New title" }),
+      body: JSON.stringify({ title: "New title", title_source: "user" }),
     });
     expect(requests[1]).toMatchObject({
       method: "DELETE",
       url: "/api/sessions/sess-delete",
       token: "test-token",
+    });
+  });
+
+  it("preserves the explicit automatic title source in remote updates", async () => {
+    await remoteUpdateSessionTitle(
+      config(),
+      "sess-title",
+      "Generated title",
+      "auto",
+    );
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      method: "PATCH",
+      url: "/api/sessions/sess-title",
+      token: "test-token",
+      body: JSON.stringify({ title: "Generated title", title_source: "auto" }),
     });
   });
 });

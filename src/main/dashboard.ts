@@ -376,6 +376,9 @@ async function getRemoteDashboardStatusForConfig(
     };
   }
 
+  // Шаг проверки держим отдельно: три запроса подряд дают одинаковые на вид
+  // ошибки, и без пометки непонятно, какой именно эндпоинт отказал.
+  let step = "GET /api/status";
   try {
     const status = await requestJson(
       `${connection.baseUrl}/api/status`,
@@ -393,19 +396,33 @@ async function getRemoteDashboardStatusForConfig(
     // /api/status is intentionally public upstream. Touch an authenticated
     // endpoint as well so a legacy API key or stale token fails before the
     // renderer opens the WebSocket.
+    step = "GET /api/sessions?limit=1";
     await requestJson(
       `${connection.baseUrl}/api/sessions?limit=1`,
       connection.token,
     );
+    step = "WebSocket upgrade /api/ws";
     await probeDashboardWebSocket(connection);
 
     return { supported: true, running: true, connection };
   } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    // Три проверки подряд — /api/status, /api/sessions и апгрейд до
+    // WebSocket. Какая именно не прошла, видно только здесь: в интерфейс
+    // уходит общая плашка про базовый чат.
+    console.warn(
+      "[dashboard] remote transport unavailable at",
+      connection.baseUrl,
+      "-",
+      step,
+      "failed:",
+      error,
+    );
     return {
       supported: true,
       running: false,
       connection,
-      error: err instanceof Error ? err.message : String(err),
+      error,
     };
   }
 }

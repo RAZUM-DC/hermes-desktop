@@ -1,0 +1,2 @@
+v6:a7fc2d1a36db97126f536fb14c66112b775e6901
+{"path":"src/renderer/src/components/profile/ProfileModalProvider.tsx","symbols":[{"name":"OpenState","kind":"interface","startLine":8,"endLine":11,"signature":"interface OpenState {"},{"name":"ProfileModalProvider","kind":"function","startLine":18,"endLine":55,"signature":"function ProfileModalProvider({"}],"timings":{"readMs":0.23014499999999316,"hashMs":0.032750999999962005,"cacheReadMs":0.11402900000007321,"cacheStatus":"miss","cacheWriteMs":0,"parseMs":0.5771339999998872}}

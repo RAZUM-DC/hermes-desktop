@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "Recent",
+  recentFoldersEmpty: "No recent folders",
+  openFolderAction: "Open folder…",
+  showWebPreview: "Show web preview",
+  hideWebPreview: "Hide web preview",
+  folderOutsideRoots:
+    "This folder is outside Documents, Downloads and Desktop — the assistant can't see it.",
   title: "New Chat",
   sessionTitle: "Session {{id}}",
   noModel: "No model set",
   auto: "Auto",
   commandsTitle: "Commands",
   typeMessage: "Ask anything",
+  dictationPending: "Transcribing your dictation…",
   quickAskTitle:
     "Quick Ask (/btw) — side question that won't affect conversation context",
   send: "Send",
@@ -40,12 +48,28 @@ export default {
   approve: "Approve",
   deny: "Deny",
   clarify: {
+    unavailable: "This question is no longer awaiting an answer.",
     defaultQuestion: "Hermes needs your input.",
     placeholder: "Type your answer…  (Ctrl+Enter to send)",
     send: "Send",
     skip: "Skip — let Hermes decide",
     skipped: "Skipped — Hermes decided",
     error: "Couldn't deliver your answer — the turn may have ended. Try again.",
+  },
+  approval: {
+    title: "Command approval required",
+    once: "Allow once",
+    session: "Allow for session",
+    always: "Always allow",
+    deny: "Deny",
+    responded: "Responded",
+    unavailable: "This approval is no longer available.",
+    queued: "Resolve the earlier approval request first.",
+    confirm:
+      "Always allow this command in future sessions? This permission persists until revoked.",
+    cancel: "Cancel",
+    confirmAlways: "Confirm always allow",
+    error: "Couldn't send the approval response. Try again.",
   },
   thinking: "Thinking…",
   thought: "Thought",
@@ -59,13 +83,46 @@ export default {
   contextFolderActive: "Context folder: {{path}}",
   removeContextFolder: "Remove context folder",
   attach: "Attach files",
+  screenshotRegion: "Select an area",
+  screenshotFullScreen: "Whole screen",
+  screenshotOptions: "Screenshot options",
+  screenshot: "Screenshot",
+  screenshotHiding: "Capturing the screen…",
+  screenshotBlocked:
+    "Could not capture the screen: the system refused to give this app the screen contents. That is usually an antivirus or a corporate security policy. Ask your administrator to allow this app to take screenshots.",
+  screenshotFailed: "Could not capture the screen. {{detail}}",
   voiceInput: "Voice input",
   voiceStop: "Stop recording",
   voiceTranscribing: "Transcribing…",
+  dictationListening: "Listening…",
+  dictationHint: "Release the keys to insert the text",
+  voiceBlocked:
+    "Could not open the microphone: the system refused to hand the recording device to this app. That is usually an antivirus or a corporate security policy — Kaspersky's Host Intrusion Prevention, for one. Ask your administrator to allow this app access to sound recording devices.",
+  voiceDenied:
+    "Microphone access is denied. Allow it in Windows: Settings → Privacy & security → Microphone.",
+  voiceNoDevice:
+    "No microphone found. Check that a recording device is connected.",
+  voiceFailed: "Could not start recording from the microphone. {{detail}}",
   contextWindow: "Context window",
   contextUsed: "{{pct}}% used ({{left}}% left)",
   contextTokens: "{{used}} / {{total}} tokens used",
   contextCache: "Cache: {{pct}}% hit ({{read}} read / {{write}} write)",
+  dictationWaiting: "Recorded",
+  dictationWaitingHint:
+    "The text will appear in the app once it is transcribed",
+  drafts: {
+    title: "Waiting",
+    screenshot: "Screenshot",
+    insert: "Insert",
+    remove: "Delete draft",
+    clearAll: "Discard everything waiting",
+    open: "Open",
+    recognizing: "Transcribing…",
+    nothingHeard: "Nothing was recognised",
+    hint: "{{hotkey}} inserts the newest one into the open conversation",
+    insertFailed: "The conversation did not accept this draft.",
+    insertNoChat: "Open a chat or Notes to insert this.",
+  },
   removeAttachment: "Remove attachment",
   dropToAttach: "Drop files to attach",
   dashboardUnavailableFallback:
@@ -79,6 +136,10 @@ export default {
   attachReadFailed: "{{name}}: could not be read",
   attachRemoteModeBinary:
     "{{name}}: PDF/binary attachments require local mode — images and text files still work.",
+  attachUploadTooLarge:
+    "{{name}}: file is too large to send to the assistant (max 30 MB)",
+  attachUploadFailed:
+    "{{name}}: could not upload to the assistant — {{detail}}",
   validation: {
     noModel: "No model selected. Pick one in the Chat picker below.",
     noProvider: "No provider set for the active model.",
@@ -100,10 +161,19 @@ export default {
   categoryTools: "Tools",
   categoryInfo: "Info",
   noUsageData: "No usage data yet. Send a message first.",
+  showEarlierMessages: "Show {{count}} earlier messages",
   media: {
+    close: "Close",
     open: "Open",
     saveAs: "Save as…",
     saveImage: "Save image",
+    downloadFailed: "Could not download {{name}}",
+    downloadForbidden:
+      "The server refused to hand over this file. It is most likely outside the folder the agent shares files from.",
+    downloadNotFound: "The file is no longer on the server.",
+    downloadInterrupted: "The connection to the server was interrupted.",
+    openBlocked:
+      "This file type is not opened straight from the chat. Save it first.",
   },
   commands: {
     new: "Start a new chat",

@@ -1,12 +1,19 @@
 export default {
+  recentFoldersTitle: "الأخيرة",
+  recentFoldersEmpty: "لا توجد مجلدات حديثة",
+  openFolderAction: "فتح مجلد…",
+  showWebPreview: "إظهار معاينة الويب",
+  hideWebPreview: "إخفاء معاينة الويب",
+  folderOutsideRoots:
+    "هذا المجلد خارج المستندات والتنزيلات وسطح المكتب — لا يمكن للمساعد رؤيته.",
   title: "محادثة جديدة",
   sessionTitle: "الجلسة {{id}}",
   noModel: "لم يتم تعيين نموذج",
   auto: "تلقائي",
   commandsTitle: "الأوامر",
   typeMessage: "اسأل أي شيء",
-  quickAskTitle:
-    "سؤال سريع (/btw) — سؤال جانبي لا يؤثر على سياق المحادثة",
+  dictationPending: "جارٍ تفريغ ما أمليته…",
+  quickAskTitle: "سؤال سريع (/btw) — سؤال جانبي لا يؤثر على سياق المحادثة",
   send: "إرسال",
   searchModels: "البحث في النماذج...",
   custom: "مخصص",
@@ -39,12 +46,28 @@ export default {
   approve: "موافقة",
   deny: "رفض",
   clarify: {
+    unavailable: "لم يعد هذا السؤال بانتظار إجابة.",
     defaultQuestion: "يحتاج Hermes إلى مدخلاتك.",
     placeholder: "اكتب إجابتك… (Ctrl+Enter للإرسال)",
     send: "إرسال",
     skip: "تخطي — دع Hermes يقرر",
     skipped: "تم التخطي — قرر Hermes",
     error: "تعذر تسليم إجابتك — ربما انتهت الجولة. حاول مرة أخرى.",
+  },
+  approval: {
+    title: "مطلوب تأكيد الأمر",
+    once: "السماح مرة واحدة",
+    session: "السماح لهذه الجلسة",
+    always: "السماح دائماً",
+    deny: "رفض",
+    responded: "تم إرسال الرد",
+    unavailable: "لم يعد طلب التأكيد هذا متاحاً.",
+    queued: "أجب عن طلب التأكيد السابق أولاً.",
+    confirm:
+      "هل تسمح دائماً بهذا الأمر في الجلسات المستقبلية؟ سيبقى الإذن حتى يتم إلغاؤه.",
+    cancel: "إلغاء",
+    confirmAlways: "تأكيد السماح الدائم",
+    error: "تعذر إرسال رد التأكيد. حاول مرة أخرى.",
   },
   thinking: "جارٍ التفكير...",
   thought: "تفكير",
@@ -64,7 +87,8 @@ export default {
   contextWindow: "نافذة السياق",
   contextUsed: "{{pct}}% مستخدم ({{left}}% متبقي)",
   contextTokens: "{{used}} / {{total}} رمز مستخدم",
-  contextCache: "الذاكرة المؤقتة: {{pct}}% إصابة ({{read}} قراءة / {{write}} كتابة)",
+  contextCache:
+    "الذاكرة المؤقتة: {{pct}}% إصابة ({{read}} قراءة / {{write}} كتابة)",
   removeAttachment: "إزالة المرفق",
   dropToAttach: "أسقط الملفات للإرفاق",
   dashboardUnavailableFallback:
@@ -99,6 +123,7 @@ export default {
   categoryTools: "أدوات",
   categoryInfo: "معلومات",
   noUsageData: "لا توجد بيانات استخدام بعد. أرسل رسالة أولاً.",
+  showEarlierMessages: "عرض {{count}} رسالة سابقة",
   media: {
     open: "فتح",
     saveAs: "حفظ باسم...",

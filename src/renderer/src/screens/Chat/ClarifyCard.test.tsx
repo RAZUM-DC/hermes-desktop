@@ -70,6 +70,35 @@ describe("ClarifyCard", () => {
     );
   });
 
+  it("sends on Enter and leaves Shift+Enter for a line break", async () => {
+    const respondClarify = stubRespond();
+    render(<ClarifyCard msg={baseMsg()} onResolved={vi.fn()} />);
+
+    const textarea = screen.getByPlaceholderText(
+      "chat.clarify.placeholder",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "use staging" } });
+
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
+    expect(respondClarify).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(respondClarify).toHaveBeenCalledWith("r1", "use staging");
+  });
+
+  it("still sends on the old Ctrl+Enter", async () => {
+    const respondClarify = stubRespond();
+    render(<ClarifyCard msg={baseMsg()} onResolved={vi.fn()} />);
+
+    const textarea = screen.getByPlaceholderText(
+      "chat.clarify.placeholder",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "production" } });
+    fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+
+    expect(respondClarify).toHaveBeenCalledWith("r1", "production");
+  });
+
   it("skip sends an empty answer (autonomous proceed)", async () => {
     const respondClarify = stubRespond();
     const onResolved = vi.fn();
@@ -155,5 +184,77 @@ describe("ClarifyCard", () => {
       expect(screen.getByText("chat.clarify.error")).toBeTruthy(),
     );
     expect(onResolved).not.toHaveBeenCalled();
+  });
+});
+
+describe("ClarifyCard dashboard routing", () => {
+  it("submits a gateway choice through the supplied transport instead of IPC", async () => {
+    const { applyDashboardStreamEvent } =
+      await import("./dashboardEventAdapter");
+    const state = applyDashboardStreamEvent(
+      { messages: [], reasoningSegmentClosed: false },
+      {
+        type: "clarify.request",
+        payload: {
+          request_id: "ws-1",
+          question: "Which environment?",
+          choices: ["staging", "production"],
+        },
+      },
+    );
+    const msg = state.messages[0];
+    if (msg.kind !== "clarify") {
+      throw new Error("Expected an interactive clarification");
+    }
+    const ipc = stubRespond();
+    const respond = vi.fn().mockResolvedValue(true);
+    const resolved = vi.fn();
+    render(<ClarifyCard msg={msg} onRespond={respond} onResolved={resolved} />);
+    fireEvent.click(screen.getByRole("button", { name: "production" }));
+    await vi.waitFor(() =>
+      expect(resolved).toHaveBeenCalledWith("ws-1", "production"),
+    );
+    expect(respond).toHaveBeenCalledWith(msg, "production");
+    expect(ipc).not.toHaveBeenCalled();
+  });
+
+  it("disables an expired question and explains why", () => {
+    const respond = vi.fn();
+    render(
+      <ClarifyCard
+        msg={baseMsg({ unavailable: true, choices: ["staging"] })}
+        onRespond={respond}
+        onResolved={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "staging" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "chat.clarify.unavailable",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "staging" }));
+    expect(respond).not.toHaveBeenCalled();
+  });
+
+  it("blocks duplicate clicks before React publishes submitting state", async () => {
+    let finish!: (ok: boolean) => void;
+    const respond = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(
+      <ClarifyCard
+        msg={baseMsg({ choices: ["staging"] })}
+        onRespond={respond}
+        onResolved={vi.fn()}
+      />,
+    );
+    const choice = screen.getByRole("button", { name: "staging" });
+    fireEvent.click(choice);
+    fireEvent.click(choice);
+    expect(respond).toHaveBeenCalledTimes(1);
+    finish(true);
+    await vi.waitFor(() => expect(choice).not.toBeDisabled());
   });
 });

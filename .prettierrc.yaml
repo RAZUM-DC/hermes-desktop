@@ -1,0 +1,3 @@
+# Keep formatting checks stable across Windows (CRLF) and Unix (LF) checkouts.
+# Git still enforces LF for shell scripts through .gitattributes.
+endOfLine: auto

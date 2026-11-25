@@ -5,6 +5,17 @@ type RemoteRecord = Record<string, unknown>;
 const REMOTE_MODEL_OPTIONS_TIMEOUT_MS = 60_000;
 const REMOTE_MODEL_LIBRARY_TIMEOUT_MS = 20_000;
 
+function remoteModelLibraryPath(
+  config: RemoteSessionConfig,
+  modelId?: string,
+): string {
+  const suffix = modelId ? `/${encodeURIComponent(modelId)}` : "";
+  const profile = config.profile?.trim();
+  return profile
+    ? `/api/model/library${suffix}?profile=${encodeURIComponent(profile)}`
+    : `/api/model/library${suffix}`;
+}
+
 function asRecord(value: unknown): RemoteRecord {
   return value && typeof value === "object" ? (value as RemoteRecord) : {};
 }
@@ -83,9 +94,11 @@ async function remoteModelLibraryRows(
   config: RemoteSessionConfig,
 ): Promise<SavedModel[] | null> {
   try {
-    const response = await remoteRequestJson(config, "/api/model/library", {
-      timeoutMs: REMOTE_MODEL_LIBRARY_TIMEOUT_MS,
-    });
+    const response = await remoteRequestJson(
+      config,
+      remoteModelLibraryPath(config),
+      { timeoutMs: REMOTE_MODEL_LIBRARY_TIMEOUT_MS },
+    );
     const rows = asRecord(response).models;
     if (!Array.isArray(rows)) return [];
     return dedupeModels(
@@ -268,11 +281,15 @@ export async function remoteAddModel(
   model: string,
   baseUrl: string,
 ): Promise<SavedModel> {
-  const response = await remoteRequestJson(config, "/api/model/library", {
-    method: "POST",
-    body: { name, provider, model, baseUrl },
-    timeoutMs: REMOTE_MODEL_LIBRARY_TIMEOUT_MS,
-  });
+  const response = await remoteRequestJson(
+    config,
+    remoteModelLibraryPath(config),
+    {
+      method: "POST",
+      body: { name, provider, model, baseUrl },
+      timeoutMs: REMOTE_MODEL_LIBRARY_TIMEOUT_MS,
+    },
+  );
   const saved = normalizeRemoteSavedModel(response, 0);
   if (!saved) throw new Error("Remote Hermes returned an invalid model row.");
   return saved;
@@ -284,7 +301,7 @@ export async function remoteRemoveModel(
 ): Promise<boolean> {
   const response = await remoteRequestJson(
     config,
-    `/api/model/library/${encodeURIComponent(id)}`,
+    remoteModelLibraryPath(config, id),
     {
       method: "DELETE",
       timeoutMs: REMOTE_MODEL_LIBRARY_TIMEOUT_MS,
@@ -300,7 +317,7 @@ export async function remoteUpdateModel(
 ): Promise<boolean> {
   const response = await remoteRequestJson(
     config,
-    `/api/model/library/${encodeURIComponent(id)}`,
+    remoteModelLibraryPath(config, id),
     {
       method: "PATCH",
       body: fields,

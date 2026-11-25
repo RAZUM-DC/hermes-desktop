@@ -68,6 +68,10 @@ describe("expectedEnvKeyForModel — URL fallback for custom/auto providers", ()
     expect(
       expectedEnvKeyForModel("custom", "https://api.xiaomimimo.com/v1"),
     ).toBe("XIAOMI_API_KEY");
+    // @lat: [[provider-setup#Provider setup#Novita provider preset]]
+    expect(
+      expectedEnvKeyForModel("custom", "https://api.novita.ai/openai/v1"),
+    ).toBe("NOVITA_API_KEY");
   });
 
   it("recognizes a known endpoint when provider is 'auto'", () => {

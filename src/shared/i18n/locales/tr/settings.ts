@@ -12,6 +12,7 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "Görünüm",
+    startup: "Başlangıç",
     language: "Dil",
     privacy: "Gizlilik",
     connection: "Bağlantı",
@@ -201,4 +202,13 @@ export default {
   remoteErrorRequiredSimple: "Lütfen bir URL girin",
   remoteErrorFailedSimple: "Sunucuya ulaşılamadı",
   apiGenerated: "API anahtarı oluşturuldu — gateway yeniden başlatılıyor…",
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "Windows ile birlikte başlat",
+    hint: "Uygulama oturum açınca başlar ve sistem tepsisinde bekler.",
+    unsupported:
+      "Otomatik başlatma yalnızca derlenmiş uygulamada çalışır, kaynaktan çalıştırırken değil.",
+    trayNote:
+      "Bilerek simge durumunda başlar: aksi halde pencere her oturum açışta öne çıkardı. Dikte, ekran görüntüsü ve görev bildirimleri tepsiden çalışır.",
+  },
 } as const;

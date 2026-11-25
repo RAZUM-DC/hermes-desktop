@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "Ostatnie",
+  recentFoldersEmpty: "Brak ostatnich folderów",
+  openFolderAction: "Otwórz folder…",
+  showWebPreview: "Pokaż podgląd sieciowy",
+  hideWebPreview: "Ukryj podgląd sieciowy",
+  folderOutsideRoots:
+    "Ten folder jest poza Dokumentami, Pobranymi i Pulpitem — asystent go nie widzi.",
   title: "Nowy czat",
   sessionTitle: "Sesja {{id}}",
   noModel: "Nie ustawiono modelu",
   auto: "Auto",
   commandsTitle: "Polecenia",
   typeMessage: "Wpisz wiadomość... (Shift+Enter wstawia nową linię)",
+  dictationPending: "Rozpoznaję podyktowany tekst…",
   quickAskTitle:
     "Szybkie pytanie (/btw) — pytanie poboczne, które nie wpłynie na kontekst rozmowy",
   send: "Wyślij",
@@ -55,6 +63,7 @@ export default {
   categoryTools: "Narzędzia",
   categoryInfo: "Informacje",
   noUsageData: "Brak danych użycia. Najpierw wyślij wiadomość.",
+  showEarlierMessages: "Pokaż {{count}} wcześniejszych wiadomości",
   media: {
     open: "Otwórz",
     saveAs: "Zapisz jako…",

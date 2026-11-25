@@ -41,6 +41,11 @@ const EXT_BY_MIME: Record<string, string> = Object.fromEntries(
   Object.entries(MIME_BY_EXT).map(([ext, mime]) => [mime, ext]),
 );
 
+/** MIME type of an image the chat can render inline, or null for any other file. */
+export function imageMimeForPath(filePath: string): string | null {
+  return MIME_BY_EXT[extname(filePath).toLowerCase()] ?? null;
+}
+
 function sanitizeFilename(name: string): string {
   const cleaned = (name || "image")
     // eslint-disable-next-line no-control-regex -- intentionally strip control chars from filenames
@@ -153,22 +158,42 @@ export function mediaFileExists(filePath: string): boolean {
 }
 
 /**
- * Prompt the user for a destination and write `src` there. `src` may be a
- * `data:` URL, an http(s) URL, or a local filesystem path. Returns true on
- * success, false when canceled or on any error.
+ * A stable temp location for a remote file opened from the chat: the same
+ * source always maps to the same path, so reopening it reuses one file.
  */
-export async function saveMedia(
-  src: string,
+export function tempMediaPath(source: string, suggestedName: string): string {
+  mkdirSync(TEMP_MEDIA_DIR, { recursive: true });
+  cleanupTempMediaFiles({
+    maxAgeMs: TEMP_MEDIA_MAX_AGE_MS,
+    maxFiles: TEMP_MEDIA_MAX_FILES,
+  });
+  const hash = createHash("sha256").update(source).digest("hex");
+  return join(
+    TEMP_MEDIA_DIR,
+    `${hash.slice(0, 16)}-${sanitizeFilename(suggestedName)}`,
+  );
+}
+
+/** Ask the user where to save a file. Returns null when the dialog is cancelled. */
+export async function promptSaveDestination(
   suggestedName: string,
   win: BrowserWindow | null,
+): Promise<string | null> {
+  const result = win
+    ? await dialog.showSaveDialog(win, { defaultPath: suggestedName })
+    : await dialog.showSaveDialog({ defaultPath: suggestedName });
+  return result.canceled || !result.filePath ? null : result.filePath;
+}
+
+/**
+ * Write `src` to `dest`. `src` may be a `data:` URL, an http(s) URL, or a
+ * local filesystem path. Returns false on any error.
+ */
+export async function writeMediaToPath(
+  src: string,
+  dest: string,
 ): Promise<boolean> {
   try {
-    const result = win
-      ? await dialog.showSaveDialog(win, { defaultPath: suggestedName })
-      : await dialog.showSaveDialog({ defaultPath: suggestedName });
-    if (result.canceled || !result.filePath) return false;
-    const dest = result.filePath;
-
     if (src.startsWith("data:")) {
       const decoded = decodeDataUrl(src);
       if (!decoded) return false;
@@ -186,6 +211,24 @@ export async function saveMedia(
 
     copyFileSync(src, dest);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Prompt the user for a destination and write `src` there. Returns true on
+ * success, false when canceled or on any error.
+ */
+export async function saveMedia(
+  src: string,
+  suggestedName: string,
+  win: BrowserWindow | null,
+): Promise<boolean> {
+  try {
+    const dest = await promptSaveDestination(suggestedName, win);
+    if (!dest) return false;
+    return await writeMediaToPath(src, dest);
   } catch {
     return false;
   }

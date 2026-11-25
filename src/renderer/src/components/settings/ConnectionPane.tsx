@@ -1,4 +1,4 @@
-import { Laptop, Server, Terminal, Wifi } from "lucide-react";
+import { Wifi } from "lucide-react";
 import { useI18n } from "../useI18n";
 import { useSettings } from "./SettingsDataContext";
 import { CHAT_TRANSPORT_OPTIONS } from "./settingsHelpers";
@@ -14,10 +14,8 @@ export default function ConnectionPane(): React.JSX.Element {
   const {
     profile,
     connMode,
-    setConnMode,
     connStatus,
     setConnStatus,
-    connLoaded,
     connRemoteUrl,
     setConnRemoteUrl,
     connApiKey,
@@ -44,9 +42,6 @@ export default function ConnectionPane(): React.JSX.Element {
     handleSaveConnection,
     handleTestConnection,
     handleChatTransportChange,
-    handleSwitchToLocal,
-    handleSwitchToRemote,
-    handleSwitchToSsh,
     forceIpv4,
     setForceIpv4,
     httpProxy,
@@ -61,46 +56,22 @@ export default function ConnectionPane(): React.JSX.Element {
     <div className="settings-modal-pane">
       {connStatus && <div className="settings-pane-flash">{connStatus}</div>}
 
+      {/* Переключателя режимов здесь больше нет.
+
+          Сборка гибридная по устройству: companion стартует всегда и сам
+          переводит приложение в remote. Выбор из трёх вариантов оставался
+          от апстрима и только сбивал с толку — тем более что две трети его
+          и так пропадали, едва человек оказывался в гибриде (кнопки local и
+          ssh рисовались под условием connMode !== "remote", то есть обратной
+          дороги не было). Показываем режим как факт, а не как вопрос.
+
+          Код веток local и ssh при этом жив: он приходит из апстрима, с
+          которым мы продолжаем сливаться. Недостижимый код ничего не стоит
+          в работе, а удалённый стоил бы конфликта в каждом merge. */}
       <div className="settings-field">
         <label className="settings-field-label">
           {t("settings.connectionMode")}
         </label>
-        <div className="settings-theme-options">
-{connMode !== "remote" && (
-          <button
-            className={`settings-theme-option ${connMode === "local" ? "active" : ""}`}
-            onClick={() => {
-              setConnMode("local");
-              if (connLoaded.current) handleSwitchToLocal();
-            }}
-          >
-            <span className="settings-mode-option">
-              <Laptop size={15} />
-              {t("settings.modeLocal")}
-            </span>
-          </button>
-          )}
-          <button
-            className={`settings-theme-option ${connMode === "remote" ? "active" : ""}`}
-            onClick={() => void handleSwitchToRemote()}
-          >
-            <span className="settings-mode-option">
-              <Server size={15} />
-              {t("settings.modeRemote")}
-            </span>
-          </button>
-{connMode !== "remote" && (
-          <button
-            className={`settings-theme-option ${connMode === "ssh" ? "active" : ""}`}
-            onClick={() => void handleSwitchToSsh()}
-          >
-            <span className="settings-mode-option">
-              <Terminal size={15} />
-              {t("settings.modeSsh")}
-            </span>
-          </button>
-          )}
-        </div>
         <div className="settings-field-hint">
           {connMode === "local"
             ? t("settings.modeLocalHint")
@@ -188,7 +159,9 @@ export default function ConnectionPane(): React.JSX.Element {
             </div>
           </div>
           <div className="settings-field">
-            <label className="settings-field-label">Chat transport</label>
+            <label className="settings-field-label">
+              {t("settings.chatTransport.label")}
+            </label>
             <div className="settings-theme-options">
               {CHAT_TRANSPORT_OPTIONS.map((option) => (
                 <button
@@ -201,21 +174,21 @@ export default function ConnectionPane(): React.JSX.Element {
                     void handleChatTransportChange("remote", option)
                   }
                 >
-                  {option[0].toUpperCase() + option.slice(1)}
+                  {t(`settings.chatTransport.options.${option}`)}
                 </button>
               ))}
             </div>
             <div className="settings-field-hint">
-              Auto tries the Hermes dashboard WebSocket first, then falls back
-              to the legacy remote API. Dashboard requires the remote Hermes
-              dashboard URL and a valid dashboard session token.
+              {t("settings.chatTransport.remoteHint")}
             </div>
             {transportProbe && (
               <div
                 className={`settings-transport-status settings-transport-status--${transportProbe.kind}`}
               >
                 <span>{transportProbe.label}</span>
-                {transportProbe.loading && <span>Checking…</span>}
+                {transportProbe.loading && (
+                  <span>{t("settings.chatTransport.checking")}</span>
+                )}
                 {transportProbe.detail && <code>{transportProbe.detail}</code>}
               </div>
             )}
@@ -311,7 +284,9 @@ export default function ConnectionPane(): React.JSX.Element {
             </div>
           </div>
           <div className="settings-field">
-            <label className="settings-field-label">Chat transport</label>
+            <label className="settings-field-label">
+              {t("settings.chatTransport.label")}
+            </label>
             <div className="settings-theme-options">
               {CHAT_TRANSPORT_OPTIONS.map((option) => (
                 <button
@@ -322,21 +297,21 @@ export default function ConnectionPane(): React.JSX.Element {
                   }`}
                   onClick={() => void handleChatTransportChange("ssh", option)}
                 >
-                  {option[0].toUpperCase() + option.slice(1)}
+                  {t(`settings.chatTransport.options.${option}`)}
                 </button>
               ))}
             </div>
             <div className="settings-field-hint">
-              Auto tries the Hermes dashboard WebSocket through the SSH tunnel
-              first, then falls back to legacy SSH chat. Dashboard forces the
-              upstream dashboard path; Legacy keeps the older SSH transport.
+              {t("settings.chatTransport.sshHint")}
             </div>
             {transportProbe && (
               <div
                 className={`settings-transport-status settings-transport-status--${transportProbe.kind}`}
               >
                 <span>{transportProbe.label}</span>
-                {transportProbe.loading && <span>Checking…</span>}
+                {transportProbe.loading && (
+                  <span>{t("settings.chatTransport.checking")}</span>
+                )}
                 {transportProbe.detail && <code>{transportProbe.detail}</code>}
               </div>
             )}

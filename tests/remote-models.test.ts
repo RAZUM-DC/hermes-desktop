@@ -37,6 +37,23 @@ afterEach(async () => {
 });
 
 describe("remote dashboard models", () => {
+  // @lat: [[model-context#Model context window#Dashboard default profile isolation]]
+  it("sends an explicit default profile when reading the model library", async () => {
+    const { url } = await startServer((req, res) => {
+      expect(req.url).toBe("/api/model/library?profile=default");
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ models: [] }));
+    });
+
+    await expect(
+      remoteListModels({
+        remoteUrl: url,
+        apiKey: "token",
+        profile: "default",
+      }),
+    ).resolves.toEqual([]);
+  });
+
   it("reads configured rows from /api/model/library", async () => {
     const { url } = await startServer((req, res) => {
       expect(req.headers["x-hermes-session-token"]).toBe("token");

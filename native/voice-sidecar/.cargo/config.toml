@@ -1,0 +1,11 @@
+# Cross-compiling to Windows with llvm-mingw.
+#
+# `-static` is not optional: without it the binary imports libunwind.dll from
+# the llvm-mingw toolchain, which does not exist on a normal Windows machine,
+# so the process dies at load time with no output at all. Linking the unwinder
+# and the C++ runtime statically keeps the sidecar a single self-contained exe
+# (only system DLLs imported), exactly like companion.exe.
+[target.x86_64-pc-windows-gnullvm]
+linker = "x86_64-w64-mingw32-clang"
+ar = "x86_64-w64-mingw32-ar"
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-args=-static"]

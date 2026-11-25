@@ -1,6 +1,7 @@
 export default {
   title: "Обзор",
-  subtitle: "Просматривайте навыки, MCP-серверы, агентов и сценарии сообщества.",
+  subtitle:
+    "Просматривайте навыки, MCP-серверы, агентов и сценарии сообщества.",
   tabs: {
     skills: "Навыки",
     mcps: "MCP",
@@ -22,8 +23,16 @@ export default {
   install_other: "Установить",
   targetProfile: "Устанавливается в активный профиль",
   actions: {
-    install: { setup: "Установить", working: "Установка...", done: "Установлено" },
-    connect: { setup: "Подключить", working: "Подключение...", done: "Подключено" },
+    install: {
+      setup: "Установить",
+      working: "Установка...",
+      done: "Установлено",
+    },
+    connect: {
+      setup: "Подключить",
+      working: "Подключение...",
+      done: "Подключено",
+    },
     create: { setup: "Создать", working: "Создание...", done: "Создано" },
   },
   installedSegment: "Установленные",

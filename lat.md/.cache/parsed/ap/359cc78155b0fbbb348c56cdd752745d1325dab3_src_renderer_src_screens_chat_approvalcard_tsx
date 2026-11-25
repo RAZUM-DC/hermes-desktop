@@ -1,0 +1,2 @@
+v6:6726845ce3ffea9a313814bec4c573ecb56804c7
+{"path":"src/renderer/src/screens/Chat/ApprovalCard.tsx","symbols":[{"name":"ApprovalCardProps","kind":"interface","startLine":9,"endLine":14,"signature":"interface ApprovalCardProps {"},{"name":"ApprovalCard","kind":"const","startLine":16,"endLine":143,"signature":"const ApprovalCard = memo(function ApprovalCard({"}],"timings":{"readMs":0.14978599999994913,"hashMs":0.020212000000128683,"cacheReadMs":0.08142399999996996,"cacheStatus":"miss","cacheWriteMs":0,"parseMs":1.1785680000000411}}

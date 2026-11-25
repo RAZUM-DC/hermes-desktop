@@ -41,3 +41,14 @@ release/
 /*.bat
 /*.ps1
 .mcp.json
+
+# Сборочные каталоги и диагностический мусор (десятки ГБ, не коммитим)
+installer-build/
+portable-diagnostic-build/
+build-artifacts/
+.builder-cache/
+/*-portable.zip
+mic-log*.txt
+electron.vite.config.*.mjs
+# Папка, которую передаём на тестирование: архив сборки и сертификат.
+для-коллеги/

@@ -41,6 +41,7 @@ export default {
   fireworks: "Fireworks",
   cerebras: "Cerebras",
   atlascloud: "AtlasCloud",
+  novita: "NovitaAI",
   mistral: "Mistral",
   // Theme
   themeSystem: "Системная",
@@ -92,6 +93,8 @@ export default {
   cerebrasHint: "Сверхбыстрый инференс на оборудовании Cerebras",
   atlascloudApiKey: "API-ключ AtlasCloud",
   atlascloudHint: "Claude, GPT и открытые модели через AtlasCloud",
+  novitaApiKey: "API-ключ Novita",
+  novitaHint: "Модели, размещённые на платформе Novita",
   mistralApiKey: "API-ключ Mistral",
   mistralHint: "Модели Mistral и Codestral",
   perplexityApiKey: "API-ключ Perplexity",
@@ -131,7 +134,7 @@ export default {
   // Auxiliary tasks
   auxiliaryTitle: "Вспомогательные задачи",
   auxiliaryDescription:
-    'Вспомогательные задачи обрабатывают побочные операции: зрение, сжатие и веб-извлечение. «auto» означает «использовать основную модель». Переопределяйте по задачам, когда для конкретной операции нужна дешёвая/быстрая модель.',
+    "Вспомогательные задачи обрабатывают побочные операции: зрение, сжатие и веб-извлечение. «auto» означает «использовать основную модель». Переопределяйте по задачам, когда для конкретной операции нужна дешёвая/быстрая модель.",
   auxiliaryResetAll: "Сбросить всё на auto",
   auxiliaryVision: "Зрение",
   auxiliaryVisionHint: "анализ изображений/скриншотов",

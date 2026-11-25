@@ -155,15 +155,87 @@ describe("processFiles", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it("blocks path-ref attachments in remote mode", async () => {
+  it("uploads binary attachments to the agent's server in remote mode", async () => {
+    const upload = vi.fn(async () => ({
+      ok: true as const,
+      path: "/workspace/uploads/file-abc__report.pdf",
+    }));
+    (window as unknown as { hermesAPI: Record<string, unknown> }).hermesAPI = {
+      getPathForFile: vi.fn(() => "C:/Users/me/Downloads/report.pdf"),
+      stageAttachment: vi.fn(),
+      uploadRemoteAttachment: upload,
+    };
+    const file = makeFile("report.pdf", "application/pdf", "%PDF-1.4");
+    const out = await processFiles([file], 0, { remoteMode: true });
+    expect(out.errors).toEqual([]);
+    expect(out.attachments).toHaveLength(1);
+    expect(out.attachments[0]).toMatchObject({
+      kind: "path-ref",
+      name: "report.pdf",
+      mime: "application/pdf",
+      path: "/workspace/uploads/file-abc__report.pdf",
+    });
+    // bytes go up as base64 of the file contents, never the local path
+    expect(upload).toHaveBeenCalledWith(
+      "report.pdf",
+      btoa("%PDF-1.4"),
+      "application/pdf",
+    );
+  });
+
+  it("keeps the local-mode refusal when the gateway has no upload (SSH)", async () => {
+    (window as unknown as { hermesAPI: Record<string, unknown> }).hermesAPI = {
+      getPathForFile: vi.fn(() => ""),
+      stageAttachment: vi.fn(),
+      uploadRemoteAttachment: vi.fn(async () => ({
+        ok: false as const,
+        reason: "unsupported" as const,
+      })),
+    };
     const file = makeFile("report.pdf", "application/pdf", "%PDF-1.4");
     const out = await processFiles([file], 0, { remoteMode: true });
     expect(out.attachments).toEqual([]);
-    expect(out.errors).toHaveLength(1);
-    expect(out.errors[0]).toEqual({
-      code: "remote-mode-binary",
-      filename: "report.pdf",
-    });
+    expect(out.errors).toEqual([
+      { code: "remote-mode-binary", filename: "report.pdf" },
+    ]);
+  });
+
+  it("reports too-large and failed uploads in remote mode", async () => {
+    const upload = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, reason: "too-large" })
+      .mockResolvedValueOnce({
+        ok: false,
+        reason: "failed",
+        detail: "HTTP 502",
+      });
+    (window as unknown as { hermesAPI: Record<string, unknown> }).hermesAPI = {
+      getPathForFile: vi.fn(() => ""),
+      stageAttachment: vi.fn(),
+      uploadRemoteAttachment: upload,
+    };
+    const out = await processFiles(
+      [
+        makeFile("big.docx", "application/octet-stream", "x"),
+        makeFile("a.xlsx", "application/octet-stream", "y"),
+      ],
+      0,
+      { remoteMode: true },
+    );
+    expect(out.attachments).toEqual([]);
+    expect(out.errors).toEqual([
+      { code: "upload-too-large", filename: "big.docx" },
+      { code: "upload-failed", filename: "a.xlsx", detail: "HTTP 502" },
+    ]);
+  });
+
+  it("falls back to the refusal when the upload bridge is missing", async () => {
+    const file = makeFile("report.pdf", "application/pdf", "%PDF-1.4");
+    const out = await processFiles([file], 0, { remoteMode: true });
+    expect(out.attachments).toEqual([]);
+    expect(out.errors).toEqual([
+      { code: "remote-mode-binary", filename: "report.pdf" },
+    ]);
   });
 
   it("rejects a text file over the size limit", async () => {

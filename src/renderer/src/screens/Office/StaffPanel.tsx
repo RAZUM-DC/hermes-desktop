@@ -19,7 +19,15 @@ type Task = {
   latest_summary?: string;
 };
 
-const api = () => window.hermesAPI as unknown as {
+const api = (): {
+  listStaffAgents: () => Promise<{ success: boolean; data?: unknown; error?: string }>;
+  agentKanbanRequest: (
+    rid: string,
+    method: string,
+    path: string,
+    body?: unknown,
+  ) => Promise<{ success: boolean; data?: unknown; error?: string }>;
+} => window.hermesAPI as unknown as {
   listStaffAgents: () => Promise<{ success: boolean; data?: unknown; error?: string }>;
   agentKanbanRequest: (
     rid: string,

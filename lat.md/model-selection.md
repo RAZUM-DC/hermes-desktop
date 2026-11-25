@@ -4,6 +4,8 @@ The in-chat (bottom) model picker selects a model for the **current conversation
 
 The override is held in renderer state on each `<Chat>` run ([[src/renderer/src/screens/Chat/Chat.tsx]]), persisted by session id, and sent with every message; it is cleared when the conversation is cleared/reset and is absent on a fresh chat, so new conversations start on the global default. This is distinct from the persisted [[model-context]] default that non-chat surfaces read.
 
+Pre-send readiness uses the same active override. [[src/renderer/src/screens/Chat/Chat.tsx#Chat]] passes the current picker `{provider, model, baseUrl}` into [[src/main/validation.ts#validateChatReadiness]], so a session-scoped pick is not blocked by an empty global default.
+
 ## Full identity, not just the model name
 
 The override is a `SessionModelOverride` (`{provider, model, baseUrl}`), not a bare model string — because switching across providers must change routing, not only the `model` field.
@@ -27,3 +29,17 @@ The upstream desktop model applies the session switch on the active gateway sess
 Attachment turns must not be forced through the CLI override fallback because the CLI path cannot carry multimodal input.
 
 [[src/main/hermes.ts#sendMessageViaCli]] can inline text-file attachments but ignores images, while the gateway/API path preserves image parts and path refs through [[src/main/hermes.ts#buildUserContent]]. When a session override is active and the user sends attachments, [[src/main/hermes.ts#shouldForceCliForSessionOverride]] leaves the turn eligible for the dashboard/gateway or API transport instead of silently dropping media.
+
+## Readiness follows chat routing
+
+Pre-send validation uses the chat's effective model and current connection mode, avoiding false failures from unrelated local defaults or credentials.
+
+[[src/main/validation.ts#validateChatReadiness]] treats a nonempty picker choice as a complete model identity. An empty picker falls back to the selected local profile only in Local mode. Remote and SSH validation never reads local model defaults, environment keys, or OAuth credentials because the remote host owns them.
+
+### Picker identity and empty selections
+
+A selected model replaces the local default as one routing identity instead of inheriting another provider's endpoint. An empty local selection continues to use the selected profile's persisted model.
+
+### Remote credential boundary
+
+Remote and SSH model selections remain usable without matching secrets on the desktop. A known remote selection still must include a model, but its API key is validated by the remote runtime.

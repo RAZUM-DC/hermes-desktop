@@ -1,4 +1,8 @@
 export default {
+  signingInTitle: "サインインしています",
+  signingInHint:
+    "サインイン画面がブラウザーで開きます。完了するとアプリが自動で続行します。",
+  signInAgain: "もう一度サインイン",
   title: "Hermes へようこそ",
   subtitle:
     "あなたのマシンでローカル実行する自己進化型 AI アシスタント。プライベートで、強力で、常に学習します。",

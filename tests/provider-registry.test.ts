@@ -31,6 +31,9 @@ describe("provider-registry", () => {
       expect(canonicalProviderBaseUrl("cerebras")).toBe(
         "https://api.cerebras.ai/v1",
       );
+      expect(canonicalProviderBaseUrl("novita")).toBe(
+        "https://api.novita.ai/openai/v1",
+      );
     });
 
     it("returns the canonical URL for the Big3 (openai / anthropic / openrouter)", () => {
@@ -97,6 +100,7 @@ describe("provider-registry", () => {
         "together",
         "fireworks",
         "cerebras",
+        "novita",
         "mistral",
         "xiaomi",
         "ollama-cloud",

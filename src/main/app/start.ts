@@ -12,6 +12,8 @@ import {
 import { join, resolve } from "path";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import icon from "../../../resources/icon.png?asset";
+import trayTemplate from "../../../resources/trayTemplate.png?asset";
+import trayTemplate2x from "../../../resources/trayTemplate@2x.png?asset";
 import { getPublicConnectionConfig } from "../config";
 import { stopHealthPolling } from "../hermes";
 import { stopAllDashboards } from "../dashboard";
@@ -28,6 +30,8 @@ import { registerIpcHandlers } from "../ipc/register";
 import { setGatewayPromptParent } from "../gatewayPrompt";
 import { showChatContextMenu } from "./context-menu";
 import { buildMenu } from "./menu";
+import { attachWindowHotkeys } from "./window-hotkeys";
+import { initAutostartDefault, shouldStartHidden } from "../autostart";
 import { setupUpdater } from "./updater";
 import { startCompanion, stopCompanion } from "../companion";
 import {
@@ -40,9 +44,12 @@ import {
   parseDeepLink,
   pickDeepLinkFromArgv,
 } from "../deep-link";
+import { warmVoiceDaemon, stopVoiceDaemon } from "../voice-sidecar";
+import { destroyVoiceDictation, setupVoiceDictation } from "./voice-overlay";
 import { startStaffWatcher, stopStaffWatcher } from "../staff-watcher";
 
-const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "РАЗУМ Ассистент";
+const APP_NAME =
+  process.env.HERMES_DESKTOP_APP_NAME?.trim() || "РАЗУМ Ассистент";
 const OPEN_DEVTOOLS_ON_START =
   process.env.HERMES_OPEN_DEVTOOLS === "1" ||
   process.env.HERMES_DESKTOP_OPEN_DEVTOOLS === "1";
@@ -50,6 +57,14 @@ const OPEN_DEVTOOLS_ON_START =
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+/**
+ * Старт из автозагрузки: окно не показываем, приложение ждёт в трее.
+ *
+ * Считается один раз здесь, а не при каждом обращении: после того как человек
+ * сам открыл окно, аргумент командной строки уже ничего не значит, и повторная
+ * проверка прятала бы окно там, где его просили показать.
+ */
+const startHidden = shouldStartHidden(process.argv);
 const QUICK_CALL_SHORTCUT =
   process.env.HERMES_DESKTOP_HOTKEY?.trim() || "Control+Shift+Space";
 const activeRuns = new Map<string, () => void>();
@@ -81,7 +96,8 @@ function registerProtocolClient(): void {
       argv: process.argv,
       resolvePath: resolve,
     });
-    if (reg) app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL, reg.path, reg.args);
+    if (reg)
+      app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL, reg.path, reg.args);
     else app.setAsDefaultProtocolClient(DEEP_LINK_PROTOCOL);
   } catch (err) {
     console.warn("[DEEP-LINK] Failed to register protocol client", err);
@@ -159,6 +175,11 @@ export function startMainProcess(): void {
     // Передаём доступ к mainWindow, чтобы in-app OAuth-окно открывалось как
     // дочернее (parent) при state=enrolling.
     startCompanion(() => mainWindow);
+    // Резидентный сайдкар распознавания речи: модель грузится один раз здесь,
+    // а не при каждой записи. Для кнопки в чате это просто приятно, для
+    // диктовки по горячей клавише — обязательно: там ожидание пришлось бы на
+    // момент, когда человек уже договорил. Best-effort, старт не блокирует.
+    warmVoiceDaemon();
 
     app.on("browser-window-created", (_, window) => {
       optimizer.watchWindowShortcuts(window);
@@ -201,9 +222,17 @@ export function startMainProcess(): void {
     createWindow();
     buildMenu({ getMainWindow: () => mainWindow, openExternalUrl });
     createTray();
+    // Автозапуск включается сам при первом запуске: приложение резидентное, и
+    // искать для этого галочку человек не должен. Дальше решает он — отметка
+    // о первом запуске не даёт нам вернуть снятую галочку.
+    initAutostartDefault();
     // Фоновые уведомления по доске «ИИ-сотрудники» (Фаза B).
     startStaffWatcher(() => mainWindow);
     registerQuickCallShortcut();
+    setupVoiceDictation({
+      showMainWindow,
+      getMainWindow: () => mainWindow,
+    });
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -220,6 +249,8 @@ export function startMainProcess(): void {
     tray?.destroy();
     tray = null;
     stopCompanion();
+    stopVoiceDaemon();
+    destroyVoiceDictation();
     stopStaffWatcher();
     stopHealthPolling();
     for (const abort of activeRuns.values()) abort();
@@ -261,11 +292,30 @@ function showMainWindow(): void {
   mainWindow.focus();
 }
 
+/**
+ * macOS: иконка строки меню — монохромный шаблон 18 pt (+@2x), система сама
+ * красит её под светлую/тёмную тему. Цветная иконка приложения 1024×1024
+ * растягивала элемент строки меню на пол-экрана (BUG-086).
+ */
+export function macTrayImage(): Electron.NativeImage {
+  const img = nativeImage.createFromPath(trayTemplate);
+  const hi = nativeImage.createFromPath(trayTemplate2x);
+  if (!hi.isEmpty()) {
+    img.addRepresentation({ scaleFactor: 2, buffer: hi.toPNG() });
+  }
+  img.setTemplateImage(true);
+  return img;
+}
+
 function createTray(): void {
   if (tray) return;
   try {
-    const img = nativeImage.createFromPath(icon);
-    tray = new Tray(img.isEmpty() ? icon : img);
+    if (process.platform === "darwin") {
+      tray = new Tray(macTrayImage());
+    } else {
+      const img = nativeImage.createFromPath(icon);
+      tray = new Tray(img.isEmpty() ? icon : img);
+    }
   } catch {
     tray = new Tray(icon);
   }
@@ -313,7 +363,11 @@ function createWindow(): void {
     ...(process.platform === "darwin"
       ? { trafficLightPosition: { x: 16, y: 16 } }
       : {}),
-    ...(process.platform === "linux" ? { icon } : {}),
+    // Явная иконка окна для всех платформ, кроме macOS (там её даёт бандл).
+    // На Windows панель задач обычно берёт иконку из ресурсов самого .exe, но
+    // прошить их может только rcedit под Windows/wine — на Linux-сборщике этот
+    // шаг отключён, и без явной иконки окно получает логотип Electron.
+    ...(process.platform === "darwin" ? {} : { icon }),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       nodeIntegration: false,
@@ -325,9 +379,18 @@ function createWindow(): void {
     },
   });
 
-  mainWindow.on("ready-to-show", () => mainWindow?.show());
+  attachWindowHotkeys(mainWindow);
+
+  mainWindow.on("ready-to-show", () => {
+    // При скрытом старте окно остаётся незагруженным ровно до первого
+    // показа — это и нужно: companion, горячие клавиши и наблюдатель доски
+    // поднимаются отдельно от окна и работают без него.
+    if (!startHidden) mainWindow?.show();
+  });
   // A (re)load drops the renderer's subscription; it re-announces itself.
-  mainWindow.webContents.on("did-start-loading", () => deepLinks.markNotReady());
+  mainWindow.webContents.on("did-start-loading", () =>
+    deepLinks.markNotReady(),
+  );
   // Свернуть в трей вместо выхода: окно живёт в трее, quick-call хоткей
   // мгновенно его возвращает. Реальный выход — через меню трея / before-quit.
   mainWindow.on("close", (event) => {
@@ -346,7 +409,14 @@ function createWindow(): void {
   setGatewayPromptParent(() => mainWindow);
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
-    console.error("[CRASH] Renderer process gone:", details.reason, details.exitCode);
+    // A crashed renderer is no longer subscribed: buffer links until it is
+    // reloaded and announces itself again, instead of sending into the void.
+    deepLinks.markNotReady();
+    console.error(
+      "[CRASH] Renderer process gone:",
+      details.reason,
+      details.exitCode,
+    );
   });
   mainWindow.webContents.on("console-message", (details) => {
     // Electron ≥35 passes a single event object (level is now a string);
@@ -358,27 +428,40 @@ function createWindow(): void {
       );
     }
   });
-  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
-    console.error("[LOAD FAIL]", errorCode, errorDescription);
-  });
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription) => {
+      console.error("[LOAD FAIL]", errorCode, errorDescription);
+    },
+  );
   mainWindow.webContents.setWindowOpenHandler((details) => {
     openExternalUrl(details.url);
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (isAllowedAppNavigationUrl(url, rendererHtmlPath, is.dev ? process.env["ELECTRON_RENDERER_URL"] : undefined)) return;
+    if (
+      isAllowedAppNavigationUrl(
+        url,
+        rendererHtmlPath,
+        is.dev ? process.env["ELECTRON_RENDERER_URL"] : undefined,
+      )
+    )
+      return;
     event.preventDefault();
     openExternalUrl(url);
   });
-  mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
-    const isWebPreview = params.partition === "web-preview";
-    if (!isAllowedWebviewUrl(params.src, isWebPreview)) {
-      event.preventDefault();
-      console.warn("[SECURITY] Blocked webview attachment for untrusted URL");
-      return;
-    }
-    hardenWebviewPreferences(webPreferences);
-  });
+  mainWindow.webContents.on(
+    "will-attach-webview",
+    (event, webPreferences, params) => {
+      const isWebPreview = params.partition === "web-preview";
+      if (!isAllowedWebviewUrl(params.src, isWebPreview)) {
+        event.preventDefault();
+        console.warn("[SECURITY] Blocked webview attachment for untrusted URL");
+        return;
+      }
+      hardenWebviewPreferences(webPreferences);
+    },
+  );
   mainWindow.webContents.on("context-menu", (_event, params) => {
     showChatContextMenu(mainWindow, params);
   });

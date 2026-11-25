@@ -5,7 +5,9 @@ import { useI18n } from "../../components/useI18n";
 interface ContextFolderChipProps {
   /** Working folder bound to this conversation (issue #27), or null. */
   contextFolder: string | null;
-  /** Hidden in remote/SSH mode, where the picker browses the wrong machine. */
+  /** Reserved switch for hiding the chip; the picker now opens the OS dialog
+   *  in every mode, so there is no longer a mode where it browses the wrong
+   *  machine. */
   show: boolean;
   worktreeVisible: boolean;
   onPickFolder: () => void;
@@ -58,7 +60,10 @@ export const ContextFolderChip = memo(function ContextFolderChip({
   useEffect(() => {
     if (!isOpen) return;
     function handleClickOutside(e: MouseEvent): void {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false);
       }
     }
@@ -80,10 +85,14 @@ export const ContextFolderChip = memo(function ContextFolderChip({
 
   const renderDropdown = (): React.JSX.Element => (
     <div className="chat-ctxfolder-dropdown">
-      <div className="chat-ctxfolder-dropdown-header">Recent</div>
+      <div className="chat-ctxfolder-dropdown-header">
+        {t("chat.recentFoldersTitle")}
+      </div>
       <div className="chat-ctxfolder-dropdown-list">
         {recentFolders.length === 0 ? (
-          <div className="chat-ctxfolder-dropdown-empty">No recent folders</div>
+          <div className="chat-ctxfolder-dropdown-empty">
+            {t("chat.recentFoldersEmpty")}
+          </div>
         ) : (
           recentFolders.map((path) => {
             const isSelected = path === contextFolder;
@@ -100,9 +109,14 @@ export const ContextFolderChip = memo(function ContextFolderChip({
                 }}
                 title={path}
               >
-                <span className="chat-ctxfolder-dropdown-item-name">{folderName(path)}</span>
+                <span className="chat-ctxfolder-dropdown-item-name">
+                  {folderName(path)}
+                </span>
                 {isSelected && (
-                  <Check size={14} className="chat-ctxfolder-dropdown-item-check" />
+                  <Check
+                    size={14}
+                    className="chat-ctxfolder-dropdown-item-check"
+                  />
                 )}
               </button>
             );
@@ -118,7 +132,7 @@ export const ContextFolderChip = memo(function ContextFolderChip({
           onPickFolder();
         }}
       >
-        <span>Open folder...</span>
+        <span>{t("chat.openFolderAction")}</span>
       </button>
     </div>
   );

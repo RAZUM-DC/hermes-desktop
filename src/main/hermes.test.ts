@@ -49,6 +49,7 @@ vi.mock("child_process", () => {
 });
 
 import { spawn } from "child_process";
+import { readModels } from "./models";
 import {
   getApiServerKey,
   getConnectionConfig,
@@ -58,12 +59,17 @@ import {
 import type { ConnectionConfig } from "./config";
 import { providerListSafe } from "./secrets";
 import {
+  bindPendingApproval,
+  clearAllPendingApprovals,
+  registerPendingApproval,
+  resolvePendingApproval,
   sendMessage,
   shouldForceCliForSessionOverride,
   stopHealthPolling,
   transcribeAudio,
 } from "./hermes";
 import type { ChatCallbacks } from "./hermes";
+import { normalizeApprovalRequest } from "../shared/chat-approval";
 
 const mockedGetModelConfig = vi.mocked(getModelConfig);
 const mockedGetApiServerKey = vi.mocked(getApiServerKey);
@@ -71,6 +77,119 @@ const mockedGetConnectionConfig = vi.mocked(getConnectionConfig);
 const mockedReadEnv = vi.mocked(readEnv);
 const mockedProviderListSafe = vi.mocked(providerListSafe);
 const mockedSpawn = vi.mocked(spawn);
+
+describe("chat approval normalization", () => {
+  it("preserves an explicit safe choice subset and always includes deny", () => {
+    expect(
+      normalizeApprovalRequest(
+        {
+          command: "rm -rf build",
+          reason: "recursive delete",
+          choices: ["session", "bogus", "session"],
+        },
+        "opaque-id",
+      ),
+    ).toEqual({
+      requestId: "opaque-id",
+      command: "rm -rf build",
+      description: "recursive delete",
+      choices: ["session", "deny"],
+    });
+  });
+
+  it("does not expose permanent approval when the payload forbids it", () => {
+    expect(
+      normalizeApprovalRequest(
+        {
+          cmd: "chmod 777 file",
+          choices: ["once", "always"],
+          allow_permanent: false,
+        },
+        "opaque-id",
+      ).choices,
+    ).toEqual(["once", "deny"]);
+  });
+});
+
+describe("pending chat approvals", () => {
+  afterEach(() => clearAllPendingApprovals());
+
+  it("validates offered choices and removes only an acknowledged response", async () => {
+    const responder = vi
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const requestId = registerPendingApproval(["once", "deny"], responder);
+
+    await expect(resolvePendingApproval(requestId, "always")).resolves.toBe(
+      false,
+    );
+    await expect(resolvePendingApproval(requestId, "once")).resolves.toBe(
+      false,
+    );
+    await expect(resolvePendingApproval(requestId, "deny")).resolves.toBe(true);
+    await expect(resolvePendingApproval(requestId, "deny")).resolves.toBe(
+      false,
+    );
+    expect(responder).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a duplicate response while acknowledgement is in flight", async () => {
+    let acknowledge!: (value: boolean) => void;
+    const responder = vi.fn(
+      () => new Promise<boolean>((resolve) => (acknowledge = resolve)),
+    );
+    const requestId = registerPendingApproval(["once"], responder);
+    const first = resolvePendingApproval(requestId, "once");
+
+    await expect(resolvePendingApproval(requestId, "once")).resolves.toBe(
+      false,
+    );
+    acknowledge(true);
+    await expect(first).resolves.toBe(true);
+    expect(responder).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not report success after a pending request is cleared", async () => {
+    let acknowledge!: (value: boolean) => void;
+    const requestId = registerPendingApproval(
+      ["once"],
+      () => new Promise<boolean>((resolve) => (acknowledge = resolve)),
+    );
+    const response = resolvePendingApproval(requestId, "once");
+
+    clearAllPendingApprovals();
+    acknowledge(true);
+    await expect(response).resolves.toBe(false);
+  });
+
+  it("scopes an approval response to its renderer and run", async () => {
+    const responder = vi.fn().mockResolvedValue(true);
+    const requestId = registerPendingApproval(["deny"], responder);
+    expect(bindPendingApproval(requestId, { ownerId: 7, runId: "run-1" })).toBe(
+      true,
+    );
+
+    await expect(
+      resolvePendingApproval(requestId, "deny", {
+        ownerId: 8,
+        runId: "run-1",
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      resolvePendingApproval(requestId, "deny", {
+        ownerId: 7,
+        runId: "run-2",
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      resolvePendingApproval(requestId, "deny", {
+        ownerId: 7,
+        runId: "run-1",
+      }),
+    ).resolves.toBe(true);
+  });
+});
 
 function testConnection(
   fields: Partial<ConnectionConfig> = {},
@@ -207,6 +326,7 @@ describe("sendMessage session model override routing", () => {
   }
 
   beforeEach(() => {
+    vi.mocked(readModels).mockReset().mockReturnValue([]);
     mockedGetApiServerKey.mockReset();
     mockedGetApiServerKey.mockReturnValue("");
     mockedGetConnectionConfig.mockReset();
@@ -235,6 +355,56 @@ describe("sendMessage session model override routing", () => {
   afterEach(() => {
     stopHealthPolling();
   });
+
+  // @lat: [[provider-setup#Provider setup#Custom provider credential readiness#Runtime parity]]
+  it.each(["env", "vault"])(
+    "passes a saved custom provider's %s key to the CLI for equivalent URLs",
+    async (source) => {
+      const key = "CUSTOM_PROVIDER_TEST_LABEL_KEY";
+      vi.mocked(readModels).mockReturnValue([
+        {
+          id: "first",
+          name: "No key",
+          provider: "custom",
+          model: "test",
+          baseUrl: "https://example.com/Api",
+          createdAt: 1,
+        },
+        {
+          id: "test",
+          name: "Test Label",
+          provider: "custom",
+          model: "test",
+          baseUrl: "https://EXAMPLE.com:443/Api/",
+          createdAt: 1,
+        },
+      ]);
+      if (source === "env") {
+        mockedReadEnv.mockReturnValue({ [key]: "profile-secret" });
+      } else {
+        mockedProviderListSafe.mockReturnValue({ [key]: "profile-secret" });
+      }
+
+      await sendMessage(
+        "hello",
+        noopCallbacks,
+        "default",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          provider: "custom",
+          model: "test",
+          baseUrl: "https://example.com/Api",
+        },
+      );
+
+      const options = mockedSpawn.mock.calls[0][2];
+      expect(options?.env?.OPENAI_API_KEY).toBe("profile-secret");
+      expect(options?.env?.OPENAI_BASE_URL).toBe("https://example.com/Api");
+    },
+  );
 
   // @lat: [[model-selection#Session model override#Text-only legacy fallback routes via CLI]]
   it("routes a cross-provider override through the CLI with its provider + model", async () => {

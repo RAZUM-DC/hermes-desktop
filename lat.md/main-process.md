@@ -38,7 +38,7 @@ Release builds keep a Help-menu Developer Tools toggle as a production diagnosti
 
 The `razum-assistant://session/<id>` link opens one Hermes session and does nothing else.
 
-[[src/main/deep-link.ts#parseDeepLink]] whitelists host `session` and an id of `[A-Za-z0-9_-]{1,128}`; [[src/main/deep-link.ts#pickDeepLinkFromArgv]] extracts it from Windows/Linux argv and `second-instance`, macOS uses `open-url`. [[src/main/deep-link.ts#createDeepLinkDispatcher]] buffers the latest link until the renderer's Layout subscribes via `deep-link-renderer-ready`, then sends `deep-link-open-session` with the bare id. See `docs/deep-link.md`.
+[[src/main/deep-link.ts#parseDeepLink]] whitelists host `session` and an id of `[A-Za-z0-9_-]{1,128}`; [[src/main/deep-link.ts#pickDeepLinkFromArgv]] extracts it from Windows/Linux argv and `second-instance`, macOS uses `open-url`. [[src/main/deep-link.ts#createDeepLinkDispatcher]] buffers the latest link until the renderer's Layout subscribes via `deep-link-renderer-ready`, then sends `deep-link-open-session` with the bare id; a reload or a renderer crash puts it back into buffering. In Layout the most recent resume request wins, so an older session load finishing late cannot override the linked one. See `docs/deep-link.md`.
 
 ## IPC Registry
 
@@ -46,10 +46,58 @@ Renderer IPC handlers are isolated from app bootstrap so the registry can be spl
 
 [[src/main/ipc/register.ts#registerIpcHandlers]] currently preserves the existing handler behavior behind one registration function. It receives app-level callbacks for the main window, model-library notifications, connection-config notifications, external URL opening, and active chat abort handles.
 
+The preload contract test also scans updater and voice-overlay registrations, which startup initializes separately. It checks both directions so missing main handlers and unexposed preload channels remain failures.
+
 Wallet and token-balance handlers sit in the same registry: `list-wallets`, `create-wallet`, `import-wallet`, `rename-wallet`, `delete-wallet` (backed by [[wallet-token-balances#Wallet Store]]) and `get-token-balances` (backed by [[wallet-token-balances#Token Balances]]).
+
+## Dotted configuration lookup
+
+Configuration reads follow direct mapping children so a nested feature setting cannot masquerade as a root or parent-level option.
+
+[[src/main/yaml-path.ts#getYamlPath]] walks each dotted segment within its parent block, pins the first segment to column zero, and stops at parent boundaries. Scalar parents cannot be traversed, matching the Agent's nested dictionary lookup semantics for the supported YAML subset.
+
+### Root and parent boundaries
+
+A flat key resolves only at column zero; dotted paths cannot use an indented root or escape their selected parent block.
+
+### Scalar parents
+
+A path through scalar text or an inline collection returns null instead of interpreting later indented text as mapping children.
+
+### Nested siblings
+
+Deep lookups skip unrelated sibling subtrees and comments, support consistent nondefault indentation, and cannot resolve a leaf outside the selected parent.
 
 ## Voice transcription IPC
 
 Speech-to-text IPC sends recorded desktop audio through the Hermes API server, not through the active chat model endpoint.
 
 [[src/main/ipc/register.ts#registerIpcHandlers]] exposes `transcribe-audio` for the preload bridge, and [[src/main/hermes.ts#transcribeAudio]] posts a base64 data URL to `/api/audio/transcribe`. If the local gateway lacks that desktop route, it falls back to the Python `tools.transcription_tools.transcribe_audio` dispatcher, so local Whisper, Groq, OpenAI, ElevenLabs, and command/plugin STT providers remain independent from the selected chat model.
+
+## SSH credential persistence
+
+Every RAZUM Desktop SSH `.env` update runs as a remote locked transaction, so overlapping provider and messaging writes preserve unrelated credentials.
+
+[[src/main/ssh-remote.ts#sshSetEnvValue]] sends all mutations through [[src/main/ssh-env-update.ts#REMOTE_ENV_UPDATE_SCRIPT]]. The remote helper locks a stable sibling `.env.lock`, reads the latest file only after acquiring the lock, and replaces it atomically through a same-directory temporary file.
+
+Paths, keys, and values travel as JSON on standard input rather than credential-bearing shell arguments. Existing line endings, unrelated lines, ownership, permissions, ACLs, extended attributes, security labels, and symlink targets are preserved. A new `.env` is created with mode `0600`; unsafe metadata or filesystem failures abort the replacement.
+
+This lock coordinates Desktop writers across processes and connections. Manual tools and Hermes Agent do not use the Desktop lock, so they should not edit the same `.env` concurrently with a Desktop save.
+
+### Concurrent writers
+
+Independent Desktop updates wait for the same remote lock and each read the newest committed file before modifying one key.
+
+### Profile routing and secret transport
+
+The default and named profiles resolve to separate `.env` paths, while every secret stays in the SSH process's standard input and out of its command arguments.
+
+### Failure preservation
+
+Read, validation, fsync, metadata, and replacement failures leave the original credential file unchanged, clean temporary files, and propagate an error to the caller.
+
+## Remote File Delivery
+
+Files the agent produced on a remote Hermes server are fetched through the dashboard's managed-files API, because `/api/media` only serves images from the gateway's own media folders.
+
+[[src/main/remote-files.ts#remoteDownloadFile]] streams `/api/files/download` into `<dest>.part` and renames it only after the whole body arrived, so a dropped connection never leaves a truncated document under the name the user chose. [[src/main/remote-files.ts#remoteFileExists]] probes with a one-byte range request, and [[src/main/remote-files.ts#remoteReadFile]] reads small images into memory for inline display. The save, open and exists handlers in [[src/main/ipc/register.ts]] try this machine's disk first, then this route, then `/api/media` for older servers, and show an error dialog instead of failing silently. The server hands over only files under its managed-files root, which a deployment sets with `HERMES_DASHBOARD_FILES_ROOT`.

@@ -4,6 +4,12 @@ The first-run screen where the user picks an AI provider and enters credentials 
 
 The provider list is data-driven from `PROVIDERS.setup` in [[src/renderer/src/constants.ts]]. Each entry carries an `envKey`, `configProvider`, `baseUrl`, and `needsKey`; selecting a card drives which form fields show (API key, or the Local server/base-URL flow).
 
+## Setup profile credentials
+
+Setup saves credentials and model configuration to the profile returned by the successful install check, keeping named profiles isolated from the default workspace.
+
+The local first-run gate is profile-aware: `checkInstall` decides whether setup is needed for the active profile, so [[src/renderer/src/App.tsx#App]] passes that profile into [[src/renderer/src/screens/Setup/Setup.tsx#Setup]]. Setup writes `.env` and `config.yaml` to the same profile. A generation guard ensures that only the latest completed install check may select the setup profile.
+
 ## Top grid mirrors the agent's native providers
 
 The top provider grid shows only providers the upstream agent supports natively; generic OpenAI-compatible endpoints live in the Local presets instead.
@@ -47,3 +53,57 @@ Each card's logo is resolved by [[src/renderer/src/components/common/BrandLogo.t
 `detectBrand` matches the provider/model string to a `BrandKey`, and `matchTheme` flattens every logo to a single white/black tint so colored and `currentColor` SVGs render uniformly in the grid's logo tiles.
 
 The Local/Remote preset chips are also branded: each renders the same `BrandLogo` (by preset id) to the left of its name in a row. `llama.cpp` is mapped off the Meta logo to the generic API mark (the `/llama/` substring would otherwise tag it, and Ollama, as Meta); any preset without a bundled logo falls back to the generic mark.
+
+## MiniMax OAuth discovery fallback
+
+When live OAuth discovery is unavailable, MiniMax keeps a usable model list aligned with Hermes Agent's curated OAuth choices.
+
+[[src/main/model-discovery.ts#discoverProviderModels]] falls back to `MiniMax-M3`, `MiniMax-M2.7`, and `MiniMax-M2.7-highspeed` if the Python query fails. Regression coverage preserves all three entries; successful live discovery still takes precedence.
+
+## Novita provider preset
+
+Novita is available as a remote OpenAI-compatible preset, with a dedicated API-key field and the same endpoint used by Hermes Agent.
+
+The desktop stores the model as `custom` at `https://api.novita.ai/openai/v1`. Setup, the configured-provider picker, installer readiness, and runtime key lookup use `NOVITA_API_KEY`; provider branding identifies the endpoint as NovitaAI. The shared URL mapping is covered alongside the other supported commercial endpoints.
+
+## Auxiliary credential ownership
+
+Auxiliary credentials belong to the selected provider and endpoint. Switching either clears stale task-level secrets and pointers; model-only changes preserve them.
+
+[[src/main/auxiliary-config.ts#setAuxiliaryTask]] clears `api_key`, `key_env`, `api_key_env`, legacy `api`, and `api_mode` when the provider or normalized endpoint changes, or routing returns to `auto`. RAZUM keeps this logic independent of upstream's Hermes One named-provider registry.
+
+[[src/main/auxiliary-config.ts#resetAuxiliaryToAuto]] clears the same overrides for every task. The text editor changes only direct task fields, preserving nested `extra_body`, other tasks, comments, and line endings; unsupported flow mappings fail before writing.
+
+### Provider and endpoint changes
+
+Switching providers or changing an endpoint removes prior credential aliases and transport overrides so they cannot leak into the next route.
+
+### Model-only changes
+
+Changing the model under the same effective provider and endpoint preserves task-specific credentials and transport settings. Omitted versus explicit native default URLs resolve to the same route.
+
+### Reset persistence
+
+Resetting to the main model persists `auto` routing without stale task-level credentials, while leaving unrelated settings intact after reload.
+
+### YAML field boundaries
+
+Routing updates and credential removal address direct task children only, preserving nested options, comments, empty task maps, multiline values, and CRLF line endings.
+
+## Custom provider credential readiness
+
+Saved RAZUM custom providers use their model-library name and normalized base URL as the credential identity, without requiring the upstream Hermes One provider registry.
+
+The shared [[src/shared/url-key-map.ts#customProviderEnvKey]] transform maps the saved name to `CUSTOM_PROVIDER_<NAME>_KEY`. Endpoint comparison normalizes scheme and host case, default ports, and trailing slashes while preserving path and query case.
+
+### Readiness and profile isolation
+
+Readiness checks accept a per-name key only when a saved `custom` model matches the active endpoint and the selected profile owns the credential.
+
+The credential may come from the profile environment or its resolved secret provider. A named profile never borrows the default profile's key.
+
+[[src/main/models.ts#readModelsRaw]] resolves the model-store path at call time so the config-to-models import cycle cannot access `HERMES_HOME` before installer initialization finishes.
+
+### Runtime parity
+
+CLI launch applies the same endpoint match, skips matching saved rows whose per-name key is empty, and continues until it finds a usable key in the selected profile environment or enumerated secret provider.

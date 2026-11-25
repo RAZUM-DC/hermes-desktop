@@ -1,4 +1,8 @@
 export default {
+  signingInTitle: "Iniciando sesión",
+  signingInHint:
+    "La página de acceso se abre en el navegador. La app continuará sola al terminar.",
+  signInAgain: "Iniciar sesión de nuevo",
   title: "Bienvenido a Hermes",
   subtitle:
     "Tu asistente de IA autoevolutivo que se ejecuta localmente en tu equipo. Privado, potente y siempre aprendiendo.",

@@ -1,0 +1,2 @@
+v6:85f4b75e79187ea76228519e726eb7ed869ad165
+{"path":"src/renderer/src/components/settings/useSettingsData.ts","symbols":[{"name":"useSettingsData","kind":"function","startLine":29,"endLine":809,"signature":"function useSettingsData(profile?: string) {"},{"name":"SettingsData","kind":"type","startLine":811,"endLine":811,"signature":"type SettingsData = ReturnType<typeof useSettingsData>;"}],"timings":{"readMs":0.21810099999993326,"hashMs":0.055899999999837746,"cacheReadMs":0.08326499999998305,"cacheStatus":"miss","cacheWriteMs":0,"parseMs":16.31653499999993}}

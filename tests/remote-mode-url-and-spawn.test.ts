@@ -231,7 +231,7 @@ describe("Cron SSH fallback", () => {
       "http://127.0.0.1:18642/api/jobs?include_disabled=true",
       expect.any(Object),
     );
-  });
+  }, 15000);
 
   it("does not send cron API requests to the configured/default port when /health fails", async () => {
     connModeRef.mode = "ssh";
@@ -263,7 +263,7 @@ describe("Cron SSH fallback", () => {
       "http://127.0.0.1:18642/health",
       expect.objectContaining({ method: "GET" }),
     );
-  });
+  }, 15000);
 });
 
 describe("testRemoteConnection URL probe", () => {

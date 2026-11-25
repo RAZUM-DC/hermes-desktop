@@ -1,17 +1,34 @@
-import { memo } from "react";
+import { memo, useEffect, useRef } from "react";
 import { Spinner, X, Plus } from "../../assets/icons";
+import type { LucideIcon } from "lucide-react";
 import { useI18n } from "../../components/useI18n";
 import ProfileAvatar from "../../components/common/ProfileAvatar";
 import { defaultColorForName } from "../../../../shared/profileColors";
 import type { ChatRun } from "./chatRuns";
+import { canScroll, scrollToReveal, wheelScrollDelta } from "./tabStripScroll";
 
 export interface ProfileAppearance {
   color?: string | null;
   avatar?: string | null;
 }
 
+/** Открытый раздел — «Заметки», «Канбан» и прочее, что не диалог. */
+export interface SectionTab {
+  view: string;
+  icon: LucideIcon;
+  labelKey: string;
+}
+
 /**
- * The window's top strip. Doubles as the title-bar drag region (browser-style):
+ * The window's top strip.
+ *
+ * Здесь же живут вкладки разделов — «Заметки», «Канбан», «Офис» и прочее.
+ * Раньше в полосе были только диалоги, а разделы открывались из боковой
+ * панели и нигде не отмечались: уйдя из «Канбана» в чат, человек терял
+ * единственный признак того, что «Канбан» вообще открыт, и возвращался в него
+ * той же дорогой, что и в первый раз. Теперь открытый раздел остаётся
+ * вкладкой, пока его не закроют, — ровно как диалог.
+ * Doubles as the title-bar drag region (browser-style):
  * the strip itself is draggable, while the conversation chips on top of it stay
  * clickable. When several sessions are open (background sessions / multi-agent)
  * it shows a chip per session to switch between them and watch each stream live.
@@ -25,6 +42,10 @@ export const ActiveSessionsBar = memo(function ActiveSessionsBar({
   onClose,
   onNew,
   getAppearance,
+  sections = [],
+  activeView = "chat",
+  onSelectSection,
+  onCloseSection,
 }: {
   runs: ChatRun[];
   activeRunId: string;
@@ -35,19 +56,78 @@ export const ActiveSessionsBar = memo(function ActiveSessionsBar({
   onNew: () => void;
   /** Resolve a profile's avatar/colour for its chip. */
   getAppearance?: (profile: string) => ProfileAppearance;
+  /** Разделы, открытые сейчас, в порядке открытия. */
+  sections?: SectionTab[];
+  /** Что на экране. Диалог подсвечен только когда открыта вкладка чата. */
+  activeView?: string;
+  onSelectSection?: (view: string) => void;
+  onCloseSection?: (view: string) => void;
 }): React.JSX.Element {
   const { t } = useI18n();
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // Колесо мыши прокручивает полосу вбок, как в браузере.
+  //
+  // Слушатель вешается вручную и непассивным: React раздаёт события колеса
+  // пассивно, а тогда preventDefault не работает и страница под полосой
+  // уезжает вместе с ней.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const onWheel = (event: WheelEvent): void => {
+      if (!canScroll(strip.scrollWidth, strip.clientWidth)) return;
+      const delta = wheelScrollDelta(
+        event.deltaY,
+        event.deltaX,
+        event.deltaMode,
+      );
+      if (!delta) return;
+      event.preventDefault();
+      strip.scrollLeft += delta;
+    };
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Выбранная вкладка подтягивается в видимую часть. Без этого переключение
+  // стрелками уводило бы на вкладку за краем полосы: диалог меняется, а на
+  // экране ничего не происходит.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const tab = strip?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!strip || !tab) return;
+    const to = scrollToReveal(
+      tab.offsetLeft,
+      tab.offsetWidth,
+      strip.scrollLeft,
+      strip.clientWidth,
+    );
+    if (to === null) return;
+    // scrollTo есть не везде (его, например, нет в тестовой среде), а
+    // прокрутить надо в любом случае: без плавности, но до конца.
+    if (typeof strip.scrollTo === "function") {
+      strip.scrollTo({ left: to, behavior: "smooth" });
+    } else {
+      strip.scrollLeft = to;
+    }
+  }, [activeRunId, activeView, runs.length, sections.length]);
 
   const anyLoading = runs.some((r) => r.loading);
   const hasRealSession = runs.some((r) => r.sessionId || r.title);
   // Nothing real to switch to yet → leave the strip empty (pure drag area).
-  const showChips = runs.length > 1 || anyLoading || hasRealSession;
+  // Открытый раздел — такой же повод показать полосу, как настоящий диалог.
+  const showChips =
+    runs.length > 1 || anyLoading || hasRealSession || sections.length > 0;
+  const chatOnScreen = activeView === "chat";
 
   return (
-    <div className="active-sessions-bar" role="tablist">
+    <div className="active-sessions-bar" role="tablist" ref={stripRef}>
       {showChips &&
         runs.map((run) => {
-          const active = run.runId === activeRunId;
+          // Диалог активен только когда и вкладка чата на экране: иначе
+          // подсветка говорила бы, что человек смотрит в чат, стоя в
+          // «Заметках».
+          const active = chatOnScreen && run.runId === activeRunId;
           const label = run.title || t("sessions.newConversation");
           const appearance = getAppearance?.(run.profile);
           const color = appearance?.color || defaultColorForName(run.profile);
@@ -94,6 +174,37 @@ export const ActiveSessionsBar = memo(function ActiveSessionsBar({
             </div>
           );
         })}
+      {sections.map(({ view, icon: Icon, labelKey }) => {
+        const active = activeView === view;
+        const label = t(labelKey);
+        return (
+          <div
+            key={view}
+            role="tab"
+            aria-selected={active}
+            className={`active-session-chip section-chip ${active ? "active" : ""}`}
+            onClick={() => onSelectSection?.(view)}
+            title={label}
+          >
+            <span className="active-session-chip-avatar section-chip-icon">
+              <Icon size={13} />
+            </span>
+            <span className="active-session-chip-title">{label}</span>
+            <button
+              type="button"
+              className="active-session-chip-close"
+              title={t("sessions.closeTab")}
+              aria-label={t("sessions.closeTab")}
+              onClick={(e) => {
+                e.stopPropagation();
+                onCloseSection?.(view);
+              }}
+            >
+              <X size={12} />
+            </button>
+          </div>
+        );
+      })}
       {showChips && (
         <button
           type="button"

@@ -1,18 +1,18 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  Folder,
-  Loader,
-  X,
-} from "lucide-react";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+/**
+ * Обозреватель каталогов удалённой машины.
+ *
+ * Сейчас не используется. Выбор рабочей папки во всех режимах открывает
+ * системный диалог: в гибриде осмысленная рабочая папка — на компьютере
+ * человека, а серверный каталог внутри контейнера эфемерный и стирается
+ * сразу после задачи.
+ *
+ * Файл оставлен намеренно. Он рабочий для режима ssh и пригодится, если на
+ * сервере появится обзор каталогов (сейчас у дашборда есть только файловое
+ * хранилище /v1/files, листинга директорий нет). Удалять его — значит потом
+ * писать заново.
+ */
+import { ChevronLeft, ChevronRight, Folder, Loader, X } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../components/useI18n";
 
 interface FileEntry {
@@ -74,23 +74,26 @@ export const RemoteFolderPicker = memo(function RemoteFolderPicker({
     [entries],
   );
 
-  const loadPath = useCallback(async (path: string) => {
-    const nextPath = path.trim() || "/";
-    setCurrentPath(nextPath);
-    setPathInput(nextPath);
-    setActiveIndex(0);
-    setLoading(true);
-    setError(null);
+  const loadPath = useCallback(
+    async (path: string) => {
+      const nextPath = path.trim() || "/";
+      setCurrentPath(nextPath);
+      setPathInput(nextPath);
+      setActiveIndex(0);
+      setLoading(true);
+      setError(null);
 
-    const result = await window.hermesAPI.readDirectory(nextPath);
-    if (result === null) {
-      setEntries([]);
-      setError(t("chat.folderPicker.unavailable"));
-    } else {
-      setEntries(result);
-    }
-    setLoading(false);
-  }, [t]);
+      const result = await window.hermesAPI.readDirectory(nextPath);
+      if (result === null) {
+        setEntries([]);
+        setError(t("chat.folderPicker.unavailable"));
+      } else {
+        setEntries(result);
+      }
+      setLoading(false);
+    },
+    [t],
+  );
 
   useEffect(() => {
     if (!open) return;

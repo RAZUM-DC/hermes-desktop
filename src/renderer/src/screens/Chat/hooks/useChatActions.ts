@@ -141,6 +141,11 @@ export function useChatActions({
   const pushUser = useCallback(
     (content: string, idPrefix = "user", attachments?: Attachment[]) => {
       const turn = createTurn(idPrefix);
+      console.log(
+        "[ATT] user bubble:",
+        attachments?.length ?? 0,
+        "attachment(s)",
+      );
       setMessages((prev) => [
         ...prev,
         {
@@ -403,9 +408,25 @@ export function useChatActions({
     abortDashboard?.();
     window.hermesAPI.abortChat(runId);
     activeTurnRef.current = null;
+    setMessages((current) =>
+      current.map((message) =>
+        message.kind === "approval" &&
+        message.responsePath === "ipc" &&
+        !message.resolved
+          ? { ...message, unavailable: true }
+          : message,
+      ),
+    );
     setIsLoading(false);
     setTimeout(() => chatInputRef.current?.focus(), 50);
-  }, [abortDashboard, runId, activeTurnRef, chatInputRef, setIsLoading]);
+  }, [
+    abortDashboard,
+    runId,
+    activeTurnRef,
+    chatInputRef,
+    setIsLoading,
+    setMessages,
+  ]);
 
   const handleApprove = useCallback(() => {
     chatInputRef.current?.clear();

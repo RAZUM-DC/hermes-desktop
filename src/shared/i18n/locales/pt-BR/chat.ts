@@ -1,10 +1,18 @@
 export default {
+  recentFoldersTitle: "Recentes",
+  recentFoldersEmpty: "Nenhuma pasta recente",
+  openFolderAction: "Abrir pasta…",
+  showWebPreview: "Mostrar visualização web",
+  hideWebPreview: "Ocultar visualização web",
+  folderOutsideRoots:
+    "Esta pasta está fora de Documentos, Downloads e Área de Trabalho — o assistente não a vê.",
   title: "Novo Chat",
   sessionTitle: "Sessão {{id}}",
   noModel: "Nenhum modelo definido",
   auto: "Auto",
   commandsTitle: "Comandos",
   typeMessage: "Digite uma mensagem... (Shift+Enter para nova linha)",
+  dictationPending: "Transcrevendo seu ditado…",
   quickAskTitle:
     "Pergunta Rápida (/btw) — pergunta lateral que não afetará o contexto da conversa",
   send: "Enviar",
@@ -51,6 +59,7 @@ export default {
   categoryTools: "Ferramentas",
   categoryInfo: "Informação",
   noUsageData: "Nenhum dado de uso ainda. Envie uma mensagem primeiro.",
+  showEarlierMessages: "Mostrar {{count}} mensagens anteriores",
   media: {
     open: "Abrir",
     saveAs: "Salvar como…",

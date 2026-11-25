@@ -16,7 +16,9 @@ export interface AttachmentError {
     | "text-too-large"
     | "unsupported-type"
     | "read-failed"
-    | "remote-mode-binary";
+    | "remote-mode-binary"
+    | "upload-too-large"
+    | "upload-failed";
   filename: string;
   detail?: string;
 }
@@ -27,7 +29,8 @@ export interface ProcessFilesOptions {
   sessionId?: string;
   // True when the chat is running against a non-local gateway (SSH or
   // remote-URL mode).  Path-ref attachments require the file path to
-  // exist on the same host as the agent, so binaries are blocked.
+  // exist on the same host as the agent, so binaries are uploaded to the
+  // agent's server first (Remote Gateway) or blocked (SSH).
   remoteMode?: boolean;
 }
 
@@ -324,6 +327,45 @@ export interface ProcessFilesResult {
 }
 
 /**
+ * Upload one binary attachment to the agent's server (Remote Gateway mode)
+ * via the main process.  Returns the path the agent sees the file under, or
+ * the error to show on the chip row.
+ * @lat: [[remote-attachments#Upload instead of refusal]]
+ */
+async function uploadToAgentServer(
+  file: File,
+  name: string,
+  mime: string,
+): Promise<{ path: string } | { error: AttachmentError }> {
+  const api = window.hermesAPI;
+  if (typeof api?.uploadRemoteAttachment !== "function") {
+    return { error: { code: "remote-mode-binary", filename: name } };
+  }
+  try {
+    const base64 = await readAsBase64(file);
+    const res = await api.uploadRemoteAttachment(name, base64, mime);
+    if (res.ok) return { path: res.path };
+    if (res.reason === "unsupported") {
+      return { error: { code: "remote-mode-binary", filename: name } };
+    }
+    if (res.reason === "too-large") {
+      return { error: { code: "upload-too-large", filename: name } };
+    }
+    return {
+      error: { code: "upload-failed", filename: name, detail: res.detail },
+    };
+  } catch (err) {
+    return {
+      error: {
+        code: "upload-failed",
+        filename: name,
+        detail: err instanceof Error ? err.message : String(err),
+      },
+    };
+  }
+}
+
+/**
  * Convert browser File objects into Attachment values.
  *
  * Routing rules:
@@ -334,7 +376,9 @@ export interface ProcessFilesResult {
  *   - Everything else → `path-ref` attachment carrying the file's
  *     absolute path.  Picker / drag-drop expose the path via
  *     `webUtils.getPathForFile`; clipboard-pasted blobs have no origin
- *     path and are staged to disk via the main process.
+ *     path and are staged to disk via the main process.  In remote mode
+ *     the bytes are uploaded to the agent's server instead and the
+ *     path-ref carries the server-side path.
  */
 export async function processFiles(
   files: File[] | FileList,
@@ -448,7 +492,22 @@ export async function processFiles(
     // read via its own file tools.  Requires a filesystem path that's
     // valid on the agent's host.
     if (options.remoteMode) {
-      errors.push({ code: "remote-mode-binary", filename: name });
+      // The agent lives on a server: upload the bytes there and hand the
+      // agent the server-side path.  SSH mode has no upload endpoint and
+      // keeps the old refusal.
+      const remote = await uploadToAgentServer(file, name, mime);
+      if ("error" in remote) {
+        errors.push(remote.error);
+      } else {
+        attachments.push({
+          id: newId(),
+          kind: "path-ref",
+          name,
+          mime: mime || "application/octet-stream",
+          size: file.size,
+          path: remote.path,
+        });
+      }
       continue;
     }
 

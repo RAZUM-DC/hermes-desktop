@@ -8,7 +8,7 @@ import {
   dialog,
   clipboard,
 } from "electron";
-import { extname } from "path";
+import { extname, join } from "path";
 import { randomUUID } from "crypto";
 import { readdir, readFile, stat } from "fs/promises";
 import type { Attachment } from "../../shared/attachments";
@@ -19,7 +19,9 @@ import type {
   DesktopSessionLocalError,
 } from "../../shared/session-continuation";
 import { stageAttachment, clearStagedAttachments } from "../attachment-staging";
+import { uploadRemoteAttachment } from "../remote-upload";
 import { persistPromptImageAttachments } from "../session-attachment-store";
+import { markAutoTitled, wasAutoTitled } from "../auto-title-store";
 import {
   discoverProviderModels,
   getModelContextWindow,
@@ -38,10 +40,14 @@ import {
   setSessionModelOverride,
 } from "../session-model-override-store";
 import {
+  imageMimeForPath,
   materializeDataUrlToTemp,
+  promptSaveDestination,
   readMediaAsDataUrl,
   saveMedia,
   mediaFileExists,
+  tempMediaPath,
+  writeMediaToPath,
 } from "../media";
 import { openTerminalInDirectory } from "../terminal-launcher";
 import {
@@ -84,6 +90,24 @@ import {
   detectDeviceCode,
 } from "../hermes-auth";
 import { writeReenrollFlag } from "../companion";
+import { listMemoryFacts } from "../memory-bank";
+import {
+  attachBytes,
+  attachFiles,
+  attachmentBytes,
+  attachmentDataUrl,
+  attachmentPath,
+  deleteNote,
+  listNotes,
+  removeAttachment,
+  saveNote,
+} from "../notes-store";
+import type { NoteInput } from "../notes-store";
+import {
+  isAutostartEnabled,
+  isAutostartSupported,
+  setAutostart,
+} from "../autostart";
 import {
   isRemoteMode,
   isRemoteOnlyMode,
@@ -99,8 +123,20 @@ import {
   ensureSshTunnelIfNeeded,
   setSshRemoteApiKey,
   getRemoteAuthHeader,
+  bindPendingApproval,
   resolvePendingClarify,
+  resolvePendingApproval,
 } from "../hermes";
+import { captureRegion, captureScreen, ScreenshotError } from "../screenshot";
+import type { ScreenshotResponse } from "../../shared/screenshot";
+import {
+  cancelLocalRecording,
+  isVoiceSidecarAvailable,
+  partialLocalTranscript,
+  startLocalRecording,
+  stopLocalRecording,
+  transcribeAudioLocally,
+} from "../voice-sidecar";
 import {
   getDashboardStatus,
   startDashboard,
@@ -185,6 +221,13 @@ import {
   type RemoteSessionConfig,
 } from "../remote-sessions";
 import {
+  remoteDownloadFile,
+  remoteFileExists,
+  remoteReadFile,
+  type RemoteFileFailure,
+} from "../remote-files";
+import { t as translate } from "../../shared/i18n";
+import {
   remoteGetHermesHome,
   remoteGetHermesVersion,
 } from "../remote-metadata";
@@ -230,6 +273,7 @@ import {
 } from "../wallet-store";
 import { getTokenBalances } from "../wallet-balances";
 import type { ImportWalletInput } from "../../shared/wallets";
+import { getActiveProfileNameSync } from "../utils";
 import {
   readMemory,
   addMemoryEntry,
@@ -305,6 +349,16 @@ import {
 } from "../kanban";
 import { getAppLocale, setAppLocale } from "../locale";
 import {
+  browsersToRemind,
+  detectBrowserExtension,
+  EXTENSION_STORE_URL,
+  openExtensionStore,
+  readReminderPrefs,
+  snoozedPrefs,
+  writeReminderPrefs,
+  type BrowserId,
+} from "../browser-extension";
+import {
   sshListInstalledSkills,
   sshGetSkillContent,
   sshInstallSkill,
@@ -368,6 +422,17 @@ const APP_NAME = process.env.HERMES_DESKTOP_APP_NAME?.trim() || "Hermes One";
 
 type RemoteSessionBridgeConfig = RemoteSessionConfig;
 
+function activeSessionProfile(profile?: string): string {
+  return profile?.trim() || getActiveProfileNameSync();
+}
+
+function scopedRemoteSessionConfig(
+  conn: ConnectionConfig,
+  profile?: string,
+): RemoteSessionConfig {
+  return { ...conn, profile: activeSessionProfile(profile) };
+}
+
 async function getSshDashboardSessionConfig(
   conn: ConnectionConfig,
   profile?: string,
@@ -386,7 +451,7 @@ async function getSshDashboardSessionConfig(
       "SSH dashboard sessions need a configured dashboard token or API_SERVER_KEY on the remote Hermes host.",
     );
   setSshRemoteApiKey(apiKey);
-  return { remoteUrl, apiKey };
+  return { remoteUrl, apiKey, profile };
 }
 
 async function withSshDashboardSessions<T>(
@@ -469,13 +534,60 @@ async function getActiveDashboardMediaConfig(): Promise<RemoteSessionBridgeConfi
   return null;
 }
 
+/** Inline images are read whole into memory; anything larger is offered as a download instead. */
+const REMOTE_INLINE_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
+const REMOTE_FILE_PROBE_TTL_MS = { found: 60_000, missing: 10_000 };
+const REMOTE_FILE_PROBE_CACHE_LIMIT = 500;
+const remoteFileProbeCache = new Map<
+  string,
+  { exists: boolean; expires: number }
+>();
+
+/**
+ * Extensions the OS would run rather than display. A file fetched from the
+ * server is never handed to the shell with one of these — it can only be saved.
+ */
+const UNSAFE_TO_OPEN_EXTENSIONS = new Set([
+  ".bat",
+  ".cmd",
+  ".com",
+  ".exe",
+  ".hta",
+  ".jar",
+  ".js",
+  ".jse",
+  ".lnk",
+  ".msi",
+  ".ps1",
+  ".reg",
+  ".scr",
+  ".vbs",
+  ".wsf",
+]);
+
+function isDirectMediaSource(src: string): boolean {
+  return src.startsWith("data:") || /^https?:\/\//i.test(src);
+}
+
 async function readMediaForCurrentConnection(
   filePath: string,
 ): Promise<string | null> {
   const local = readMediaAsDataUrl(filePath);
   if (local) return local;
   const remote = await getActiveDashboardMediaConfig();
-  return remote ? remoteReadMediaAsDataUrl(remote, filePath) : null;
+  if (!remote) return null;
+  const viaMedia = await remoteReadMediaAsDataUrl(remote, filePath);
+  if (viaMedia) return viaMedia;
+  // /api/media only serves the gateway's own media folders; an image the agent
+  // saved next to its other results comes through the managed-files API.
+  const mime = imageMimeForPath(filePath);
+  if (!mime) return null;
+  const buffer = await remoteReadFile(
+    remote,
+    filePath,
+    REMOTE_INLINE_IMAGE_MAX_BYTES,
+  );
+  return buffer ? `data:${mime};base64,${buffer.toString("base64")}` : null;
 }
 
 async function mediaFileExistsForCurrentConnection(
@@ -484,12 +596,135 @@ async function mediaFileExistsForCurrentConnection(
   if (mediaFileExists(filePath)) return true;
   const remote = await getActiveDashboardMediaConfig();
   if (!remote) return false;
-  return (await remoteReadMediaAsDataUrl(remote, filePath)) !== null;
+  // A chat row asks again every time it is mounted, and the transcript is
+  // re-read often; remember the answer briefly instead of probing each time.
+  const key = `${remote.remoteUrl}\n${filePath}`;
+  const cached = remoteFileProbeCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.exists;
+  const exists =
+    (await remoteFileExists(remote, filePath)) ||
+    (await remoteReadMediaAsDataUrl(remote, filePath)) !== null;
+  if (remoteFileProbeCache.size >= REMOTE_FILE_PROBE_CACHE_LIMIT) {
+    remoteFileProbeCache.clear();
+  }
+  remoteFileProbeCache.set(key, {
+    exists,
+    expires:
+      Date.now() +
+      (exists
+        ? REMOTE_FILE_PROBE_TTL_MS.found
+        : REMOTE_FILE_PROBE_TTL_MS.missing),
+  });
+  return exists;
 }
 
-async function resolveMediaForSave(src: string): Promise<string> {
-  if (src.startsWith("data:") || /^https?:\/\//i.test(src)) return src;
-  return (await readMediaForCurrentConnection(src)) ?? src;
+/** Tell the user why a file from the server could not be fetched, instead of failing silently. */
+function reportRemoteFileFailure(
+  win: BrowserWindow | null,
+  name: string,
+  failure: RemoteFileFailure,
+): void {
+  const locale = getAppLocale();
+  const reason =
+    failure.status === 403
+      ? translate("chat.media.downloadForbidden", locale)
+      : failure.status === 404
+        ? translate("chat.media.downloadNotFound", locale)
+        : failure.status === null
+          ? translate("chat.media.downloadInterrupted", locale)
+          : "";
+  const technical =
+    failure.status === null
+      ? failure.message
+      : `${failure.message} (HTTP ${failure.status})`.trim();
+  const options = {
+    type: "error" as const,
+    message: translate("chat.media.downloadFailed", locale, { name }),
+    detail: [reason, technical].filter(Boolean).join("\n"),
+  };
+  void (win
+    ? dialog.showMessageBox(win, options)
+    : dialog.showMessageBox(options));
+}
+
+/**
+ * Save a media source to a place the user picks. Data URLs, web URLs and files
+ * on this machine go the direct way; a path that only exists on the remote
+ * Hermes server is streamed down through the managed-files API.
+ */
+async function saveMediaForCurrentConnection(
+  src: string,
+  name: string,
+  win: BrowserWindow | null,
+): Promise<boolean> {
+  if (isDirectMediaSource(src) || mediaFileExists(src)) {
+    return saveMedia(src, name, win);
+  }
+  const remote = await getActiveDashboardMediaConfig();
+  if (!remote) return saveMedia(src, name, win);
+
+  let dest: string | null;
+  try {
+    dest = await promptSaveDestination(name, win);
+  } catch {
+    return false;
+  }
+  if (!dest) return false;
+
+  const result = await remoteDownloadFile(remote, src, dest);
+  if (result.ok) return true;
+  // Older servers, and images kept in the gateway's media folders, are only
+  // reachable through /api/media.
+  const dataUrl = await remoteReadMediaAsDataUrl(remote, src);
+  if (dataUrl && (await writeMediaToPath(dataUrl, dest))) return true;
+  reportRemoteFileFailure(win, name, result);
+  return false;
+}
+
+/** Open a media source with the OS default handler, fetching it from the server first when needed. */
+async function openMediaForCurrentConnection(
+  src: string,
+  name: string,
+  win: BrowserWindow | null,
+): Promise<void> {
+  let target: string | null = null;
+  if (src.startsWith("data:")) {
+    target = materializeDataUrlToTemp(src, name);
+  } else if (mediaFileExists(src)) {
+    target = src;
+  } else {
+    const remote = await getActiveDashboardMediaConfig();
+    if (!remote) {
+      target = src;
+    } else if (UNSAFE_TO_OPEN_EXTENSIONS.has(extname(name).toLowerCase())) {
+      const locale = getAppLocale();
+      const options = {
+        type: "warning" as const,
+        message: name,
+        detail: translate("chat.media.openBlocked", locale),
+      };
+      void (win
+        ? dialog.showMessageBox(win, options)
+        : dialog.showMessageBox(options));
+      return;
+    } else {
+      const tempPath = tempMediaPath(src, name);
+      const result = await remoteDownloadFile(remote, src, tempPath);
+      if (result.ok) {
+        target = tempPath;
+      } else {
+        const dataUrl = await remoteReadMediaAsDataUrl(remote, src);
+        target = dataUrl ? materializeDataUrlToTemp(dataUrl, name) : null;
+        if (!target) {
+          reportRemoteFileFailure(win, name, result);
+          return;
+        }
+      }
+    }
+  }
+  if (!target) return;
+  const err = await shell.openPath(target);
+  if (err) console.error("[media] open failed:", err);
 }
 
 /**
@@ -703,9 +938,16 @@ export function registerIpcHandlers(context: IpcContext): void {
   // Pre-send chat readiness — answers "if Send is clicked right now,
   // will it work?". Fail-open semantics: any uncertain state returns
   // `ok: true`, so the renderer never false-blocks a Send.
-  ipcMain.handle("validate-chat-readiness", (_event, profile?: string) => {
-    return validateChatReadiness(profile);
-  });
+  type ChatReadinessOverride = Parameters<typeof validateChatReadiness>[1];
+  ipcMain.handle(
+    "validate-chat-readiness",
+    (_event, profile?: string, override?: ChatReadinessOverride) => {
+      const conn = getConnectionConfig();
+      return validateChatReadiness(profile, override, {
+        checkLocalConfig: conn.mode === "local",
+      });
+    },
+  );
 
   // Config-health audit + per-issue auto-fix. The renderer renders a
   // dismissible banner above the chat input and a full report in the
@@ -797,10 +1039,12 @@ export function registerIpcHandlers(context: IpcContext): void {
 
   ipcMain.handle("get-model-config", (_event, profile?: string) => {
     const conn = getConnectionConfig();
+    const scopedProfile = activeSessionProfile(profile);
     if (conn.mode === "remote")
       return withRemoteDashboard(
         conn,
-        () => remoteGetModelConfig(conn),
+        () =>
+          remoteGetModelConfig(scopedRemoteSessionConfig(conn, scopedProfile)),
         () => getModelConfig(profile),
       );
     if (conn.mode === "ssh" && conn.ssh)
@@ -808,6 +1052,7 @@ export function registerIpcHandlers(context: IpcContext): void {
         conn,
         (config) => remoteGetModelConfig(config),
         () => sshGetModelConfig(conn.ssh!, profile),
+        scopedProfile,
       );
     return getModelConfig(profile);
   });
@@ -822,10 +1067,17 @@ export function registerIpcHandlers(context: IpcContext): void {
       profile?: string,
     ) => {
       const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
       if (conn.mode === "remote") {
         return withRemoteDashboard(
           conn,
-          () => remoteSetModelConfig(conn, provider, model, baseUrl),
+          () =>
+            remoteSetModelConfig(
+              scopedRemoteSessionConfig(conn, scopedProfile),
+              provider,
+              model,
+              baseUrl,
+            ),
           () => {
             const prev = getModelConfig(profile);
             // Same library-mirroring as the pure-local path below: carry the
@@ -876,6 +1128,7 @@ export function registerIpcHandlers(context: IpcContext): void {
             }
             return true;
           },
+          scopedProfile,
         );
       }
       const prev = getModelConfig(profile);
@@ -1120,6 +1373,84 @@ export function registerIpcHandlers(context: IpcContext): void {
     ): Promise<string> => transcribeAudio(audio, mimeType, profile),
   );
 
+  // Локальное, полностью офлайн распознавание речи через сайдкар на Rust
+  // (candle + Whisper tiny, GGUF) — не требует запущенного Hermes API
+  // server и не уходит в сеть после первой загрузки модели. `wav` — уже
+  // декодированный в рендерере 16 kHz mono PCM WAV (см. useVoiceInput.ts).
+  ipcMain.handle(
+    "transcribe-audio-local",
+    async (_event, wav: Uint8Array, language?: string): Promise<string> =>
+      transcribeAudioLocally(wav, language),
+  );
+
+  ipcMain.handle(
+    "is-voice-sidecar-available",
+    async (): Promise<boolean> => isVoiceSidecarAvailable(),
+  );
+
+  // Запись с микрофона силами сайдкара (cpal → WASAPI shared mode) вместо
+  // getUserMedia: на массивах Intel Smart Sound Chromium открывает устройство
+  // в raw-режиме и получает от драйвера E_INVALIDARG. Подробности —
+  // в комментарии к режиму --record в voice-sidecar.ts.
+  ipcMain.handle(
+    "voice-record-start",
+    async (_event, language?: string): Promise<void> =>
+      startLocalRecording(language),
+  );
+
+  ipcMain.handle(
+    "voice-record-partial",
+    async (): Promise<string> => partialLocalTranscript(),
+  );
+
+  ipcMain.handle(
+    "voice-record-stop",
+    async (): Promise<string> => stopLocalRecording(),
+  );
+
+  ipcMain.handle("voice-record-cancel", async (): Promise<void> => {
+    cancelLocalRecording();
+  });
+
+  // Скриншот экрана для кнопки в поле ввода: окно убирается с экрана, кадр
+  // снимается, окно возвращается. getMainWindow() вызывается здесь, а не
+  // берётся из замыкания: на момент регистрации обработчиков окна может ещё
+  // не быть. Ошибка возвращается значением, а не исключением — через IPC
+  // исключение приезжает в рендерер строкой, по которой уже не понять,
+  // отказала система в захвате экрана или что-то сломалось у нас.
+  // Same capture, but the user drags a rectangle over the frozen frame first.
+  ipcMain.handle(
+    "take-screenshot-region",
+    async (): Promise<ScreenshotResponse> => {
+      try {
+        const shot = await captureRegion(getMainWindow());
+        if (!shot) return { ok: false, reason: "cancelled", detail: "" };
+        return { ok: true, ...shot };
+      } catch (e) {
+        console.error("[screenshot] region capture failed:", e);
+        return {
+          ok: false,
+          reason: e instanceof ScreenshotError ? e.reason : "error",
+          detail: e instanceof Error ? e.message : String(e),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle("take-screenshot", async (): Promise<ScreenshotResponse> => {
+    try {
+      const shot = await captureScreen(getMainWindow());
+      return { ok: true, ...shot };
+    } catch (e) {
+      console.error("[screenshot] capture failed:", e);
+      return {
+        ok: false,
+        reason: e instanceof ScreenshotError ? e.reason : "error",
+        detail: e instanceof Error ? e.message : String(e),
+      };
+    }
+  });
+
   ipcMain.handle(
     "send-message",
     async (
@@ -1166,9 +1497,10 @@ export function registerIpcHandlers(context: IpcContext): void {
       if (existing) existing();
 
       let fullResponse = "";
+      let chatSettled = false;
       const chatStartTime = Date.now();
       let resolveChat: (v: { response: string; sessionId?: string }) => void;
-      let rejectChat: (reason?: unknown) => void;
+      let rejectChat!: (reason?: unknown) => void;
       const promise = new Promise<{ response: string; sessionId?: string }>(
         (res, rej) => {
           resolveChat = res;
@@ -1192,95 +1524,145 @@ export function registerIpcHandlers(context: IpcContext): void {
           return false;
         }
       };
-      const abortThisRun = (): void => {
-        activeRuns.get(chatRunId)?.();
+      const senderId = event.sender.id;
+      let senderDestroyed = false;
+      let handle: Awaited<ReturnType<typeof sendMessage>> | undefined;
+      const handleSenderDestroyed = (): void => {
+        senderDestroyed = true;
+        abortRun();
+      };
+      event.sender.once("destroyed", handleSenderDestroyed);
+      const cleanupSender = (): void => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.removeListener("destroyed", handleSenderDestroyed);
+        }
       };
 
-      const handle = await sendMessage(
-        message,
-        {
-          onChunk: (chunk) => {
-            fullResponse += chunk;
-            if (!safeSend("chat-chunk", chunk)) {
-              // Renderer is gone — stop generating and resolve with what we
-              // have so the awaiting promise doesn't leak.
-              abortThisRun();
-            }
+      function abortRun(): void {
+        cleanupSender();
+        handle?.abort();
+        chatSettled = true;
+        if (activeRuns.get(chatRunId) === abortRun)
+          activeRuns.delete(chatRunId);
+        resolveChat({ response: fullResponse });
+      }
+      const abortThisRun = (): void => abortRun();
+      // A transport can reject before sendMessage returns its handle.
+      void promise.catch(() => undefined);
+      try {
+        handle = await sendMessage(
+          message,
+          {
+            onChunk: (chunk) => {
+              fullResponse += chunk;
+              if (!safeSend("chat-chunk", chunk)) {
+                // Renderer is gone — stop generating and resolve with what we
+                // have so the awaiting promise doesn't leak.
+                abortThisRun();
+              }
+            },
+            onReasoningChunk: (chunk) => {
+              // Forward reasoning/thinking tokens on a dedicated channel so
+              // the renderer can render the thinking bubble live during the
+              // stream rather than waiting for a focus-change refresh (#352).
+              // Same renderer-gone abort guard as the content channel.
+              if (!safeSend("chat-reasoning-chunk", chunk)) {
+                abortThisRun();
+              }
+            },
+            onDone: (sessionId) => {
+              chatSettled = true;
+              cleanupSender();
+              if (activeRuns.get(chatRunId) === abortRun)
+                activeRuns.delete(chatRunId);
+              try {
+                persistPromptImageAttachments(sessionId, message, attachments);
+              } catch (err) {
+                console.warn(
+                  "[sessions] Failed to persist prompt image attachments:",
+                  err,
+                );
+              }
+              safeSend("chat-done", sessionId || "");
+              resolveChat({ response: fullResponse, sessionId });
+              // Desktop notification when window is not focused and response took >10s
+              if (
+                mainWindow &&
+                !mainWindow.isFocused() &&
+                Date.now() - chatStartTime > 10000
+              ) {
+                const preview = fullResponse
+                  .replace(/[#*_`~\n]+/g, " ")
+                  .trim()
+                  .slice(0, 80);
+                new Notification({
+                  title: APP_NAME,
+                  body: preview || "Response ready",
+                }).show();
+              }
+            },
+            onSessionStarted: (sessionId) => {
+              safeSend("chat-session-started", sessionId);
+            },
+            onError: (error) => {
+              chatSettled = true;
+              cleanupSender();
+              if (activeRuns.get(chatRunId) === abortRun)
+                activeRuns.delete(chatRunId);
+              safeSend("chat-error", error);
+              rejectChat(new Error(error));
+              // Notify on error too if window not focused
+              if (mainWindow && !mainWindow.isFocused()) {
+                new Notification({
+                  title: `${APP_NAME} — Error`,
+                  body: error.slice(0, 100),
+                }).show();
+              }
+            },
+            onToolProgress: (tool) => {
+              safeSend("chat-tool-progress", tool);
+            },
+            onToolEvent: (toolEvent) => {
+              safeSend("chat-tool-event", toolEvent);
+            },
+            onUsage: (usage) => {
+              safeSend("chat-usage", usage);
+            },
+            onClarify: (req) => {
+              safeSend("chat-clarify-request", req);
+            },
+            onApproval: (req) => {
+              // Office one-chat omits runId and has no approval UI.
+              if (!runId) return false;
+              if (
+                !bindPendingApproval(req.requestId, {
+                  ownerId: senderId,
+                  runId: chatRunId,
+                })
+              ) {
+                return false;
+              }
+              return safeSend("chat-approval-request", req);
+            },
           },
-          onReasoningChunk: (chunk) => {
-            // Forward reasoning/thinking tokens on a dedicated channel so
-            // the renderer can render the thinking bubble live during the
-            // stream rather than waiting for a focus-change refresh (#352).
-            // Same renderer-gone abort guard as the content channel.
-            if (!safeSend("chat-reasoning-chunk", chunk)) {
-              abortThisRun();
-            }
-          },
-          onDone: (sessionId) => {
-            activeRuns.delete(chatRunId);
-            try {
-              persistPromptImageAttachments(sessionId, message, attachments);
-            } catch (err) {
-              console.warn(
-                "[sessions] Failed to persist prompt image attachments:",
-                err,
-              );
-            }
-            safeSend("chat-done", sessionId || "");
-            resolveChat({ response: fullResponse, sessionId });
-            // Desktop notification when window is not focused and response took >10s
-            if (
-              mainWindow &&
-              !mainWindow.isFocused() &&
-              Date.now() - chatStartTime > 10000
-            ) {
-              const preview = fullResponse
-                .replace(/[#*_`~\n]+/g, " ")
-                .trim()
-                .slice(0, 80);
-              new Notification({
-                title: APP_NAME,
-                body: preview || "Response ready",
-              }).show();
-            }
-          },
-          onSessionStarted: (sessionId) => {
-            safeSend("chat-session-started", sessionId);
-          },
-          onError: (error) => {
-            activeRuns.delete(chatRunId);
-            safeSend("chat-error", error);
-            rejectChat(new Error(error));
-            // Notify on error too if window not focused
-            if (mainWindow && !mainWindow.isFocused()) {
-              new Notification({
-                title: `${APP_NAME} — Error`,
-                body: error.slice(0, 100),
-              }).show();
-            }
-          },
-          onToolProgress: (tool) => {
-            safeSend("chat-tool-progress", tool);
-          },
-          onToolEvent: (toolEvent) => {
-            safeSend("chat-tool-event", toolEvent);
-          },
-          onUsage: (usage) => {
-            safeSend("chat-usage", usage);
-          },
-          onClarify: (req) => {
-            safeSend("chat-clarify-request", req);
-          },
-        },
-        profile,
-        resumeSessionId,
-        history,
-        attachments,
-        contextFolder,
-        modelOverride,
-      );
+          profile,
+          resumeSessionId,
+          history,
+          attachments,
+          contextFolder,
+          modelOverride,
+        );
+      } catch (error) {
+        cleanupSender();
+        throw error;
+      }
 
-      activeRuns.set(chatRunId, handle.abort);
+      if (senderDestroyed) {
+        abortRun();
+        rejectChat(new Error("Chat renderer closed before the run started."));
+        return promise;
+      }
+      if (!chatSettled) activeRuns.set(chatRunId, abortRun);
       return promise;
     },
   );
@@ -1308,6 +1690,25 @@ export function registerIpcHandlers(context: IpcContext): void {
     },
   );
 
+  ipcMain.handle(
+    "approval-respond",
+    async (
+      _event,
+      payload:
+        | { requestId?: unknown; choice?: unknown; runId?: unknown }
+        | undefined,
+    ) => {
+      return resolvePendingApproval(
+        typeof payload?.requestId === "string" ? payload.requestId : "",
+        payload?.choice,
+        {
+          ownerId: _event.sender.id,
+          runId: typeof payload?.runId === "string" ? payload.runId : "",
+        },
+      );
+    },
+  );
+
   // Renderer-driven clipboard write (issue #298 — "Copy entire chat").
   // Routed through the main process so it doesn't depend on the renderer's
   // document being focused, which the navigator.clipboard API requires.
@@ -1319,9 +1720,9 @@ export function registerIpcHandlers(context: IpcContext): void {
   ipcMain.handle("read-media-file", (_event, filePath: string) =>
     readMediaForCurrentConnection(filePath),
   );
-  ipcMain.handle("save-media-file", async (event, src: string, name: string) =>
-    saveMedia(
-      await resolveMediaForSave(src),
+  ipcMain.handle("save-media-file", (event, src: string, name: string) =>
+    saveMediaForCurrentConnection(
+      src,
       name,
       BrowserWindow.fromWebContents(event.sender),
     ),
@@ -1345,7 +1746,6 @@ export function registerIpcHandlers(context: IpcContext): void {
       const win = BrowserWindow.fromWebContents(event.sender);
       if (!win || !src) return;
       const isUrl = /^https?:\/\//i.test(src);
-      const isData = src.startsWith("data:");
       const template: Electron.MenuItemConstructorOptions[] = [];
       template.push({
         label: labels.open,
@@ -1355,17 +1755,13 @@ export function registerIpcHandlers(context: IpcContext): void {
             return;
           }
 
-          const target = isData ? materializeDataUrlToTemp(src, name) : src;
-          if (!target) return;
-          shell.openPath(target).then((err) => {
-            if (err) console.error("[media] open failed:", err);
-          });
+          void openMediaForCurrentConnection(src, name, win);
         },
       });
       template.push({
         label: labels.saveAs,
         click: () => {
-          void saveMedia(src, name, win);
+          void saveMediaForCurrentConnection(src, name, win);
         },
       });
       Menu.buildFromTemplate(template).popup({ window: win });
@@ -1382,6 +1778,12 @@ export function registerIpcHandlers(context: IpcContext): void {
   ipcMain.handle("clear-staged-attachments", (_event, sessionId: string) => {
     clearStagedAttachments(sessionId);
   });
+  // Remote Gateway: binary attachments are uploaded to the agent's server.
+  ipcMain.handle(
+    "upload-remote-attachment",
+    (_event, filename: string, base64Bytes: string, mime?: string) =>
+      uploadRemoteAttachment(filename, base64Bytes, mime),
+  );
 
   // Model discovery — fetch the provider's /v1/models for autocomplete.
   ipcMain.handle(
@@ -1628,38 +2030,94 @@ export function registerIpcHandlers(context: IpcContext): void {
   );
 
   // Sessions
-  ipcMain.handle("list-sessions", (_event, limit?: number, offset?: number) => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteListSessions(conn, limit, offset);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) => remoteListSessions(config, limit, offset),
-        () => sshListSessions(conn.ssh, limit, offset),
-      );
-    return listSessions(limit, offset);
-  });
+  ipcMain.handle(
+    "list-sessions",
+    (
+      _event,
+      limit?: number,
+      offset?: number,
+      _connectionId?: string,
+      profile?: string,
+    ) => {
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteListSessions(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          limit,
+          offset,
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteListSessions(config, limit, offset),
+          () => sshListSessions(conn.ssh!, limit, offset, scopedProfile),
+          scopedProfile,
+        );
+      return listSessions(limit, offset, scopedProfile);
+    },
+  );
 
-  ipcMain.handle("get-session-messages", (_event, sessionId: string) => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote")
-      return remoteGetSessionMessages(conn, sessionId).then((items) =>
-        applySessionLocalOverlays(sessionId, items),
-      );
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) =>
-          remoteGetSessionMessages(config, sessionId).then((items) =>
-            applySessionLocalOverlays(sessionId, items),
-          ),
-        () =>
-          sshGetSessionMessages(conn.ssh, sessionId).then((items) =>
-            applySessionLocalOverlays(sessionId, items),
-          ),
-      );
-    return getSessionMessages(sessionId);
-  });
+  ipcMain.handle(
+    "get-session-messages",
+    (_event, sessionId: string, _connectionId?: string, profile?: string) => {
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteGetSessionMessages(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          sessionId,
+        ).then((items) =>
+          applySessionLocalOverlays(sessionId, items, undefined, scopedProfile),
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) =>
+            remoteGetSessionMessages(config, sessionId).then((items) =>
+              applySessionLocalOverlays(
+                sessionId,
+                items,
+                undefined,
+                scopedProfile,
+              ),
+            ),
+          () =>
+            sshGetSessionMessages(conn.ssh!, sessionId, scopedProfile).then(
+              (items) =>
+                applySessionLocalOverlays(
+                  sessionId,
+                  items,
+                  undefined,
+                  scopedProfile,
+                ),
+            ),
+          scopedProfile,
+        );
+      return getSessionMessages(sessionId, scopedProfile);
+    },
+  );
+
+  // Images that went out with a prompt. The legacy chat path persists these
+  // itself when a turn finishes; the dashboard transport talks to the gateway
+  // straight from the renderer, so it calls this instead — without it, remote
+  // mode stores nothing and every picture disappears on restart.
+  ipcMain.handle(
+    "persist-prompt-attachments",
+    (
+      _event,
+      sessionId: string,
+      promptText: string,
+      attachments?: Attachment[],
+    ) => {
+      try {
+        persistPromptImageAttachments(sessionId, promptText, attachments);
+      } catch (err) {
+        console.warn("[sessions] Failed to persist prompt attachments:", err);
+      }
+      return true;
+    },
+  );
 
   ipcMain.handle(
     "record-session-continuation",
@@ -1725,26 +2183,53 @@ export function registerIpcHandlers(context: IpcContext): void {
     },
   );
 
-  ipcMain.handle("delete-session", (_event, sessionId: string) => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteDeleteSession(conn, sessionId);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(conn, (config) =>
-        remoteDeleteSession(config, sessionId),
-      );
-    return deleteSession(sessionId);
-  });
+  ipcMain.handle(
+    "delete-session",
+    (_event, sessionId: string, _connectionId?: string, profile?: string) => {
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteDeleteSession(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          sessionId,
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteDeleteSession(config, sessionId),
+          undefined,
+          scopedProfile,
+        );
+      return deleteSession(sessionId, scopedProfile);
+    },
+  );
 
-  ipcMain.handle("delete-sessions", (_event, sessionIds: string[]) => {
-    const ids = Array.isArray(sessionIds) ? sessionIds : [];
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteDeleteSessions(conn, ids);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(conn, (config) =>
-        remoteDeleteSessions(config, ids),
-      );
-    return deleteSessions(ids);
-  });
+  ipcMain.handle(
+    "delete-sessions",
+    (
+      _event,
+      sessionIds: string[],
+      _connectionId?: string,
+      profile?: string,
+    ) => {
+      const ids = Array.isArray(sessionIds) ? sessionIds : [];
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteDeleteSessions(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          ids,
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteDeleteSessions(config, ids),
+          undefined,
+          scopedProfile,
+        );
+      return deleteSessions(ids, scopedProfile);
+    },
+  );
 
   // Profiles
   ipcMain.handle("list-profiles", async () => {
@@ -1913,7 +2398,9 @@ export function registerIpcHandlers(context: IpcContext): void {
       try {
         const base = conn.remoteUrl.replace(/\/+$/, "");
         const resp = await fetch(base + "/api/skills", {
-          headers: conn.apiKey ? { Authorization: "Bearer " + conn.apiKey } : {},
+          headers: conn.apiKey
+            ? { Authorization: "Bearer " + conn.apiKey }
+            : {},
         });
         if (resp.ok) {
           const arr = (await resp.json()) as Array<{
@@ -1968,61 +2455,123 @@ export function registerIpcHandlers(context: IpcContext): void {
   // Session cache (fast local cache with generated titles)
   ipcMain.handle(
     "list-cached-sessions",
-    (_event, limit?: number, offset?: number) => {
+    (
+      _event,
+      limit?: number,
+      offset?: number,
+      _connectionId?: string,
+      profile?: string,
+    ) => {
       const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
       if (conn.mode === "remote")
-        return remoteListCachedSessions(conn, limit, offset);
+        return remoteListCachedSessions(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          limit,
+          offset,
+        );
       if (conn.mode === "ssh" && conn.ssh)
         return withSshDashboardSessions(
           conn,
           (config) => remoteListCachedSessions(config, limit, offset),
-          () => sshListCachedSessions(conn.ssh, limit, offset),
+          () => sshListCachedSessions(conn.ssh!, limit, offset, scopedProfile),
+          scopedProfile,
         );
-      return listCachedSessions(limit, offset);
+      return listCachedSessions(limit, offset, scopedProfile);
     },
   );
-  ipcMain.handle("sync-session-cache", () => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteListCachedSessions(conn, 50);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) => remoteListCachedSessions(config, 50),
-        () => sshListCachedSessions(conn.ssh, 50),
-      );
-    try {
-      return syncSessionCache();
-    } catch (error) {
-      console.error("sync-session-cache failed; using local cache", error);
-      return listCachedSessions(50);
-    }
-  });
+  ipcMain.handle(
+    "sync-session-cache",
+    (_event, _connectionId?: string, profile?: string) => {
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteListCachedSessions(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          50,
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteListCachedSessions(config, 50),
+          () => sshListCachedSessions(conn.ssh!, 50, 0, scopedProfile),
+          scopedProfile,
+        );
+      try {
+        return syncSessionCache(scopedProfile);
+      } catch (error) {
+        console.error("sync-session-cache failed; using local cache", error);
+        return listCachedSessions(50, 0, scopedProfile);
+      }
+    },
+  );
   ipcMain.handle(
     "update-session-title",
-    (_event, sessionId: string, title: string) => {
+    (
+      _event,
+      sessionId: string,
+      title: string,
+      _connectionId?: string,
+      profile?: string,
+      auto?: boolean,
+    ) => {
       const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      // Автозаголовок даётся диалогу один раз за всю его жизнь. Признак лежит
+      // в десктопной базе, а не в памяти: раньше он обнулялся при перезапуске,
+      // и приложение переписывало первым сообщением имя, заданное вручную.
+      if (auto) {
+        if (wasAutoTitled(sessionId)) return;
+        markAutoTitled(sessionId);
+      }
+      const source = auto ? "auto" : "user";
       if (conn.mode === "remote")
-        return remoteUpdateSessionTitle(conn, sessionId, title);
-      if (conn.mode === "ssh" && conn.ssh)
-        return withSshDashboardSessions(conn, (config) =>
-          remoteUpdateSessionTitle(config, sessionId, title),
+        return remoteUpdateSessionTitle(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          sessionId,
+          title,
+          source,
         );
-      return updateSessionTitle(sessionId, title);
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) =>
+            remoteUpdateSessionTitle(config, sessionId, title, source),
+          undefined,
+          scopedProfile,
+        );
+      return updateSessionTitle(sessionId, title, scopedProfile, auto);
     },
   );
 
   // Session search
-  ipcMain.handle("search-sessions", (_event, query: string, limit?: number) => {
-    const conn = getConnectionConfig();
-    if (conn.mode === "remote") return remoteSearchSessions(conn, query, limit);
-    if (conn.mode === "ssh" && conn.ssh)
-      return withSshDashboardSessions(
-        conn,
-        (config) => remoteSearchSessions(config, query, limit),
-        () => sshSearchSessions(conn.ssh, query, limit),
-      );
-    return searchSessions(query, limit);
-  });
+  ipcMain.handle(
+    "search-sessions",
+    (
+      _event,
+      query: string,
+      limit?: number,
+      _connectionId?: string,
+      profile?: string,
+    ) => {
+      const conn = getConnectionConfig();
+      const scopedProfile = activeSessionProfile(profile);
+      if (conn.mode === "remote")
+        return remoteSearchSessions(
+          scopedRemoteSessionConfig(conn, scopedProfile),
+          query,
+          limit,
+        );
+      if (conn.mode === "ssh" && conn.ssh)
+        return withSshDashboardSessions(
+          conn,
+          (config) => remoteSearchSessions(config, query, limit),
+          () => sshSearchSessions(conn.ssh!, query, limit, scopedProfile),
+          scopedProfile,
+        );
+      return searchSessions(query, limit, scopedProfile);
+    },
+  );
 
   // Credential Pool — profile-aware. When `profile` is omitted, the
   // credential pool helpers default to the currently active profile's
@@ -2317,6 +2866,131 @@ export function registerIpcHandlers(context: IpcContext): void {
     (_event, input: CreateTaskInput, profile?: string) =>
       kanbanCreateTask(input, profile),
   );
+  // Корни, внутри которых агент вообще способен увидеть файлы: tool-connector
+  // запускается ровно с этими тремя и других не знает. Держим их здесь, а не
+  // в рендерере, чтобы список брался из тех же системных путей, что и у
+  // companion, и не разъезжался с ним при локализованных именах папок
+  // («Документы», «Рабочий стол»).
+  // Личный банк памяти — только чтение. Запись и удаление запрещены на
+  // сервере (флагом и маршрутом соответственно), см. memory-bank.ts.
+  ipcMain.handle(
+    "memory-bank-list",
+    (_event, limit?: number, offset?: number) =>
+      listMemoryFacts(
+        typeof limit === "number" ? limit : undefined,
+        typeof offset === "number" ? offset : undefined,
+      ),
+  );
+  // Заметки. Лежат файлом в userData, а не в базе: в гибриде базы нет
+  // вовсе, см. notes-store.ts.
+  // Автозапуск вместе с системой, сразу в трей. Состояние читаем у системы,
+  // а не из своих настроек: человек мог выключить его в диспетчере задач.
+  ipcMain.handle("autostart-get", () => ({
+    enabled: isAutostartEnabled(),
+    supported: isAutostartSupported(),
+  }));
+  ipcMain.handle("autostart-set", (_event, enabled: boolean) =>
+    setAutostart(Boolean(enabled)),
+  );
+  // Корпоративное расширение «РАЗУМ ИИ-помощник» в Chrome/Яндекс.Браузере:
+  // проверка по файлам профиля и открытие страницы в магазине (установить
+  // приложение само не может — только пользователь кликом).
+  const extPrefsFile = (): string =>
+    join(app.getPath("userData"), "browser-extension.json");
+  ipcMain.handle("browser-extension-status", () => {
+    const prefs = readReminderPrefs(extPrefsFile());
+    const browsers = detectBrowserExtension();
+    return {
+      remind: prefs.remind,
+      browsers,
+      toRemind: browsersToRemind(browsers, prefs, Date.now()),
+    };
+  });
+  ipcMain.handle(
+    "browser-extension-open-store",
+    async (_event, browser: BrowserId) => {
+      if (browser === "chrome" || browser === "yandex") {
+        if (openExtensionStore(browser)) return true;
+      }
+      // Браузер не нашли — откроем в браузере по умолчанию.
+      await shell.openExternal(EXTENSION_STORE_URL);
+      return false;
+    },
+  );
+  ipcMain.handle("browser-extension-snooze", () => {
+    const file = extPrefsFile();
+    writeReminderPrefs(file, snoozedPrefs(readReminderPrefs(file), Date.now()));
+  });
+  ipcMain.handle("browser-extension-set-remind", (_event, remind: boolean) => {
+    const file = extPrefsFile();
+    writeReminderPrefs(file, {
+      remind: Boolean(remind),
+      snoozeUntil: 0,
+    });
+    return Boolean(remind);
+  });
+  ipcMain.handle("notes-list", () => listNotes());
+  ipcMain.handle("notes-save", (_event, input: NoteInput) => saveNote(input));
+  ipcMain.handle("notes-delete", (_event, id: string) => deleteNote(id));
+  ipcMain.handle("notes-attach", async (event, noteId: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const options: Electron.OpenDialogOptions = {
+      // Несколько файлов за раз: человек, прикладывающий снимки к заметке,
+      // почти никогда не прикладывает ровно один.
+      properties: ["openFile", "multiSelections"],
+    };
+    const result = win
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return attachFiles(noteId, result.filePaths);
+  });
+  ipcMain.handle(
+    "notes-attach-data",
+    (_event, noteId: string, name: string, bytes: Uint8Array) =>
+      attachBytes(noteId, name, bytes),
+  );
+  ipcMain.handle(
+    "notes-attachment-remove",
+    (_event, noteId: string, attachmentId: string) =>
+      removeAttachment(noteId, attachmentId),
+  );
+  ipcMain.handle(
+    "notes-attachment-bytes",
+    (_event, noteId: string, attachmentId: string) =>
+      attachmentBytes(noteId, attachmentId),
+  );
+  ipcMain.handle(
+    "notes-attachment-data",
+    (_event, noteId: string, attachmentId: string) =>
+      attachmentDataUrl(noteId, attachmentId),
+  );
+  // Открываем вложение тем, чем его открыла бы система. Своего просмотрщика
+  // здесь нет намеренно: писать его ради pdf и docx означало бы сделать хуже
+  // того, что у человека уже установлено.
+  ipcMain.handle(
+    "notes-attachment-open",
+    async (_event, noteId: string, attachmentId: string) => {
+      const path = attachmentPath(noteId, attachmentId);
+      if (!path) return false;
+      const problem = await shell.openPath(path);
+      return problem === "";
+    },
+  );
+
+  ipcMain.handle("local-tool-roots", (): string[] => {
+    const roots: string[] = [];
+    for (const name of ["documents", "downloads", "desktop"] as const) {
+      try {
+        const p = app.getPath(name);
+        if (p) roots.push(p);
+      } catch {
+        /* на некоторых системах часть путей не определена — не беда */
+      }
+    }
+    return roots;
+  });
+
   ipcMain.handle("select-folder", async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = win

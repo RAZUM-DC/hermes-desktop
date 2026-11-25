@@ -1,4 +1,8 @@
 export default {
+  signingInTitle: "Giriş yapılıyor",
+  signingInHint:
+    "Giriş sayfası tarayıcıda açılır. İşiniz bitince uygulama kendi devam eder.",
+  signInAgain: "Yeniden giriş yap",
   title: "Hermes'e Hoş Geldiniz",
   subtitle:
     "Makinenizde yerel olarak çalışan, kendini geliştiren yapay zeka asistanınız. Gizli, güçlü ve sürekli öğrenen.",

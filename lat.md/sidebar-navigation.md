@@ -8,7 +8,21 @@ The sidebar starts with New Chat, keeps app destinations pinned, then gives conv
 
 The sidebar header's collapse control doubles as the brand mark: collapsed it shows a circular dot that swaps to the expand icon on hover; expanded it shows the full wordmark beside the collapse icon.
 
-[[src/renderer/src/screens/Layout/Layout.tsx#Layout]] renders `.sidebar-collapse-toggle`. Collapsed, it holds a fixed-size `.sidebar-collapse-swap` box stacking a `.sidebar-collapse-mark` circle (filled with `--text-primary`, so white on dark themes and dark on light) over the `PanelLeftOpen` icon; only opacity toggles on hover/focus, so the button never reflows. Expanded, the maskable `.sidebar-logo` wordmark shows next to the `PanelLeftClose` icon.
+[[src/renderer/src/screens/Layout/Layout.tsx#Layout]] renders `.sidebar-collapse-toggle`. Collapsed, it holds a fixed-size `.sidebar-collapse-swap` box stacking a `.sidebar-collapse-mark` circle (filled with `--text-primary`, so white on dark themes and dark on light) over the `PanelLeftOpen` icon; only opacity toggles on hover/focus, so the button never reflows. Expanded, the `.sidebar-logo` wordmark shows next to the `PanelLeftClose` icon.
+
+### Reliable RAZUM wordmark
+
+The expanded sidebar renders the RAZUM SVG as a real image, preventing a failed CSS mask from appearing as a solid white rectangle.
+
+[[src/renderer/src/components/common/SidebarBrand.tsx#SidebarBrand]] owns the accessible image. CSS filters the black source to white on dark themes and black on light themes without placing a coloured rectangle behind it.
+
+### Empty chat brand mark
+
+The empty chat screen shows the standalone RAZUM mark in the active theme colour without relying on a CSS mask or bundled data URL.
+
+[[src/renderer/src/screens/Chat/ChatEmptyState.tsx#ChatEmptyState]] renders the mark as inline SVG with `currentColor`. This keeps it visible in light and dark themes and prevents a malformed `mask-image` from becoming a solid rectangle.
+
+[[src/renderer/src/screens/Chat/ChatEmptyState.test.tsx]] guards the rendering contract by requiring an inline SVG path with theme-driven colour and no CSS mask.
 
 ## Infinite sidebar list
 
@@ -19,6 +33,28 @@ The inline list lazily loads cached sessions in pages as the user scrolls, so th
 Session titles in the inline list are constrained to the sidebar width and truncate with ellipses, while the chat section only scrolls vertically. This keeps long generated titles from creating a horizontal scrollbar.
 
 The native sidebar scrollbar is hidden to avoid layout shifts. [[src/renderer/src/screens/Layout/Layout.tsx#Layout]] measures the chat scroll container and renders an absolutely positioned overlay thumb only while the user is scrolling, so showing or hiding the scrollbar never changes row width.
+
+## Native archive visibility
+
+Local lists follow the Agent's native archive flag. Archiving hides a conversation without deleting its messages or linked project folder; restoring it makes it visible on the next sync.
+
+[[src/main/db.ts#sessionVisibilityPredicate]] detects whether the selected profile's database has an `archived` column. [[src/main/sessions.ts#listSessions]] filters `archived = 0` before pagination, while legacy databases without that column remain readable.
+
+[[src/main/session-cache.ts#syncSessionCache]] reconciles the complete visible metadata set rather than using `started_at` as a change cursor: archive and restore do not change creation time. Cached titles are reused, and message bodies are read only to generate missing titles for newly visible rows. Successful sync replaces the cached membership, including an empty set; unavailable databases or failed reads retain the last good cache until retry. [[src/main/session-cache.ts#listCachedSessions]] remains DB-free, so an initial cached paint can be stale until sync finishes. Message history and search are unchanged.
+
+[[src/renderer/src/screens/Sessions/Sessions.tsx]] accepts an empty quiet-refresh result for the current local connection, allowing the last archived row to disappear. Network-backed lists retain their transient-empty guard, and failed connection checks retain visible rows until the next retry.
+
+[[tests/session-archive.test.ts]] executes real SQLite queries for cold and warm caches, archive/restore without timestamp changes, pagination, legacy schema upgrades, read failure and recovery, and retained history/project folders. [[src/renderer/src/screens/Sessions/Sessions.test.tsx]] covers the last local row disappearing and returning plus failed refresh recovery.
+
+## Profile-scoped session browsing
+
+Session browsing always carries the selected profile through the renderer/preload/IPC boundary, so switching agents cannot mix histories, cached rows, or mutations.
+
+[[src/renderer/src/screens/Layout/SidebarRecentSessions.tsx]] and [[src/renderer/src/screens/Sessions/Sessions.tsx]] pass the active profile to list, sync, search, history, rename, single-delete, and bulk-delete operations. Request generations discard results that complete after a profile or active connection change; rename rollback is likewise tied to the profile where editing began. RAZUM currently keeps one active connection configuration, while the optional `connectionId` preload arguments preserve the boundary needed by a future named-connection registry.
+
+[[src/main/db.ts#getDbConnection]], [[src/main/sessions.ts]], and [[src/main/session-cache.ts]] resolve the explicitly selected profile instead of relying on the process-wide active profile. Each local profile reads its own `state.db` and `desktop/sessions.json`, including batched project-folder attachment. [[src/main/ipc/register.ts]] sends the same profile through SSH legacy/dashboard paths and adds it to Remote dashboard requests; [[src/main/remote-sessions.ts]] preserves an explicit profile on every endpoint and no longer requests the cross-profile `all` list when one is selected.
+
+[[tests/session-cache-sync.test.ts]] proves that default and named Local profile caches stay separate, [[tests/session-archive.test.ts]] covers equal session ids across profiles, [[tests/remote-sessions.test.ts]] verifies URL-encoded Remote profile routing, and [[src/renderer/src/screens/Sessions/Sessions.test.tsx]] checks renderer routing plus rejection of delayed results from the previous profile.
 
 ## Project grouping
 
@@ -41,6 +77,24 @@ Transitions are `motion/react`-driven (the same library as [[src/renderer/src/co
 Each action calls an existing desktop API with an optimistic local update and rollback on failure: Rename → `updateSessionTitle` (inline `.sidebar-recent-session-rename` input), Move → [[src/main/session-context-folder-store.ts#setSessionContextFolder]] then a `hermes-session-context-folder-changed` event so other surfaces re-group, Delete → a confirmation dialog (portal overlay) then [[src/main/sessions.ts#deleteSessionRows|deleteSession]]. Deleting the open chat calls `onSessionDeleted`, which [[src/renderer/src/screens/Layout/Layout.tsx#Layout]] uses to drop to a fresh New Chat.
 
 Pinned rows are a desktop-only affordance: their ids live in `localStorage` (`hermes.sidebar.pinnedSessions`), and pinned sessions are pulled out of the normal grouping into a collapsible **Pinned** section at the top of the list.
+
+### Rename persistence
+
+Session renames must survive `syncSessionCache`, so the durable `state.db` write happens before the JSON cache is updated.
+
+Title policy lives in [[src/shared/session-title.ts]] (`normalizeSessionTitle`, `MAX_SESSION_TITLE_LENGTH`) so the renderer optimistic path and [[src/main/session-cache.ts#updateSessionTitle]] cannot diverge. Main writes the selected profile’s `state.db` first, recording `title_source = user` when supported, then mirrors into that profile's `sessions.json`. Database errors throw; a failed cache mirror remains recoverable from the committed title on the next full sync. Both the sidebar and Sessions modal call [[src/renderer/src/screens/Sessions/confirmSessionRename.ts#confirmSessionRename]] for optimistic update, toast/rollback, and keep-editor-on-failure. Each editor allows one save at a time; the sidebar ignores late responses after the active profile changes. Normalization strips Agent-disallowed controls and counts Unicode characters for the 100-character limit.
+
+#### User title provenance
+
+Modern Agent schemas record explicit renames as user-authored so late automatic title generation cannot overwrite them; older schemas remain writable without migrations.
+
+#### Cache mirror recovery
+
+If mirroring a committed rename to JSON fails, the next full metadata sync restores the durable database title even for sessions older than the incremental sync window.
+
+#### Overlapping rename protection
+
+The editor prevents overlapping saves and restores editing after failures. Sidebar results from a previous profile cannot roll back a different session list.
 
 ## Full-list modal
 
@@ -71,6 +125,8 @@ Managed SSH installs can store Hermes outside the SSH user's home or under a dif
 ## Profiles page
 
 The Profiles page lists every workspace as table-style rows and creates new ones from a modal that can clone a chosen source profile.
+
+The profiles table does not shrink inside the page's flex layout, so a long list remains part of the page's vertical scroll area instead of clipping its final rows.
 
 [[src/renderer/src/screens/Agents/Agents.tsx]] renders one `agents-row` per profile (avatar, name, `provider · skills`, a monospace model chip, and a `Running`/`Off` gateway pill), marking the active profile with a left green bar. Selecting a row switches the active profile, which starts that profile's gateway asynchronously — so the status reads from a pid file that isn't written yet at switch time. The page therefore polls `listProfiles` (~700ms, capped near 10s) after a switch until the selected profile reports running, flipping its pill to `Running` on its own rather than only after a manual refresh or revisit. While that poll runs (and the gateway wasn't already up), the switched row shows a `Starting…` pill with a spinner; it settles on the real `Running`/`Off` status once the gateway reports in or the poll gives up. **New Agent** opens an [[src/renderer/src/components/modal/AppModal.tsx#AppModal]] with a name field, a "clone config & API keys" toggle, and — when cloning — a source-profile `<select>` defaulting to the active profile. Create calls `window.hermesAPI.createProfile(name, cloneFrom)` where `cloneFrom` is the chosen profile name or `null` for a fresh profile; the modal stays open on failure so the error is visible and the user can retry. [[src/main/profiles.ts#createProfile]] maps a non-null `cloneFrom` to the agent CLI's `hermes profile create <name> --clone-from <source>` (which implies `--clone`), validating the source as `default` or a valid named profile; [[src/main/ssh-remote.ts#sshCreateProfile]] does the same over SSH, returning the same `{ success, error }` shape and surfacing a failed clone as an error (no silent empty-profile fallback) so the modal reports it. [[src/main/registry.ts]] installs a published agent by cloning from `default`.
 

@@ -1,7 +1,8 @@
-import { Download, FileText, X } from "lucide-react";
+import { FileText, X } from "lucide-react";
 import { useState } from "react";
 import type { Attachment } from "../../../shared/attachments";
 import { useI18n } from "./useI18n";
+import { ImagePreview } from "./ImagePreview";
 
 interface AttachmentChipProps {
   attachment: Attachment;
@@ -76,44 +77,12 @@ export function AttachmentChip({
         )}
       </div>
       {zoomed && isImage && attachment.dataUrl && (
-        <div
-          className="chat-image-preview-backdrop"
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setZoomed(false)}
-        >
-          <img
-            className="chat-image-preview-image"
-            src={attachment.dataUrl}
-            alt={attachment.name}
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={showImageMenu}
-          />
-          <div
-            className="chat-image-preview-actions"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="chat-image-preview-btn"
-              onClick={() =>
-                window.hermesAPI.saveMediaFile(
-                  attachment.dataUrl!,
-                  attachment.name,
-                )
-              }
-            >
-              <Download size={14} />
-              {t("chat.media.saveImage")}
-            </button>
-            <button
-              className="chat-image-preview-btn"
-              onClick={() => setZoomed(false)}
-              aria-label="Close"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
+        <ImagePreview
+          src={attachment.dataUrl}
+          name={attachment.name}
+          onClose={() => setZoomed(false)}
+          onContextMenu={showImageMenu}
+        />
       )}
     </>
   );

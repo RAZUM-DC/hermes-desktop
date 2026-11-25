@@ -19,10 +19,16 @@ import {
   Pin,
   X,
 } from "../../assets/icons";
+import { confirmSessionRename } from "../Sessions/confirmSessionRename";
 import SidebarSessionMenu, {
   type SidebarMenuProject,
   type SidebarMenuTarget,
 } from "./SidebarSessionMenu";
+import {
+  loadStateAfterFailure,
+  retryDelayMs,
+  type SessionsLoadState,
+} from "./sessionRetry";
 
 interface RecentSession {
   id: string;
@@ -41,6 +47,7 @@ const RECENT_REFRESH_MS = 60_000;
 // Minimum gap between event-driven refreshes (focus, session switch) so a
 // burst of focus/blur events doesn't hammer state.db.
 const REFRESH_THROTTLE_MS = 5_000;
+
 const INFINITE_SCROLL_THRESHOLD_PX = 180;
 const PROJECTS_OPEN_KEY = "hermes.sidebar.projectsOpen";
 const CHATS_OPEN_KEY = "hermes.sidebar.chatsOpen";
@@ -159,15 +166,19 @@ function groupSessionsByWorkspace(sessions: RecentSession[]): {
  */
 const SidebarRecentSessions = memo(function SidebarRecentSessions({
   open,
+  connectionId,
   activeProfile,
   currentSessionId,
   loadingSessionIds,
   resumingSessionId,
   onSelect,
+  onSessionsChange,
   onSessionDeleted,
   scrollRootRef,
 }: {
   open: boolean;
+  /** Reserved for the future named-connection registry; active connection when omitted. */
+  connectionId?: string;
   /** Active profile — the list is per-profile, so switching forces a reload. */
   activeProfile: string;
   currentSessionId: string | null;
@@ -176,6 +187,11 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   /** A session whose history is being fetched for resume (transient spinner). */
   resumingSessionId: string | null;
   onSelect: (sessionId: string) => void;
+  /**
+   * Публикует загруженный список наверх — по нему работает панель
+   * переключения диалогов, чтобы её порядок совпадал с видимым сайдбаром.
+   */
+  onSessionsChange?: (sessions: Array<{ id: string; title: string }>) => void;
   /** Notifies Layout when a row is deleted so it can leave a stale active chat. */
   onSessionDeleted?: (sessionId: string) => void;
   /** Scroll container owned by Layout; nearing its bottom loads the next page. */
@@ -183,6 +199,13 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
 }): React.JSX.Element | null {
   const { t } = useI18n();
   const [sessions, setSessions] = useState<RecentSession[]>([]);
+  // Чем закончилась последняя попытка получить список. Пустой список и
+  // неудавшийся запрос — разные вещи, и раньше они выглядели одинаково:
+  // «Нет чатов». В гибридном режиме companion в первые секунды после старта
+  // отвечает «agent session not ready», и человек видел ровно ту же надпись,
+  // что при честном отсутствии истории. Отличить их обязательно — иначе
+  // задержка транспорта неотличима от потери данных.
+  const [loadState, setLoadState] = useState<SessionsLoadState>("loading");
   // True when the profile has more cache rows than the sidebar has loaded.
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -208,17 +231,41 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
   const [editingTitle, setEditingTitle] = useState("");
   const editingIdRef = useRef<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const [renameSaving, setRenameSaving] = useState(false);
+  const renameContext = `${connectionId ?? "active"}\u0000${activeProfile}`;
+  const renameContextRef = useRef(renameContext);
+  useEffect(() => {
+    renameContextRef.current = renameContext;
+  }, [renameContext]);
   // Pending delete confirmation (small inline dialog in a portal-free overlay).
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const lastRefreshRef = useRef(0);
+  // Отложенная фоновая попытка: одна очередь, а не веер таймеров.
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryAttemptRef = useRef(0);
+  // Планировщик объявлен ниже refresh, а нужен внутри него — значит, через
+  // ref: иначе получится цикл в зависимостях useCallback.
+  const scheduleRetryRef = useRef<() => void>(() => undefined);
   const sessionsRef = useRef<RecentSession[]>([]);
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
+  const requestGenerationRef = useRef(0);
+
+  useEffect(() => {
+    requestGenerationRef.current += 1;
+  }, [activeProfile, connectionId]);
 
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
+
+  // Порядок здесь — тот же, в котором строки нарисованы: закреплённые и
+  // проекты разложены по секциям только при отрисовке, сам список остаётся
+  // отсортированным по давности.
+  useEffect(() => {
+    onSessionsChange?.(sessions.map(({ id, title }) => ({ id, title })));
+  }, [sessions, onSessionsChange]);
 
   useEffect(() => {
     hasMoreRef.current = hasMore;
@@ -313,25 +360,73 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       const now = Date.now();
       if (!force && now - lastRefreshRef.current < REFRESH_THROTTLE_MS) return;
       lastRefreshRef.current = now;
+      const generation = requestGenerationRef.current;
       try {
-        const synced = await window.hermesAPI.syncSessionCache();
+        const synced = await window.hermesAPI.syncSessionCache(
+          connectionId,
+          activeProfile,
+        );
+        if (requestGenerationRef.current !== generation) return;
         applyLoadedWindow(synced);
+        setLoadState("ready");
+        // Получилось — очередь повторов больше не нужна.
+        retryAttemptRef.current = 0;
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
       } catch {
-        // keep whatever we had — the list is best-effort UI sugar
+        // Список — вещь второстепенная, поэтому уже показанное не стираем.
+        if (requestGenerationRef.current !== generation) return;
+        retryAttemptRef.current += 1;
+        setLoadState((prev) =>
+          loadStateAfterFailure(prev, retryAttemptRef.current),
+        );
+        // Ждём дальше в фоне. Человек ничего не нажимает — список появится
+        // сам, как только сервер ответит.
+        scheduleRetryRef.current();
       }
     },
-    [applyLoadedWindow],
+    [activeProfile, applyLoadedWindow, connectionId],
   );
+
+  // Следующая фоновая попытка. Пауза растёт с каждой неудачей и упирается в
+  // минуту — ту же, с какой список обновляется в спокойном состоянии.
+  const scheduleRetry = useCallback((): void => {
+    if (retryTimerRef.current) return;
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      // force: обычный троттлинг тут только мешал бы — паузу мы уже выдержали
+      // сами, и она заведомо длиннее его окна.
+      void refresh(true);
+    }, retryDelayMs(retryAttemptRef.current));
+  }, [refresh]);
+  scheduleRetryRef.current = scheduleRetry;
+
+  // Очередь повторов не должна пережить ни размонтирование, ни смену
+  // подключения: иначе запрос уйдёт уже не туда, куда собирался.
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const loadNextPage = useCallback(async (): Promise<void> => {
     if (!open || !hasMoreRef.current || loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
+    const generation = requestGenerationRef.current;
     try {
       const nextPage = await window.hermesAPI.listCachedSessions(
         RECENT_SESSIONS_PAGE_SIZE + 1,
         sessionsRef.current.length,
+        connectionId,
+        activeProfile,
       );
+      if (requestGenerationRef.current !== generation) return;
       appendPage(nextPage);
     } catch {
       // keep the current list; scrolling can retry on the next event
@@ -339,7 +434,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
       loadingMoreRef.current = false;
       setLoadingMore(false);
     }
-  }, [appendPage, open]);
+  }, [activeProfile, appendPage, connectionId, open]);
 
   const maybeLoadNextPage = useCallback((): void => {
     const root = scrollRootRef.current;
@@ -357,28 +452,80 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
     if (!open) return;
     let cancelled = false;
     void (async () => {
+      let painted = false;
       try {
         const cached = await window.hermesAPI.listCachedSessions(
           // One over the page size so the cache read alone can decide whether
           // another page exists without a separate count query.
           RECENT_SESSIONS_PAGE_SIZE + 1,
+          0,
+          connectionId,
+          activeProfile,
         );
-        if (!cancelled) applyFirstPage(cached);
+        if (!cancelled) {
+          applyFirstPage(cached);
+          painted = true;
+        }
       } catch {
         /* ignore cache read errors */
       }
       lastRefreshRef.current = Date.now();
       try {
-        const synced = await window.hermesAPI.syncSessionCache();
-        if (!cancelled) applyFirstPage(synced);
+        const synced = await window.hermesAPI.syncSessionCache(
+          connectionId,
+          activeProfile,
+        );
+        if (!cancelled) {
+          applyFirstPage(synced);
+          painted = true;
+        }
       } catch {
-        // cache read above already painted something
+        // Прежний комментарий здесь гласил «кэш выше уже что-то нарисовал».
+        // В локальном режиме это правда, в удалённом — нет: там обработчик
+        // list-cached-sessions уходит в ту же сеть, локального кэша не
+        // существует, и оба запроса падают вместе. Поэтому исход отмечаем по
+        // факту, а не по предположению.
+      }
+      if (cancelled) return;
+      if (painted) {
+        setLoadState("ready");
+        retryAttemptRef.current = 0;
+      } else {
+        // Первая попытка не удалась — уходим в фон. Слово «не удалось»
+        // появится не сейчас, а только если не выйдет и со следующих раз.
+        retryAttemptRef.current += 1;
+        setLoadState((prev) =>
+          loadStateAfterFailure(prev, retryAttemptRef.current),
+        );
+        scheduleRetryRef.current();
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, activeProfile, applyFirstPage]);
+  }, [open, connectionId, activeProfile, applyFirstPage]);
+
+  useEffect(() => {
+    return window.hermesAPI.onConnectionConfigChanged(() => {
+      requestGenerationRef.current += 1;
+      setSessions([]);
+      // Список обнулили — значит снова ждём, а не «чатов нет»: иначе на
+      // время перезапроса мелькнёт ложное пустое состояние.
+      setLoadState("loading");
+      // Новое подключение — новый отсчёт: прежние неудачи к нему отношения
+      // не имеют, и отложенная попытка ушла бы уже не по адресу.
+      retryAttemptRef.current = 0;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      setHasMore(false);
+      setLoadingMore(false);
+      loadingMoreRef.current = false;
+      lastRefreshRef.current = 0;
+      void refresh(true);
+    });
+  }, [refresh]);
 
   // While open: pick up background sessions (gateway, cron, other devices)
   // on focus and on a slow timer. No listeners or timers at all when closed.
@@ -493,14 +640,18 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
     });
   }, []);
 
-  const startRename = useCallback((s: RecentSession): void => {
-    setEditingId(s.id);
-    setEditingTitle(s.title || "");
-    setTimeout(() => {
-      renameInputRef.current?.focus();
-      renameInputRef.current?.select();
-    }, 0);
-  }, []);
+  const startRename = useCallback(
+    (s: RecentSession): void => {
+      if (renameSaving) return;
+      setEditingId(s.id);
+      setEditingTitle(s.title || "");
+      setTimeout(() => {
+        renameInputRef.current?.focus();
+        renameInputRef.current?.select();
+      }, 0);
+    },
+    [renameSaving],
+  );
 
   const cancelRename = useCallback((): void => {
     setEditingId(null);
@@ -509,28 +660,36 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
 
   const confirmRename = useCallback(
     async (id: string, value: string): Promise<void> => {
-      const trimmed = value.trim();
-      const current = sessionsRef.current.find((s) => s.id === id);
-      if (!trimmed || trimmed === (current?.title ?? "")) {
-        cancelRename();
-        return;
-      }
-      const previous = current?.title ?? "";
-      // Optimistic local update; roll back if the write fails.
-      setSessions((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, title: trimmed } : s)),
-      );
-      if (editingIdRef.current === id) cancelRename();
-      try {
-        await window.hermesAPI.updateSessionTitle(id, trimmed);
-      } catch (err) {
-        console.error("Failed to rename session", id, err);
-        setSessions((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, title: previous } : s)),
-        );
-      }
+      const previous =
+        sessionsRef.current.find((s) => s.id === id)?.title ?? "";
+      await confirmSessionRename({
+        sessionId: id,
+        value,
+        currentTitle: previous,
+        isCurrentContext: () => renameContextRef.current === renameContext,
+        setSaving: setRenameSaving,
+        isStillEditing: () => editingIdRef.current === id,
+        applyOptimistic: (title) =>
+          setSessions((prev) =>
+            prev.map((s) => (s.id === id ? { ...s, title } : s)),
+          ),
+        rollback: () =>
+          setSessions((prev) =>
+            prev.map((s) => (s.id === id ? { ...s, title: previous } : s)),
+          ),
+        clearEditing: cancelRename,
+        inputRef: renameInputRef,
+        fallbackErrorMessage: t("sessions.renameFailed"),
+        persist: (sessionId, title) =>
+          window.hermesAPI.updateSessionTitle(
+            sessionId,
+            title,
+            connectionId,
+            activeProfile,
+          ),
+      });
     },
-    [cancelRename],
+    [activeProfile, cancelRename, connectionId, t, renameContext],
   );
 
   const handleMoveToProject = useCallback(
@@ -586,7 +745,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         return next;
       });
       try {
-        await window.hermesAPI.deleteSession(id);
+        await window.hermesAPI.deleteSession(id, connectionId, activeProfile);
         onSessionDeleted?.(id);
       } catch (err) {
         console.error("Failed to delete session", id, err);
@@ -596,7 +755,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         void refresh(true);
       }
     },
-    [onSessionDeleted, refresh],
+    [activeProfile, connectionId, onSessionDeleted, refresh],
   );
 
   const openMenuForSession = useCallback(
@@ -668,6 +827,7 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
         >
           <input
             ref={renameInputRef}
+            disabled={renameSaving}
             className="sidebar-recent-session-rename"
             type="text"
             value={editingTitle}
@@ -893,7 +1053,11 @@ const SidebarRecentSessions = memo(function SidebarRecentSessions({
                 )
               ) : (
                 <div className="sidebar-recent-empty">
-                  {t("navigation.noChats")}
+                  {loadState === "loading"
+                    ? t("navigation.chatsLoading")
+                    : loadState === "failed"
+                      ? t("navigation.chatsLoadFailed")
+                      : t("navigation.noChats")}
                 </div>
               )}
             </div>

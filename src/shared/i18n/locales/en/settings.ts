@@ -12,7 +12,9 @@ export default {
       hermes: "Hermes One",
     },
     appearance: "Appearance",
+    startup: "Startup",
     language: "Language",
+    hotkeys: "Hotkeys",
     privacy: "Privacy",
     connection: "Connection",
     network: "Network",
@@ -221,4 +223,84 @@ export default {
   remoteErrorRequiredSimple: "Please enter a URL",
   remoteErrorFailedSimple: "Could not reach server",
   apiGenerated: "API key generated — gateway restarting…",
+  chatTransport: {
+    label: "Chat transport",
+    options: {
+      auto: "Auto",
+      dashboard: "Dashboard",
+      legacy: "Legacy",
+    },
+    remoteHint:
+      "Auto tries the Hermes dashboard WebSocket first, then falls back to the legacy remote API. Dashboard requires the remote Hermes dashboard URL and a valid dashboard session token.",
+    sshHint:
+      "Auto tries the Hermes dashboard WebSocket through the SSH tunnel first, then falls back to legacy SSH chat. Dashboard forces the upstream dashboard path; Legacy keeps the older SSH transport.",
+    checking: "Checking…",
+  },
+  hotkeys: {
+    voiceDictation: "Voice dictation",
+    voiceDictationHint:
+      "Hold this combination anywhere to dictate; the text lands in the current chat.",
+    voiceDictationQuiet: "Voice dictation (quiet)",
+    voiceDictationQuietHint:
+      "Same recording, but the app window stays where it is — the note waits in the card until you come back to it.",
+    screenshot: "Screenshot",
+    screenshotHint:
+      "Press this combination anywhere to capture the screen; the image is attached to the current chat.",
+    region: "Region capture",
+    regionHint:
+      "Press this combination anywhere, drag a rectangle, and only that area is attached to the current chat.",
+    groups: {
+      global: "Global",
+      inApp: "Inside the app",
+    },
+    switchChat: "Recent conversations",
+    switchChatHint:
+      "Hold this combination and tap to walk the last 10 conversations from the sidebar; release to open the highlighted one. Add Shift to go back.",
+    nextChat: "Next tab",
+    nextChatHint:
+      "Moves to the next tab in the top row, wrapping around at the end.",
+    prevChat: "Previous tab",
+    prevChatHint:
+      "Moves to the previous tab in the top row, wrapping around at the start.",
+    insertDraft: "Insert draft",
+    insertDraftHint:
+      "Inserts the newest waiting screenshot or voice note into the open conversation, so you don\u2019t have to reach for the card.",
+    positionsHint:
+      "Ctrl + 1…9 jumps straight to the tab with that number in the top row. Tabs beyond the ninth are reachable with the arrows only.",
+    press: "Press the combination…",
+    saved: "Saved: {{hotkey}}",
+    problem: {
+      "modifier-only": "Add a key to the modifiers.",
+      "needs-modifier":
+        "Use Ctrl, Alt or Win — otherwise the combination would swallow ordinary typing.",
+      unsupported:
+        "Autostart is only available in a built app, not when running from source.",
+      reserved: "This combination is already used by Hermes One itself.",
+      taken: "Another application already holds this combination.",
+    },
+  },
+  /** Запуск вместе с системой: отдельный раздел настроек. */
+  autostart: {
+    label: "Start with Windows",
+    hint: "The app starts when you sign in and waits in the tray.",
+    unsupported: "Autostart is unavailable in this build.",
+    trayNote:
+      "It starts minimised on purpose: the window would otherwise jump up at every sign-in. Dictation, screenshots and task notifications work from the tray, without the window open.",
+  },
+  browserExtension: {
+    chrome: "Chrome",
+    yandex: "Yandex Browser",
+    and: " and ",
+    bannerMissing:
+      "Install the corporate extension “RAZUM AI Assistant” in {{browsers}} — it lets the assistant work with your browser pages.",
+    bannerDisabled:
+      "The corporate extension “RAZUM AI Assistant” is turned off ({{browsers}}) — turn it on in the browser's extension settings.",
+    install: "Install in {{browser}}",
+    open: "Open {{browser}}",
+    later: "Later",
+    never: "Don't remind",
+    remindLabel: "Remind about the browser extension",
+    remindHint:
+      "At launch the app checks Chrome and Yandex Browser for the corporate extension “RAZUM AI Assistant” and suggests installing it if it is missing.",
+  },
 } as const;

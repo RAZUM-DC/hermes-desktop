@@ -8,6 +8,7 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[code-blocks]] — collapsible long code blocks, and why expansion state is keyed on source position to survive react-markdown's streaming remounts.
 - [[window-chrome]] — the browser-style title bar where open-conversation tabs sit on top of the window drag region, clickable while empty space still drags.
 - [[desktop-updates]] — GitHub release checks, startup upgrade button behavior, and the Settings auto-upgrade preference.
+- [[release-packaging]] — complete cross-platform release artifacts, signing credentials, and isolated publication paths for macOS test builds.
 - [[sidebar-navigation]] — the recent-sessions list under the Chat nav item, capped at five with a "Show more" button that opens the full session list in a modal.
 - [[context-folder]] — the per-session linked working folder, persisted in a desktop-owned state.db table so a re-opened conversation restores its folder.
 - [[main-process]] — the Electron main-process entrypoint, app lifecycle modules, and centralized IPC registry.
@@ -15,3 +16,9 @@ This directory defines the high-level concepts, business logic, and architecture
 - [[kanban]] — the JIRA-style multi-agent board tab; a thin client over the `hermes kanban` CLI with canonical status columns, an archived toggle, and focus/poll refresh.
 - [[analytics]] — privacy-first, opt-out usage analytics that POST anonymous events to the in-house Hermes analytics service, keyed by a per-install localStorage UUID; replaces the former PostHog integration.
 - [[wallet-token-balances]] — profile-scoped Base mainnet wallets with encrypted recovery phrases, and on-chain ERC-20 token balance reads via ethers v6.
+- [[dashboard-clarify]] — interactive WebSocket clarification cards and safe answer delivery.
+- [[scheduled-jobs]] — terminal-state normalization for local, Remote API, and named SSH scheduled jobs.
+- [[remote-attachments]] — binary chat attachments in Remote Gateway mode are uploaded to the agent's server (`/v1/files`) and sent as a server-side path instead of being refused.
+- [[update-signature]] — Windows auto-update accepts installers signed by the pinned `CN=Razum` certificate even though Windows does not trust its root; background download errors reach the UI.
+- [[mac-companion]] — macOS bundle carries darwin builds of companion and connectors (sign-in, local tools), Keychain for the device secret, template menu-bar icon; limits of ad-hoc builds.
+- [[browser-extension]] — at launch checks Chrome and Yandex Browser for the corporate extension and offers to install it (banner, snooze, settings toggle).

@@ -1,4 +1,8 @@
 export default {
+  signingInTitle: "Masuk",
+  signingInHint:
+    "Halaman masuk terbuka di peramban. Aplikasi akan melanjutkan sendiri setelah selesai.",
+  signInAgain: "Masuk lagi",
   title: "Selamat datang di Hermes",
   subtitle:
     "Asisten AI yang terus berkembang dan berjalan lokal di mesin Anda. Privat, kuat, dan selalu belajar.",

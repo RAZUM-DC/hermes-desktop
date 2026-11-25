@@ -3,6 +3,7 @@ import { isBubbleMessage, markActiveTurnFailed } from "../chatMessages";
 import type { ActiveTurn, ChatMessage, UsageState } from "../types";
 import {
   dbItemsToChatMessages,
+  countUserAttachments,
   reconcileAfterDbRefresh,
   type DbHistoryItem,
 } from "../sessionHistory";
@@ -18,6 +19,8 @@ interface UseChatIPCArgs {
   runId: string;
   /** The session currently visible in this Chat, if already known. */
   sessionScopeId: string | null;
+  /** Profile that owns this mounted conversation. */
+  profile?: string;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setHermesSessionId: (id: string) => void;
   setToolProgress: (tool: string | null) => void;
@@ -45,6 +48,7 @@ export function eventMatchesRun(eventRunId: string, ownRunId: string): boolean {
 export function useChatIPC({
   runId,
   sessionScopeId,
+  profile,
   setMessages,
   setHermesSessionId,
   setToolProgress,
@@ -89,6 +93,8 @@ export function useChatIPC({
       try {
         const items = (await window.hermesAPI.getSessionMessages(
           sessionId,
+          undefined,
+          profile,
         )) as DbHistoryItem[];
         if (
           disposed ||
@@ -99,9 +105,22 @@ export function useChatIPC({
         }
         const dbMessages = dbItemsToChatMessages(items);
         if (dbMessages.length === 0) return;
-        setMessages((prev) =>
-          reconcileAfterDbRefresh(prev, dbMessages, { activeTurn }),
-        );
+        setMessages((prev) => {
+          const next = reconcileAfterDbRefresh(prev, dbMessages, {
+            activeTurn,
+          });
+          const before = countUserAttachments(prev);
+          const after = countUserAttachments(next);
+          if (before !== after) {
+            console.warn(
+              "[ATT] db refresh changed attachments:",
+              before,
+              "->",
+              after,
+            );
+          }
+          return next;
+        });
       } catch {
         // Mid-stream DB refresh is opportunistic; final refresh still runs.
       } finally {
@@ -189,6 +208,15 @@ export function useChatIPC({
         if (sessionId && !acceptedSessionId && !activeTurn) {
           return;
         }
+        setMessages((current) =>
+          current.map((message) =>
+            message.kind === "approval" &&
+            message.responsePath === "ipc" &&
+            !message.resolved
+              ? { ...message, unavailable: true }
+              : message,
+          ),
+        );
         if (sessionId) {
           acceptedSessionIdRef.current = sessionId;
           setHermesSessionId(sessionId);
@@ -202,12 +230,27 @@ export function useChatIPC({
         try {
           const items = (await window.hermesAPI.getSessionMessages(
             sessionId,
+            undefined,
+            profile,
           )) as DbHistoryItem[];
           const dbMessages = dbItemsToChatMessages(items);
           if (dbMessages.length > 0) {
-            setMessages((prev) =>
-              reconcileAfterDbRefresh(prev, dbMessages, { activeTurn }),
-            );
+            setMessages((prev) => {
+              const next = reconcileAfterDbRefresh(prev, dbMessages, {
+                activeTurn,
+              });
+              const before = countUserAttachments(prev);
+              const after = countUserAttachments(next);
+              if (before !== after) {
+                console.warn(
+                  "[ATT] final db refresh changed attachments:",
+                  before,
+                  "->",
+                  after,
+                );
+              }
+              return next;
+            });
           }
           if (activeTurn) activeTurn.status = "completed";
         } catch {
@@ -227,9 +270,16 @@ export function useChatIPC({
       reasoningSegmentClosedRef.current = false;
       stopDbPolling();
       const activeTurn = activeTurnRef.current;
-      if (!activeTurn) return;
-      activeTurn.status = "failed";
-      setMessages((prev) => markActiveTurnFailed(prev, error, activeTurn));
+      if (activeTurn) activeTurn.status = "failed";
+      setMessages((prev) =>
+        markActiveTurnFailed(prev, error, activeTurn).map((message) =>
+          message.kind === "approval" &&
+          message.responsePath === "ipc" &&
+          !message.resolved
+            ? { ...message, unavailable: true }
+            : message,
+        ),
+      );
       setToolProgress(null);
       setIsLoading(false);
     });
@@ -257,6 +307,38 @@ export function useChatIPC({
               requestId: req.requestId,
               question: req.question,
               choices: Array.isArray(req.choices) ? req.choices : [],
+            },
+          ];
+        });
+      },
+    );
+
+    const cleanupApproval = window.hermesAPI.onApprovalRequest(
+      (eventRunId, req) => {
+        if (!eventMatchesRun(eventRunId, runId)) return;
+        reasoningSegmentClosedRef.current = true;
+        setToolProgress(null);
+        setIsLoading(true);
+        setMessages((prev) => {
+          if (
+            prev.some(
+              (message) =>
+                message.kind === "approval" &&
+                message.responsePath === "ipc" &&
+                message.requestId === req.requestId,
+            )
+          ) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              id: `approval-ipc-${req.requestId}`,
+              kind: "approval",
+              role: "agent",
+              responsePath: "ipc",
+              runId,
+              ...req,
             },
           ];
         });
@@ -353,12 +435,14 @@ export function useChatIPC({
       cleanupDone();
       cleanupError();
       cleanupClarify();
+      cleanupApproval();
       cleanupToolProgress();
       cleanupToolEvent();
       cleanupUsage();
     };
   }, [
     runId,
+    profile,
     setMessages,
     setHermesSessionId,
     setToolProgress,

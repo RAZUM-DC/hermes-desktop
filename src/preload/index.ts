@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppLocale } from "../shared/i18n/types";
 import type { Attachment } from "../shared/attachments";
+import type { MemoryFact } from "../shared/memory-bank";
+import type { Note } from "../shared/notes";
+import type { BrowserExtensionStatus } from "../shared/browser-extension";
+import type { ScreenshotResponse } from "../shared/screenshot";
 import type { SessionModelOverride } from "../shared/model-override";
 import type { DesktopSessionContinuationItem } from "../shared/session-continuation";
 import type { DesktopSessionLocalError } from "../shared/session-continuation";
@@ -16,6 +20,10 @@ import type {
   MessagingPlatformUpdate,
 } from "../shared/messaging-platforms";
 import type { ChatToolEvent } from "../shared/chat-stream";
+import type {
+  ApprovalChoice,
+  ChatApprovalRequest,
+} from "../shared/chat-approval";
 
 /**
  * Mirror of the renderer-side `CredentialPoolEntry` ambient type
@@ -81,6 +89,7 @@ const hermesAPI = {
     installed: boolean;
     configured: boolean;
     hasApiKey: boolean;
+    activeProfile?: string;
   }> => ipcRenderer.invoke("check-install"),
 
   verifyInstall: (): Promise<boolean> => ipcRenderer.invoke("verify-install"),
@@ -175,6 +184,7 @@ const hermesAPI = {
 
   validateChatReadiness: (
     profile?: string,
+    override?: { provider?: string; model?: string; baseUrl?: string },
   ): Promise<{
     ok: boolean;
     code?:
@@ -186,7 +196,7 @@ const hermesAPI = {
     message?: string;
     fixLocation?: "providers" | "models" | "gateway" | "setup";
     expectedEnvKey?: string;
-  }> => ipcRenderer.invoke("validate-chat-readiness", profile),
+  }> => ipcRenderer.invoke("validate-chat-readiness", profile, override),
 
   getConfigHealth: (profile?: string): Promise<unknown> =>
     ipcRenderer.invoke("get-config-health", profile),
@@ -401,6 +411,190 @@ const hermesAPI = {
   ): Promise<string> =>
     ipcRenderer.invoke("transcribe-audio", audio, mimeType, profile),
 
+  transcribeAudioLocal: (
+    audio: Uint8Array,
+    language?: string,
+  ): Promise<string> =>
+    ipcRenderer.invoke("transcribe-audio-local", audio, language),
+
+  isVoiceSidecarAvailable: (): Promise<boolean> =>
+    ipcRenderer.invoke("is-voice-sidecar-available"),
+
+  startVoiceRecording: (language?: string): Promise<void> =>
+    ipcRenderer.invoke("voice-record-start", language),
+
+  partialVoiceTranscript: (): Promise<string> =>
+    ipcRenderer.invoke("voice-record-partial"),
+
+  stopVoiceRecording: (): Promise<string> =>
+    ipcRenderer.invoke("voice-record-stop"),
+
+  cancelVoiceRecording: (): Promise<void> =>
+    ipcRenderer.invoke("voice-record-cancel"),
+
+  // --- Горячие клавиши -----------------------------------------------------
+
+  getHotkeys: (): Promise<{
+    voiceDictation: string;
+    screenshot: string;
+    region: string;
+    voiceDictationQuiet: string;
+    switchChat: string;
+    nextChat: string;
+    prevChat: string;
+    insertDraft: string;
+  }> => ipcRenderer.invoke("hotkeys-get"),
+
+  checkHotkey: (
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-check", accelerator),
+
+  setVoiceHotkey: (
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-set-voice", accelerator),
+
+  setVoiceQuietHotkey: (
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-set-voice-quiet", accelerator),
+
+  setScreenshotHotkey: (
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-set-screenshot", accelerator),
+
+  setRegionHotkey: (
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-set-region", accelerator),
+
+  /**
+   * Внутриоконное действие по комбинации, пойманной главным процессом: на
+   * Windows сочетания с Alt разбирает слой окна раньше страницы.
+   */
+  onWindowHotkey: (
+    callback: (action: "nextChat" | "prevChat" | "insertDraft") => void,
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      action: unknown,
+    ): void => {
+      if (
+        action === "nextChat" ||
+        action === "prevChat" ||
+        action === "insertDraft"
+      ) {
+        callback(action);
+      }
+    };
+    ipcRenderer.on("in-app-hotkey", handler);
+    return () => ipcRenderer.removeListener("in-app-hotkey", handler);
+  },
+
+  /** Внутриоконные комбинации: переключение чатов и вкладок. */
+  setInAppHotkey: (
+    action: "switchChat" | "nextChat" | "prevChat" | "insertDraft",
+    accelerator: string,
+  ): Promise<{ ok: boolean; problem?: string }> =>
+    ipcRenderer.invoke("hotkeys-set-in-app", action, accelerator),
+
+  /**
+   * Основное окно: снимок, сделанный по глобальной комбинации. В чат он
+   * больше не уезжает сам — его принимает карточка предпросмотра.
+   */
+  onScreenshotCaptured: (
+    callback: (shot: { png: ArrayBuffer; name: string }) => void,
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, shot: unknown): void =>
+      callback(shot as { png: ArrayBuffer; name: string });
+    ipcRenderer.on("screenshot-captured", handler);
+    return () => ipcRenderer.removeListener("screenshot-captured", handler);
+  },
+
+  // --- Быстрая диктовка (окошко по глобальной горячей клавише) -------------
+
+  /** Окошко диктовки: main сообщает, что пора начинать запись. */
+  onDictationBegin: (
+    callback: (info: {
+      keys: string[];
+      codes: string[];
+      hotkey: string;
+    }) => void,
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, info: unknown): void =>
+      callback(info as { keys: string[]; codes: string[]; hotkey: string });
+    ipcRenderer.on("voice-dictation-begin", handler);
+    return () => ipcRenderer.removeListener("voice-dictation-begin", handler);
+  },
+
+  /** Окошко диктовки: завершить запись (повторное нажатие хоткея). */
+  onDictationFinish: (callback: () => void): (() => void) => {
+    const handler = (): void => callback();
+    ipcRenderer.on("voice-dictation-finish", handler);
+    return () => ipcRenderer.removeListener("voice-dictation-finish", handler);
+  },
+
+  /** Основное окно: диктовка закончена, идёт распознавание. */
+  onDictationPending: (callback: () => void): (() => void) => {
+    const handler = (): void => callback();
+    ipcRenderer.on("voice-dictation-pending", handler);
+    return () => ipcRenderer.removeListener("voice-dictation-pending", handler);
+  },
+
+  /** Основное окно: распознанный текст из окошка диктовки. */
+  onDictationText: (callback: (text: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, text: unknown): void =>
+      callback(String(text ?? ""));
+    ipcRenderer.on("voice-dictation-text", handler);
+    return () => ipcRenderer.removeListener("voice-dictation-text", handler);
+  },
+
+  watchDictationHold: (): Promise<"released" | "absent" | null> =>
+    ipcRenderer.invoke("voice-dictation-watch"),
+
+  beginDictationHandoff: (): Promise<boolean> =>
+    ipcRenderer.invoke("voice-dictation-handoff"),
+
+  showDictationError: (): Promise<boolean> =>
+    ipcRenderer.invoke("voice-dictation-error"),
+
+  commitDictation: (text: string): Promise<boolean> =>
+    ipcRenderer.invoke("voice-dictation-commit", text),
+
+  /** Тихий режим: закрыть окошко, ничего не сообщая. */
+  closeDictation: (): Promise<boolean> =>
+    ipcRenderer.invoke("voice-dictation-close"),
+
+  /** Запись отменена — строку в карточке нужно убрать. */
+  onDictationDropped: (callback: () => void): (() => void) => {
+    const handler = (): void => callback();
+    ipcRenderer.on("voice-dictation-dropped", handler);
+    return () => ipcRenderer.removeListener("voice-dictation-dropped", handler);
+  },
+
+  cancelDictation: (): Promise<boolean> =>
+    ipcRenderer.invoke("voice-dictation-cancel"),
+
+  takeScreenshot: (): Promise<ScreenshotResponse> =>
+    ipcRenderer.invoke("take-screenshot"),
+
+  takeScreenshotRegion: (): Promise<ScreenshotResponse> =>
+    ipcRenderer.invoke("take-screenshot-region"),
+
+  persistPromptAttachments: (
+    sessionId: string,
+    promptText: string,
+    attachments?: Attachment[],
+  ): Promise<boolean> =>
+    ipcRenderer.invoke(
+      "persist-prompt-attachments",
+      sessionId,
+      promptText,
+      attachments,
+    ),
+
   getApiServerKeyStatus: (
     profile?: string,
   ): Promise<{ hasKey: boolean; providerId?: string; checkedAt?: number }> =>
@@ -450,6 +644,22 @@ const hermesAPI = {
 
   clearStagedAttachments: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke("clear-staged-attachments", sessionId),
+
+  // Remote Gateway mode: upload a binary attachment to the agent's server and
+  // get back the path the agent sees it under.
+  uploadRemoteAttachment: (
+    filename: string,
+    base64Bytes: string,
+    mime?: string,
+  ): Promise<
+    | { ok: true; path: string; id?: string; bytes?: number }
+    | {
+        ok: false;
+        reason: "unsupported" | "too-large" | "failed";
+        detail?: string;
+      }
+  > =>
+    ipcRenderer.invoke("upload-remote-attachment", filename, base64Bytes, mime),
 
   discoverProviderModels: (
     provider: string,
@@ -647,6 +857,25 @@ const hermesAPI = {
   respondClarify: (requestId: string, answer: string): Promise<boolean> =>
     ipcRenderer.invoke("clarify-respond", { requestId, answer }),
 
+  onApprovalRequest: (
+    callback: (runId: string, req: ChatApprovalRequest) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      runId: string,
+      req: ChatApprovalRequest,
+    ): void => callback(runId, req);
+    ipcRenderer.on("chat-approval-request", handler);
+    return () => ipcRenderer.removeListener("chat-approval-request", handler);
+  },
+
+  respondApproval: (
+    requestId: string,
+    choice: ApprovalChoice,
+    runId: string,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke("approval-respond", { requestId, choice, runId }),
+
   // Gateway
   startGateway: (): Promise<GatewayStartResult> =>
     ipcRenderer.invoke("start-gateway"),
@@ -690,6 +919,8 @@ const hermesAPI = {
   listSessions: (
     limit?: number,
     offset?: number,
+    connectionId?: string,
+    profile?: string,
   ): Promise<
     Array<{
       id: string;
@@ -701,10 +932,13 @@ const hermesAPI = {
       title: string | null;
       preview: string;
     }>
-  > => ipcRenderer.invoke("list-sessions", limit, offset),
+  > =>
+    ipcRenderer.invoke("list-sessions", limit, offset, connectionId, profile),
 
   getSessionMessages: (
     sessionId: string,
+    connectionId?: string,
+    profile?: string,
   ): Promise<
     Array<{
       id: number;
@@ -713,7 +947,13 @@ const hermesAPI = {
       timestamp: number;
       attachments?: Attachment[];
     }>
-  > => ipcRenderer.invoke("get-session-messages", sessionId),
+  > =>
+    ipcRenderer.invoke(
+      "get-session-messages",
+      sessionId,
+      connectionId,
+      profile,
+    ),
 
   recordSessionContinuation: (
     sessionId: string,
@@ -908,6 +1148,8 @@ const hermesAPI = {
   listCachedSessions: (
     limit?: number,
     offset?: number,
+    connectionId?: string,
+    profile?: string,
   ): Promise<
     Array<{
       id: string;
@@ -918,9 +1160,19 @@ const hermesAPI = {
       model: string;
       contextFolder: string | null;
     }>
-  > => ipcRenderer.invoke("list-cached-sessions", limit, offset),
+  > =>
+    ipcRenderer.invoke(
+      "list-cached-sessions",
+      limit,
+      offset,
+      connectionId,
+      profile,
+    ),
 
-  syncSessionCache: (): Promise<
+  syncSessionCache: (
+    connectionId?: string,
+    profile?: string,
+  ): Promise<
     Array<{
       id: string;
       title: string;
@@ -930,21 +1182,43 @@ const hermesAPI = {
       model: string;
       contextFolder: string | null;
     }>
-  > => ipcRenderer.invoke("sync-session-cache"),
+  > => ipcRenderer.invoke("sync-session-cache", connectionId, profile),
 
-  updateSessionTitle: (sessionId: string, title: string): Promise<void> =>
-    ipcRenderer.invoke("update-session-title", sessionId, title),
-  deleteSession: (sessionId: string): Promise<void> =>
-    ipcRenderer.invoke("delete-session", sessionId),
+  updateSessionTitle: (
+    sessionId: string,
+    title: string,
+    connectionId?: string,
+    profile?: string,
+    /** Название придумало приложение, а не человек. */
+    auto?: boolean,
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "update-session-title",
+      sessionId,
+      title,
+      connectionId,
+      profile,
+      auto,
+    ),
+  deleteSession: (
+    sessionId: string,
+    connectionId?: string,
+    profile?: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke("delete-session", sessionId, connectionId, profile),
   deleteSessions: (
     sessionIds: string[],
+    connectionId?: string,
+    profile?: string,
   ): Promise<{ requested: number; deleted: number }> =>
-    ipcRenderer.invoke("delete-sessions", sessionIds),
+    ipcRenderer.invoke("delete-sessions", sessionIds, connectionId, profile),
 
   // Session search
   searchSessions: (
     query: string,
     limit?: number,
+    connectionId?: string,
+    profile?: string,
   ): Promise<
     Array<{
       sessionId: string;
@@ -955,7 +1229,8 @@ const hermesAPI = {
       model: string;
       snippet: string;
     }>
-  > => ipcRenderer.invoke("search-sessions", query, limit),
+  > =>
+    ipcRenderer.invoke("search-sessions", query, limit, connectionId, profile),
 
   // Credential Pool (profile-aware: reads/writes the named profile's
   // auth.json; defaults to the currently active profile when omitted)
@@ -1285,6 +1560,61 @@ const hermesAPI = {
   ) => ipcRenderer.invoke("kanban-create-task", input, profile),
   selectFolder: (): Promise<string | null> =>
     ipcRenderer.invoke("select-folder"),
+  localToolRoots: (): Promise<string[]> =>
+    ipcRenderer.invoke("local-tool-roots"),
+  memoryBankList: (
+    limit?: number,
+    offset?: number,
+  ): Promise<{ items: MemoryFact[]; total: number }> =>
+    ipcRenderer.invoke("memory-bank-list", limit, offset),
+  autostartGet: (): Promise<{ enabled: boolean; supported: boolean }> =>
+    ipcRenderer.invoke("autostart-get"),
+  autostartSet: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke("autostart-set", enabled),
+  browserExtensionStatus: (): Promise<BrowserExtensionStatus> =>
+    ipcRenderer.invoke("browser-extension-status"),
+  browserExtensionOpenStore: (browser: "chrome" | "yandex"): Promise<boolean> =>
+    ipcRenderer.invoke("browser-extension-open-store", browser),
+  browserExtensionSnooze: (): Promise<void> =>
+    ipcRenderer.invoke("browser-extension-snooze"),
+  browserExtensionSetRemind: (remind: boolean): Promise<boolean> =>
+    ipcRenderer.invoke("browser-extension-set-remind", remind),
+  notesList: (): Promise<Note[]> => ipcRenderer.invoke("notes-list"),
+  notesSave: (input: {
+    id?: string;
+    title?: string;
+    text?: string;
+  }): Promise<Note> => ipcRenderer.invoke("notes-save", input),
+  notesDelete: (id: string): Promise<void> =>
+    ipcRenderer.invoke("notes-delete", id),
+  notesAttach: (noteId: string): Promise<Note | null> =>
+    ipcRenderer.invoke("notes-attach", noteId),
+  notesAttachData: (
+    noteId: string,
+    name: string,
+    bytes: Uint8Array,
+  ): Promise<Note | null> =>
+    ipcRenderer.invoke("notes-attach-data", noteId, name, bytes),
+  notesAttachmentRemove: (
+    noteId: string,
+    attachmentId: string,
+  ): Promise<Note | null> =>
+    ipcRenderer.invoke("notes-attachment-remove", noteId, attachmentId),
+  notesAttachmentBytes: (
+    noteId: string,
+    attachmentId: string,
+  ): Promise<Uint8Array | null> =>
+    ipcRenderer.invoke("notes-attachment-bytes", noteId, attachmentId),
+  notesAttachmentData: (
+    noteId: string,
+    attachmentId: string,
+  ): Promise<string | null> =>
+    ipcRenderer.invoke("notes-attachment-data", noteId, attachmentId),
+  notesAttachmentOpen: (
+    noteId: string,
+    attachmentId: string,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke("notes-attachment-open", noteId, attachmentId),
   readDirectory: (
     dirPath: string,
   ): Promise<{ name: string; isDirectory: boolean }[] | null> =>
@@ -1329,7 +1659,8 @@ const hermesAPI = {
     method: string,
     path: string,
     body?: unknown,
-  ) => ipcRenderer.invoke("agent-kanban-request", runtimeId, method, path, body),
+  ) =>
+    ipcRenderer.invoke("agent-kanban-request", runtimeId, method, path, body),
   agentMontageArtifact: (projectId: string, which: string) =>
     ipcRenderer.invoke("agent-montage-artifact", projectId, which),
   kanbanDispatchOnce: (dryRun?: boolean, profile?: string) =>

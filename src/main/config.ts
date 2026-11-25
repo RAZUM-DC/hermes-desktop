@@ -25,9 +25,12 @@ import {
 } from "./secrets";
 import { canonicalProviderBaseUrl } from "./provider-registry";
 import {
+  customProviderEnvKey,
   expectedEnvKeyForUrl,
   OPENAI_COMPAT_PROVIDERS,
 } from "../shared/url-key-map";
+import { readModelsRaw } from "./models";
+import { normalizeModelEndpointUrl } from "../shared/model-endpoint";
 
 // ── Connection Config (local / remote / ssh) ─────────────
 
@@ -93,11 +96,37 @@ export function writeDesktopConfig(data: Record<string, unknown>): void {
   writeFileSync(desktopConfigFile(), JSON.stringify(data, null, 2), "utf-8");
 }
 
+/**
+ * Режим подключения из конфига, с умолчанием.
+ *
+ * Умолчание — `remote`, и это отражает то, чем сборка является на самом деле.
+ * Companion поднимается при каждом старте (см. start.ts) и сам записывает в
+ * desktop.json `connectionMode: "remote"` сразу после enroll — то есть любой
+ * реальный пользователь оказывается в гибриде, а прежнее умолчание `local`
+ * работало ровно те несколько секунд, что идут до записи конфига, и всё это
+ * время приложение считало себя не тем, чем было.
+ *
+ * Ветки `local` и `ssh` в коде остаются: они достались от апстрима, с
+ * которым мы продолжаем сливаться, и удалять их значило бы получать конфликт
+ * в каждом будущем merge. Они просто перестают быть достижимыми — ни через
+ * умолчание, ни через интерфейс.
+ *
+ * Функция отдельная и экспортирована ради тестов: разбор значения из файла
+ * должен быть предсказуем на мусорных данных, а не только на правильных.
+ */
+export function normalizeConnectionMode(
+  value: unknown,
+): "local" | "remote" | "ssh" {
+  return value === "local" || value === "ssh" || value === "remote"
+    ? value
+    : "remote";
+}
+
 export function getConnectionConfig(): ConnectionConfig {
   const data = readDesktopConfig();
   const ssh = (data.sshConfig as Partial<SshConnectionConfig>) ?? {};
   return {
-    mode: (data.connectionMode as "local" | "remote" | "ssh") || "local",
+    mode: normalizeConnectionMode(data.connectionMode),
     remoteUrl: (data.remoteUrl as string) || "",
     apiKey: (data.remoteApiKey as string) || "",
     remoteChatTransport: normalizeRemoteChatTransport(data.remoteChatTransport),
@@ -756,10 +785,8 @@ export function getModelContextLengthOverride(
  * does. Returns false for providers the runtime does NOT route through the
  * custom path, so their specific-key checks still apply.
  *
- * (The runtime also consults a per-model `CUSTOM_PROVIDER_<name>_KEY` ahead of
- * the generic keys; that lookup needs models.json and is intentionally omitted
- * here to keep config.ts free of a models.ts import — the generic chain covers
- * the reported cases.)
+ * Saved custom providers use the same endpoint identity and per-name keys as
+ * the runtime.
  */
 export function customEndpointKeyResolvable(
   provider: string,
@@ -775,6 +802,25 @@ export function customEndpointKeyResolvable(
     "CUSTOM_API_KEY",
     "OPENAI_API_KEY",
   ]);
+
+  // A custom provider imported from config.yaml owns a dedicated key such as
+  // CUSTOM_PROVIDER_TEST_GATEWAY_KEY. Add keys only for saved custom rows that
+  // represent this exact endpoint identity.
+  try {
+    const endpoint = normalizeModelEndpointUrl(baseUrl);
+    for (const row of readModelsRaw()) {
+      if (
+        row.provider === "custom" &&
+        row.name &&
+        normalizeModelEndpointUrl(row.baseUrl) === endpoint
+      ) {
+        candidates.add(customProviderEnvKey(row.name));
+      }
+    }
+  } catch {
+    // models.json unreadable — the generic fallback chain still applies
+  }
+
   for (const k of candidates) {
     if ((env[k] ?? "").trim()) return true;
   }
