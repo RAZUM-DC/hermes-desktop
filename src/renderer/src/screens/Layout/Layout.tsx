@@ -88,7 +88,18 @@ import {
 } from "../../assets/icons";
 import type { LucideIcon } from "lucide-react";
 import { useI18n } from "../../components/useI18n";
-import { openSessionWithRetry } from "./deepLinkOpen";
+import {
+  isRetryableSessionError,
+  openSessionWithRetry,
+  type ResumeOutcome,
+} from "./deepLinkOpen";
+
+interface ResumeOptions {
+  /** Keep a retryable error to yourself: the caller retries (deep links). */
+  quiet?: boolean;
+  /** The id came from outside: an empty history means «no such session». */
+  requireExisting?: boolean;
+}
 import type { AttachmentError } from "../Chat/attachmentUtils";
 
 type View =
@@ -199,12 +210,23 @@ function Layout({
   // await, so it can't rely on `runs` state alone).
   const resumingRef = useRef<Set<string>>(new Set());
   // Session id of the most recent resume request (see handleResumeSession).
-  // null = no resume owns the screen: a new chat or a tab click took over.
+  // null = no resume owns the screen: the user moved on (new chat, tab click,
+  // another agent, another section) — see supersedeResume.
   const latestResumeRef = useRef<string | null>(null);
-  // Session the user tried to open and couldn't (shown as a banner with retry).
-  const [resumeErrorSessionId, setResumeErrorSessionId] = useState<
-    string | null
-  >(null);
+  // Session the user tried to open and couldn't (banner with Retry).
+  const [resumeError, setResumeError] = useState<{
+    sessionId: string;
+    notFound: boolean;
+  } | null>(null);
+  // Deep link waiting between retries (banner «Opening…» with Cancel).
+  const [linkPendingId, setLinkPendingId] = useState<string | null>(null);
+  // The user moved on: no loading session may take over the screen any more,
+  // pending deep-link retries stop, and a stale error banner goes away.
+  const supersedeResume = useCallback((): void => {
+    latestResumeRef.current = null;
+    setResumeError(null);
+    setLinkPendingId(null);
+  }, []);
   const sidebarChatScrollRef = useRef<HTMLDivElement | null>(null);
   const sidebarScrollbarHideRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -443,14 +465,19 @@ function Layout({
     overflow: "hidden",
   });
 
-  const goTo = useCallback((v: View) => {
-    setVisitedViews((prev) => (prev.has(v) ? prev : new Set(prev).add(v)));
-    // Чат вкладкой раздела не считается: у него своя полоса диалогов.
-    if (v !== "chat") {
-      setOpenSections((prev) => (prev.includes(v) ? prev : [...prev, v]));
-    }
-    setView(v);
-  }, []);
+  const goTo = useCallback(
+    (v: View) => {
+      setVisitedViews((prev) => (prev.has(v) ? prev : new Set(prev).add(v)));
+      // Чат вкладкой раздела не считается: у него своя полоса диалогов.
+      if (v !== "chat") {
+        setOpenSections((prev) => (prev.includes(v) ? prev : [...prev, v]));
+        // Ушли из чатов в раздел — догружающийся диалог сюда не перебросит.
+        supersedeResume();
+      }
+      setView(v);
+    },
+    [supersedeResume],
+  );
 
   /**
    * Закрыть вкладку раздела.
@@ -540,8 +567,10 @@ function Layout({
       .finally(() => {
         if (!cancelled) setProfileRestored(true);
       });
-    // Never block deep links forever on a hung profile lookup.
-    const fallback = window.setTimeout(() => setProfileRestored(true), 5000);
+    // Never block deep links forever on a hung profile lookup. Generous on
+    // purpose: in SSH mode listProfiles goes over SSH, and opening a link under
+    // the wrong profile is worse than opening it a little later.
+    const fallback = window.setTimeout(() => setProfileRestored(true), 30000);
     return () => {
       cancelled = true;
       window.clearTimeout(fallback);
@@ -626,7 +655,7 @@ function Layout({
 
   const handleNewChat = useCallback(() => {
     // An explicit new chat wins over a session still loading in the background.
-    latestResumeRef.current = null;
+    supersedeResume();
     // Open a fresh run WITHOUT aborting others — any in-flight session keeps
     // streaming in the background and stays reachable via the active bar. If the
     // current chat is already a blank scratch, reuse it instead of stacking
@@ -640,7 +669,7 @@ function Layout({
     setRuns((prev) => [...prev, run]);
     setActiveRunId(run.runId);
     goTo("chat");
-  }, [runs, activeRunId, activeProfile, goTo]);
+  }, [runs, activeRunId, activeProfile, goTo, supersedeResume]);
 
   // Listen for menu IPC events (Cmd+N, Cmd+K from app menu)
   useEffect(() => {
@@ -673,18 +702,20 @@ function Layout({
       // chats remain on their original profile, but the visible chat must move
       // to a scratch run for the selected profile so the footer and transport
       // never point at different agents.
+      supersedeResume();
       setActiveProfile(name);
       const next = selectProfileRunTransition(runs, activeRunId, name);
       setRuns(next.runs);
       setActiveRunId(next.activeRunId);
     },
-    [runs, activeRunId],
+    [runs, activeRunId, supersedeResume],
   );
 
   // The "Chat" affordance: start (or reuse a blank) conversation with an agent
   // and show it. This is the only path from the profile list that opens a chat.
   const handleChatWithProfile = useCallback(
     (name: string) => {
+      supersedeResume();
       setActiveProfile(name);
       const active = runs.find((r) => r.runId === activeRunId);
       if (active && isScratchRun(active)) {
@@ -700,7 +731,7 @@ function Layout({
       }
       goTo("chat");
     },
-    [runs, activeRunId, goTo],
+    [runs, activeRunId, goTo, supersedeResume],
   );
 
   // Jump to an already-open run (e.g. from the active-sessions bar), switching
@@ -710,12 +741,12 @@ function Layout({
       const run = runs.find((r) => r.runId === runId);
       if (!run) return;
       // A tab click wins over a session still loading in the background.
-      latestResumeRef.current = null;
+      supersedeResume();
       setActiveRunId(runId);
       setActiveProfile(run.profile);
       goTo("chat");
     },
-    [runs, goTo],
+    [runs, goTo, supersedeResume],
   );
 
   // --- Переключение диалогов с клавиатуры ----------------------------------
@@ -797,8 +828,8 @@ function Layout({
   // Присваивается ниже, сразу после объявления handleResumeSession: тот
   // объявлен позже по файлу, и взять его здесь напрямую нельзя.
   const resumeSessionRef = useRef<
-    (sessionId: string, opts?: { quiet?: boolean }) => Promise<boolean>
-  >(async () => false);
+    (sessionId: string, opts?: ResumeOptions) => Promise<ResumeOutcome>
+  >(async () => "failed");
 
   // Сайдбар отдаёт свой список наверх. Он же решает, что такое «недавние»:
   // повторять эту сортировку здесь значило бы разойтись с тем, что видно.
@@ -1195,23 +1226,23 @@ function Layout({
   );
 
   const handleResumeSession = useCallback(
-    async (sessionId: string, opts?: { quiet?: boolean }): Promise<boolean> => {
+    async (sessionId: string, opts?: ResumeOptions): Promise<ResumeOutcome> => {
       // The most recent request wins: a deep link or a click arriving while an
       // earlier resume is still loading must not be overridden when that older
       // load finishes (remote/SSH responses can come back out of order).
       latestResumeRef.current = sessionId;
-      setResumeErrorSessionId(null);
+      setResumeError(null);
       // Already open as a live run? Re-attach to it (keeps live streaming).
       const live = findRunBySession(runs, sessionId);
       if (live) {
         handleActivateRun(live.runId);
-        return true;
+        return "opened";
       }
       // Guard against a double-click resuming the same session twice: the live
       // check above and the setRuns below straddle an await, so without this a
       // second click would pass the stale guard and mount a duplicate tab.
       // The in-flight load owns this session (and is itself the latest request).
-      if (resumingRef.current.has(sessionId)) return true;
+      if (resumingRef.current.has(sessionId)) return "opened";
       resumingRef.current.add(sessionId);
       setResumingSessionId(sessionId);
       try {
@@ -1224,13 +1255,23 @@ function Layout({
           )) as DbHistoryItem[];
         } catch (err) {
           console.error("[sessions] failed to open session", err);
-          // Only the request that still owns the screen may report the error.
-          if (!opts?.quiet && latestResumeRef.current === sessionId)
-            setResumeErrorSessionId(sessionId);
-          return false;
+          if (latestResumeRef.current !== sessionId) return "superseded";
+          const retryable = isRetryableSessionError(err);
+          // A quiet attempt keeps a retryable error to itself (the caller will
+          // retry); a final error is shown at once.
+          if (!retryable || !opts?.quiet)
+            setResumeError({ sessionId, notFound: false });
+          return retryable ? "retryable" : "failed";
         }
         // Superseded while loading: the newer request owns the screen.
-        if (latestResumeRef.current !== sessionId) return false;
+        if (latestResumeRef.current !== sessionId) return "superseded";
+        // A link carries an id from outside: an empty history means there is
+        // no such session here. Opening it would mount an empty chat bound to
+        // a foreign id, and the next message would "resume" it.
+        if (opts?.requireExisting && items.length === 0) {
+          setResumeError({ sessionId, notFound: true });
+          return "failed";
+        }
         const run = mintRun(activeProfile, dbItemsToChatMessages(items));
         run.sessionId = sessionId;
         run.fromHistory = true;
@@ -1239,7 +1280,7 @@ function Layout({
         );
         setActiveRunId(run.runId);
         goTo("chat");
-        return true;
+        return "opened";
       } finally {
         resumingRef.current.delete(sessionId);
         // Clear the spinner only if it is still ours: a newer request that
@@ -1262,8 +1303,13 @@ function Layout({
     return window.hermesAPI.onDeepLinkOpenSession((sessionId) => {
       void openSessionWithRetry({
         sessionId,
-        resume: (id, quiet) => resumeSessionRef.current(id, { quiet }),
+        resume: (id, quiet) =>
+          resumeSessionRef.current(id, { quiet, requireExisting: true }),
         isCurrent: (id) => latestResumeRef.current === id,
+        onWaiting: (waiting) =>
+          setLinkPendingId((cur) =>
+            waiting ? sessionId : cur === sessionId ? null : cur,
+          ),
       });
     });
   }, [profileRestored]);
@@ -1488,29 +1534,52 @@ function Layout({
           />
         )}
         <BrowserExtensionBanner />
-        {resumeErrorSessionId && (
+        {resumeError ? (
           <div className="verify-warning-banner" role="alert">
             <span className="verify-warning-text">
-              {t("chat.sessionOpenFailed")}
+              {t(
+                resumeError.notFound
+                  ? "chat.sessionNotFound"
+                  : "chat.sessionOpenFailed",
+              )}
             </span>
             <div className="verify-warning-actions">
               <button
                 className="btn btn-secondary btn-sm"
                 type="button"
-                onClick={() => void handleResumeSession(resumeErrorSessionId)}
+                onClick={() =>
+                  void handleResumeSession(resumeError.sessionId, {
+                    requireExisting: resumeError.notFound,
+                  })
+                }
               >
                 {t("common.retry")}
               </button>
               <button
                 className="btn-ghost btn-sm"
                 type="button"
-                onClick={() => setResumeErrorSessionId(null)}
+                onClick={() => setResumeError(null)}
               >
                 {t("common.dismiss")}
               </button>
             </div>
           </div>
-        )}
+        ) : linkPendingId ? (
+          <div className="verify-warning-banner" role="status">
+            <span className="verify-warning-text">
+              {t("chat.sessionOpening")}
+            </span>
+            <div className="verify-warning-actions">
+              <button
+                className="btn-ghost btn-sm"
+                type="button"
+                onClick={supersedeResume}
+              >
+                {t("common.cancel")}
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div style={paneStyle("chat")}>
           {runs.map((run) => (
             <div

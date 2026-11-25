@@ -96,6 +96,8 @@ export default {
   voiceTranscribing: "Transcribing…",
   dictationListening: "Listening…",
   dictationHint: "Release the keys to insert the text",
+  sessionNotFound: "This conversation was not found.",
+  sessionOpening: "Opening the conversation from the link…",
   sessionOpenFailed:
     "Could not open the conversation. Check the connection and try again.",
   voiceBlocked:

@@ -399,10 +399,22 @@ function createWindow(): void {
     if (!startHidden || showWindowWhenReady) mainWindow?.show();
     showWindowWhenReady = false;
   });
-  // A (re)load drops the renderer's subscription; it re-announces itself.
-  mainWindow.webContents.on("did-start-loading", () =>
-    deepLinks.markNotReady(),
-  );
+  // A main-frame (re)load drops the renderer's subscription; it re-announces
+  // itself. Not did-start-loading: that may also fire for loads inside the
+  // page, which would leave a still-subscribed Layout marked "not ready" and
+  // silently buffer every later link.
+  mainWindow.webContents.on("did-start-navigation", (details) => {
+    if (details.isMainFrame && !details.isSameDocument)
+      deepLinks.markNotReady();
+  });
+  // The window really goes away only on quit (close hides it to the tray);
+  // forget it so a late link recreates a window instead of touching a
+  // destroyed one.
+  const win = mainWindow;
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+    deepLinks.markNotReady();
+  });
   // Свернуть в трей вместо выхода: окно живёт в трее, quick-call хоткей
   // мгновенно его возвращает. Реальный выход — через меню трея / before-quit.
   mainWindow.on("close", (event) => {
