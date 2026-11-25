@@ -1,2 +1,0 @@
-v6:2c06eb42cae0af4109d74a233c386ad10f2d8304
-{"path":"src/renderer/src/screens/Soul/Soul.tsx","symbols":[{"name":"SoulProps","kind":"interface","startLine":5,"endLine":7,"signature":"interface SoulProps {"},{"name":"Soul","kind":"function","startLine":9,"endLine":124,"signature":"function Soul({ profile }: SoulProps): React.JSX.Element {"}],"timings":{"readMs":0.16218000000003485,"hashMs":0.016836999999895852,"cacheReadMs":0.06495600000016566,"cacheStatus":"miss","cacheWriteMs":0,"parseMs":0.8602370000000974}}

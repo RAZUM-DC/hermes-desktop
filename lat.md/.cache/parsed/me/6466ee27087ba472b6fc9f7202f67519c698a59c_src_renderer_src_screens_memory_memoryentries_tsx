@@ -1,2 +1,0 @@
-v6:7a7f5a0f65155f07f972d8fb783756a3d416ee46
-{"path":"src/renderer/src/screens/Memory/MemoryEntries.tsx","symbols":[{"name":"MemoryEntriesProps","kind":"interface","startLine":6,"endLine":10,"signature":"interface MemoryEntriesProps {"},{"name":"MemoryEntries","kind":"function","startLine":12,"endLine":198,"signature":"function MemoryEntries({"}],"timings":{"readMs":0.15967000000000553,"hashMs":0.01788399999986723,"cacheReadMs":0.0949519999999211,"cacheStatus":"miss","cacheWriteMs":0,"parseMs":1.054980999999998}}
